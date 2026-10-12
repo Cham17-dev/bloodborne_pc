@@ -160,6 +160,11 @@ void Menu() {
                                    viewport->WorkPos.y + 40.0f * base_scale),
                             ImGuiCond_Appearing);
     ImGui::SetNextWindowSize(ImVec2(620.0f * base_scale, 0.0f), ImGuiCond_Appearing);
+    // A menu taller than the screen would leave its last row (Close) off screen: the window
+    // stays within the screen (below its 40 px offset) and scrolls instead.
+    ImGui::SetNextWindowSizeConstraints(
+        ImVec2(0.0f, 0.0f),
+        ImVec2(FLT_MAX, std::max(viewport->WorkSize.y - 60.0f * base_scale, 200.0f * base_scale)));
     bool keep_open = true;
     if (!ImGui::Begin("Bloodborne — настройки  (Insert / L3+R3)", &keep_open,
                       ImGuiWindowFlags_NoCollapse)) {
