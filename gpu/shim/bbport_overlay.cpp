@@ -389,6 +389,22 @@ void Menu() {
     if (ImGui::Button("Закрыть")) {
         keep_open = false;
     }
+    // Issues #74, #116: leaving the game from the pad (this menu opens with L3+R3). A second
+    // press confirms; the window thread then closes like the window's own close button.
+    // (From bbport 0.51.)
+    static bool quit_armed;
+    ImGui::SameLine();
+    if (ImGui::Button(quit_armed ? "Нажмите ещё раз для выхода" : "Выйти из игры")) {
+        if (quit_armed) {
+            SDL_Event quit{};
+            quit.type = SDL_EVENT_QUIT;
+            SDL_PushEvent(&quit);
+        }
+        quit_armed = !quit_armed;
+    }
+    if (quit_armed && !ImGui::IsItemFocused() && !ImGui::IsItemHovered()) {
+        quit_armed = false;
+    }
     ImGui::SameLine();
     ImGui::TextDisabled("Настройки сохраняются в bbport.ini");
     ImGui::End();
