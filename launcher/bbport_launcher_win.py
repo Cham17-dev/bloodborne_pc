@@ -597,6 +597,7 @@ class Launcher:
         s.configure('TLabel', background=PANEL, foreground=TEXT)
         s.configure('Muted.TLabel', background=PANEL, foreground=MUTED, font=('Segoe UI', 9))
         s.configure('Section.TLabel', background=PANEL, foreground=GOLD, font=('Georgia', 13))
+        s.configure('Code.TLabel', background=PANEL, foreground=GOLD, font=('Consolas', 22, 'bold'))
         s.configure('TCheckbutton', background=PANEL, foreground=TEXT, padding=(0, 3))
         s.map('TCheckbutton', background=[('active', PANEL)], foreground=[('disabled', MUTED)])
         s.configure('Warning.TLabel', background='#2a1d12', foreground='#e3b25a', padding=(10, 6))
@@ -1040,6 +1041,22 @@ class Launcher:
         show_accounts()
         self.row(f, _('Account'), account)
         signing = ttk.Label(f, text='', style='Muted.TLabel', justify='left', wraplength=self.px(560))
+        # The code to type on the website, large, with a button that copies it.
+        code_box = ttk.Frame(f)
+        code_label = ttk.Label(code_box, text='', style='Code.TLabel')
+        code_label.pack(side='left')
+
+        def copy_code():
+            self.root.clipboard_clear()
+            self.root.clipboard_append(code_label.cget('text'))
+        ttk.Button(code_box, text=_('Copy'), command=copy_code).pack(side='left', padx=(14, 0))
+
+        def show_code(code=''):
+            code_label.configure(text=code)
+            if code:
+                code_box.grid()
+            else:
+                code_box.grid_remove()
 
         def sign_in():
             cli = bridge_cli()
@@ -1052,6 +1069,7 @@ class Launcher:
                 signing.configure(text=_('Sign-in failed: {}').format(error))
                 return
             signing.configure(text=_('Starting the sign-in…'))
+            show_code()
 
             def work():
                 try:
@@ -1066,19 +1084,21 @@ class Launcher:
                     line = line.strip()
                     code = re.match(r'Open (\S+) and enter the code (\S+)', line)
                     if code:
-                        text = _('In the page that opened, sign in with Discord and enter the code {0}\n({1})').format(
-                            code.group(2), code.group(1))
-                        self.ui_calls.put(lambda t=text: signing.configure(text=t))
+                        text = _('In the page that opened ({0}), sign in with Discord and enter this code:').format(
+                            code.group(1))
+                        self.ui_calls.put(lambda t=text, c=code.group(2): (signing.configure(text=t), show_code(c)))
                         webbrowser.open(code.group(1))
                     elif line.startswith('signed in as '):
-                        self.ui_calls.put(lambda: (signing.configure(text=''), show_accounts()))
+                        self.ui_calls.put(lambda: (signing.configure(text=''), show_code(), show_accounts()))
                     elif line.startswith('failed'):
                         reason = line.split(':', 1)[-1].strip()
-                        self.ui_calls.put(lambda r=reason: signing.configure(text=_('Sign-in failed: {}').format(r)))
+                        self.ui_calls.put(lambda r=reason: (signing.configure(text=_('Sign-in failed: {}').format(r)),
+                                                            show_code()))
                 process.wait()
             threading.Thread(target=work, daemon=True).start()
         self.row(f, '', ttk.Button(f, text=_('Sign in with Discord'), command=sign_in))
         signing.grid(row=self.next_row(f), column=1, sticky='w', pady=(6, 0))
+        code_box.grid(row=self.next_row(f), column=1, sticky='w', pady=(4, 0))
         self.check(f, 'bridge_live_map', 'app', _('Show me on the live map'),
                    _("thehuntersdream.com/map shows where players are and which bells ring: the game sends "
                      "your position more often while you play."))
@@ -1138,6 +1158,7 @@ class Launcher:
         result.grid(row=self.next_row(f), column=1, sticky='w', pady=(6, 0))
         self.note(f, _('Everyone in a session needs the same game version (1.09) and the same server. '
                        'Cheats change the game for the other players too: turn them off when you play together.'))
+        show_code()  # hidden until a sign-in shows one; its row stays reserved (rows are counted above)
 
     def build_mods(self):
         f = self.scrolled_page('mods', _('Mods & patches', 'Моды и патчи'),
