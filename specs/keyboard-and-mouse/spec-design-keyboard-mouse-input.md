@@ -1,251 +1,256 @@
 ---
-title: Remap de teclado e controle e controle por mouse (câmera e botões)
-version: 2.0
+title: Keyboard/controller remap and mouse control (camera and buttons)
+version: 2.1
 date_created: 2026-10-07
-last_updated: 2026-10-07
-owner: bbport (fork Windows)
+last_updated: 2026-10-10
+owner: bbport (Windows fork)
 tags: [design, input, pad, mouse, keyboard, config, shadps4-compat]
 ---
 
-# Introdução
+# Introduction
 
-Esta especificação define o remap configurável de teclado e de controle e o controle por mouse
-(câmera pelo stick emulado e botões do mouse como botões do PS4) no bbport. A configuração fica num
-arquivo de input próprio (`input.ini`), com a sintaxe e a semântica do arquivo de input do shadPS4,
-para que um arquivo de Bloodborne feito para o shadPS4 funcione aqui. Nesta etapa não há tela de
-remap; o arquivo é editado à mão.
+This specification defines bbport's configurable keyboard/controller remap and mouse control
+(camera via an emulated stick, mouse buttons as PS4 buttons). Configuration lives in a dedicated
+input file (`input.ini`), using shadPS4's input config syntax and semantics, so a Bloodborne
+config made for shadPS4 works here too. There is no in-game remap screen yet (see the launcher's
+Controls page instead, which edits this same file); the file can always be edited by hand too.
 
-**Referência:** shadPS4, commit `0fe263a` (2026-10-07): `src/input/input_handler.{h,cpp}`,
-`src/input/input_mouse.cpp`, `src/sdl_window.cpp`. Ambos os projetos são GPL-2.0-or-later, então
-tabelas e trechos podem ser copiados com o cabeçalho SPDX e a marca `bbport:` nas mudanças, como já
-é feito com o código vendorizado em `gpu/shadps4/`.
+**Reference:** shadPS4, commit `0fe263a`: `src/input/input_handler.{h,cpp}`,
+`src/input/input_mouse.cpp`, `src/sdl_window.cpp`. Both projects are GPL-2.0-or-later, so tables
+and snippets can be copied with an SPDX header and a `bbport:` marker on changes, the same way
+`gpu/shadps4/`'s vendored code already works.
 
-## 1. Propósito e escopo
+## 1. Purpose and scope
 
-**Propósito:** jogar com teclado e mouse ao estilo do shadPS4, aproveitando configurações feitas
-para ele, sem perder o comportamento de quem joga só com controle.
+**Purpose:** play with keyboard and mouse the way shadPS4 does, reusing configs made for it,
+without breaking the existing controller-only experience.
 
-**Dentro do escopo:**
+**In scope:**
 
-- Arquivo `input.ini` com a sintaxe do shadPS4, gerado com os padrões do bbport se não existir.
-- Remap do teclado, dos botões e eixos do controle e dos botões e roda do mouse para as saídas do PS4.
-- Teclado, controle e mouse funcionando ao mesmo tempo.
-- Mouse como stick (`mouse_to_joystick`), com a fórmula e os parâmetros do shadPS4.
-- Modo meia-velocidade dos sticks (`leftjoystick_halfmode`, `rightjoystick_halfmode`).
-- Zona morta configurável dos sticks e gatilhos (`analog_deadzone`).
-- Hotkeys F7 (liga e desliga o mouse) e F8 (relê o `input.ini`), remapeáveis.
-- Testes automatizados e documentação.
+- An `input.ini` file using shadPS4's syntax, generated with bbport's defaults if missing.
+- Remapping keyboard keys, controller buttons/axes, and mouse buttons/wheel to PS4 outputs.
+- Keyboard, controller and mouse all active at the same time.
+- Mouse-as-stick (`mouse_to_joystick`), with a formula inspired by shadPS4's own.
+- Half-speed stick mode (`leftjoystick_halfmode`, `rightjoystick_halfmode`).
+- Configurable stick/trigger deadzone (`analog_deadzone`).
+- F7 (toggle mouse) and F8 (reload `input.ini`) hotkeys, remappable.
+- Automated tests and documentation.
 
-**Fora do escopo:**
+**Out of scope:**
 
-- Tela de remap no menu do jogo ou no launcher (fase 2).
-- Combos de várias teclas (`lalt, f12`), `key_toggle`, os demais hotkeys do shadPS4, mouse como
-  giroscópio (F6) e como touchpad (Delete).
-- Configuração separada por controle (sufixo `:N`), arquivo `global.ini` e perfis por jogo.
-- Mira 1:1 com o mouse (CON-004).
-- Mudanças em `BbSettings::Save()`: o `input.ini` é separado e o menu do jogo não o regrava.
+- An in-game or launcher remap screen beyond what already ships (see §11/Phase 2 notes).
+- Multi-key combos (`lalt, f12`), `key_toggle`, shadPS4's other hotkeys, mouse-as-gyro (F6) and
+  mouse-as-touchpad (Delete).
+- Per-controller configuration (`:N` suffix), a `global.ini` file, per-game profiles.
+- 1:1 mouse aim (CON-004).
+- Changes to `BbSettings::Save()`: `input.ini` is a separate file the game's menu never rewrites.
 
-**Público:** desenvolvedores e agentes LLM que implementam as tarefas de `tasks.md`.
+**Audience:** developers and LLM agents extending this feature.
 
-**Premissas:** SDL3 é a única dependência de input. O código compila no Linux (GCC, `build.sh`) e no
-Windows (MSYS2 CLANG64).
+**Assumptions:** SDL3 is the only input dependency. The code builds on Linux (GCC, `build.sh`)
+and Windows (MSYS2 CLANG64).
 
-## 2. Definições
+## 2. Definitions
 
-| Termo | Definição |
+| Term | Definition |
 |---|---|
-| Pad / `PadData` | Estrutura `OrbisPadData` devolvida ao jogo por `scePadReadState` ([src/runtime_pad.c](../../src/runtime_pad.c)). Sticks em `uint8_t` com centro 128; gatilhos `l2`/`r2` de 0 a 255. |
-| Saída | O que o jogo enxerga: um botão do PS4, uma direção de eixo, um eixo analógico inteiro, um modo (halfmode) ou um hotkey. É o lado esquerdo de uma linha do `input.ini`. |
-| Entrada | Uma tecla, um botão ou eixo do controle, ou um botão ou passo da roda do mouse. É o lado direito de uma linha. |
-| Binding | Uma linha `saída = entrada`. Uma saída pode ter vários bindings (várias linhas). |
-| Modo mouse | Estado ligado ou desligado da emulação de stick pelo mouse, alternado por F7. |
-| Captura | Modo relativo do SDL ativo (`SDL_SetWindowRelativeMouseMode`): cursor oculto e preso à janela. |
-| Thread da janela | A thread que roda `WindowSDL::PollEvents` ([gpu/shim/window.cpp](../../gpu/shim/window.cpp)), a única que pode chamar funções de vídeo e janela do SDL. |
-| Thread do pad | A thread do jogo que chama `scePadReadState`; nela roda `sample()` em `runtime_pad.c`. |
-| Menu | O menu de configurações do bbport em ImGui (Insert ou L3+R3). |
-| Caixa de texto | A entrada de nome do personagem desenhada sobre o jogo (`SetTextEntry`). |
-| Unidade de eixo | Valor com sinal de -127 a 127 usado na soma dos eixos; 0 é o centro. Na saída vira `128 + v`, limitado a 0..255. |
+| Pad / `PadData` | The `OrbisPadData` struct returned to the game by `scePadReadState` ([src/runtime_pad.c](../../src/runtime_pad.c)). Sticks are `uint8_t` centered on 128; `l2`/`r2` triggers range 0 to 255. |
+| Output | What the game sees: a PS4 button, an axis direction, a full analog axis, a mode (halfmode), or a hotkey. The left side of an `input.ini` line. |
+| Input | A key, a controller button/axis, or a mouse button/wheel step. The right side of a line. |
+| Binding | One `output = input` line. An output can have several bindings (several lines). |
+| Mouse mode | The on/off state of mouse-to-stick emulation, toggled by F7. |
+| Capture | SDL's relative mouse mode active (`SDL_SetWindowRelativeMouseMode`): cursor hidden and confined to the window. |
+| Window thread | The thread running `WindowSDL::PollEvents` ([gpu/shim/window.cpp](../../gpu/shim/window.cpp)), the only one allowed to call SDL video/window functions. |
+| Pad thread | The game thread that calls `scePadReadState`; it runs `sample()` in `runtime_pad.c`. |
+| Menu | bbport's ImGui settings menu (Insert or L3+R3). |
+| Text box | The on-screen character-name entry drawn over the game (`SetTextEntry`). |
+| Axis unit | A signed value from -127 to 127 used when summing axis contributions; 0 is center. On output it becomes `128 + v`, clamped to 0..255. |
 
-## 3. Requisitos, restrições e diretrizes
+## 3. Requirements, constraints and guidelines
 
-### Arquivo e sintaxe
+### File and syntax
 
-- **CFG-001**: O caminho é `BB_INPUT_CONFIG`, se definido e não vazio. Senão, `input.ini` na mesma
-  pasta do `bbport.ini`, cujo caminho segue a regra de `BbSettings::Path()` (`BB_CONFIG`, senão
-  `bbport.ini` no diretório atual).
-- **CFG-002**: Se o arquivo não existir, o bbport o cria com o conteúdo da seção 4.3 e o usa. Se não
-  conseguir criar, usa os mesmos padrões em memória e registra um aviso.
-- **CFG-003**: A sintaxe é a do shadPS4:
-  - todo espaço em branco da linha é removido antes do parse;
-  - `#` começa um comentário até o fim da linha;
-  - cada linha é `saída = entrada`;
-  - um sufixo `:N` na saída ou na entrada é aceito e descartado;
-  - linhas vazias são ignoradas.
-- **CFG-004**: Os nomes são comparados sem diferenciar maiúsculas de minúsculas. É um superconjunto
-  do shadPS4, que só aceita minúsculas.
-- **CFG-005**: Cada linha tem uma única entrada. Uma entrada com vírgula (combo) é ignorada com
-  aviso. A exceção são as linhas especiais da seção 4.2, que têm parâmetros separados por vírgula.
-- **CFG-006**: Linhas com saída ou entrada desconhecidas, `key_toggle`, hotkeys fora de F7 e F8 e
-  `override_controller_color` são ignoradas com um aviso por linha no carregamento. O resto do
-  arquivo continua valendo, para que arquivos do shadPS4 importem sem erro.
-- **CFG-007**: Sem nenhuma linha de controle, o controle não aciona nada, como no shadPS4. O arquivo
-  padrão traz as linhas de controle.
-- **CFG-008**: O arquivo é lido em `scePadOpen` e relido quando o usuário aperta a tecla de
-  `hotkey_reload_inputs` (padrão F8). A releitura troca a configuração inteira de uma vez, entre duas
-  amostras do pad, sem estado intermediário visível ao jogo.
+- **CFG-001**: The path is `BB_INPUT_CONFIG` if set and non-empty, else `input.ini` next to
+  `bbport.ini`, whose own path follows `BbSettings::Path()`'s rule (`BB_CONFIG`, else `bbport.ini`
+  in the current directory).
+- **CFG-002**: If the file doesn't exist, bbport creates it with the text in §4.3 and uses it. If
+  it can't be created, the same defaults are used in memory and a warning is logged.
+- **CFG-003**: Syntax follows shadPS4:
+  - all whitespace is stripped before parsing;
+  - `#` starts a comment to end of line;
+  - each line is `output = input`;
+  - a `:N` suffix on either side is accepted and discarded;
+  - blank lines are ignored.
+- **CFG-004**: Names are compared case-insensitively — a superset of shadPS4, which only accepts
+  lowercase.
+- **CFG-005**: Each line has a single input. An input with a comma (a combo) is ignored with a
+  warning. The exception is the special lines in §4.2, whose parameters are comma-separated.
+- **CFG-006**: Lines with an unknown output or input, `key_toggle`, hotkeys other than F7/F8, and
+  `override_controller_color` are ignored with one warning per line at load time. The rest of the
+  file still loads, so a shadPS4 file imports without erroring out.
+- **CFG-007**: With no controller line at all, the controller drives nothing, matching shadPS4.
+  The default file ships controller lines.
+- **CFG-008**: The file is read on `scePadOpen` and re-read when the user presses
+  `hotkey_reload_inputs` (default F8). A reload swaps the whole config at once, between two pad
+  samples, with no intermediate state visible to the game.
 
-### Nomes
+### Names
 
-- **NAM-001**: Os nomes de tecla são os da tabela `string_to_keyboard_key_map` do shadPS4
-  (`a`…`z`, `0`…`9`, `f1`…`f12`, `space`, `enter`, `tab`, `backspace`, `lshift`, `lctrl`, `lalt`,
-  `up`, `left`, `kp0`…`kp9`, `comma`, `period` e os demais). Cada nome corresponde a uma tecla
-  lógica do SDL (`SDLK_*`), que é convertida para scancode com `SDL_GetScancodeFromKey` no
-  carregamento. Assim os nomes seguem o layout do teclado, como no shadPS4.
-- **NAM-002**: Nomes de mouse: `leftbutton`, `rightbutton`, `middlebutton`, `sidebuttonback`,
+- **NAM-001**: Key names match shadPS4's `string_to_keyboard_key_map` table (`a`-`z`, `0`-`9`,
+  `f1`-`f12`, `space`, `enter`, `tab`, `backspace`, `lshift`, `lctrl`, `lalt`, `up`, `left`,
+  `kp0`-`kp9`, `comma`, `period`, and the rest). Each name maps to a logical SDL key (`SDLK_*`),
+  converted to a scancode via `SDL_GetScancodeFromKey` at load time — so names follow the active
+  keyboard layout, matching shadPS4.
+- **NAM-002**: Mouse names: `leftbutton`, `rightbutton`, `middlebutton`, `sidebuttonback`,
   `sidebuttonforward`, `mousewheelup`, `mousewheeldown`, `mousewheelleft`, `mousewheelright`.
-- **NAM-003**: Nomes de botão do controle (tabela `string_to_cbutton_map`), por posição física:
-  `cross` = sul, `circle` = leste, `square` = oeste, `triangle` = norte, mais `l1`, `r1`, `l3`, `r3`,
-  `options`, `pad_up`, `pad_down`, `pad_left`, `pad_right`, `back` e `share` (ambos o botão Back do
-  SDL), `lpaddle_high`, `lpaddle_low`, `rpaddle_high`, `rpaddle_low`, `l4`, `l5`, `r4`, `r5`, `qam`.
-- **NAM-004**: Nomes de eixo do controle (tabela `string_to_axis_map`): `l2`, `r2` (gatilhos),
-  `axis_left_x`, `axis_left_y`, `axis_right_x`, `axis_right_y` (eixo inteiro) e
-  `axis_left_x_plus` / `_minus` e equivalentes (meio eixo).
-- **NAM-005**: `unmapped` como entrada cria um binding que nunca dispara. Serve para deixar explícito
-  que uma saída não tem tecla.
+- **NAM-003**: Controller button names (`string_to_cbutton_map` table), by physical position:
+  `cross` = south, `circle` = east, `square` = west, `triangle` = north, plus `l1`, `r1`, `l3`,
+  `r3`, `options`, `pad_up`, `pad_down`, `pad_left`, `pad_right`, `back` and `share` (both SDL's
+  Back button), `lpaddle_high`, `lpaddle_low`, `rpaddle_high`, `rpaddle_low`, `l4`, `l5`, `r4`,
+  `r5`, `qam`.
+- **NAM-004**: Controller axis names (`string_to_axis_map` table): `l2`, `r2` (triggers),
+  `axis_left_x`, `axis_left_y`, `axis_right_x`, `axis_right_y` (full axis) and
+  `axis_left_x_plus`/`_minus` and equivalents (half axis).
+- **NAM-005**: `unmapped` as an input creates a binding that never fires. Lets a config explicitly
+  state an output has no key, instead of just omitting the line.
 
-### Saídas
+### Outputs
 
-- **OUT-001**: As saídas válidas estão na seção 4.1. Botões, direções de eixo e eixos inteiros
-  seguem os nomes do shadPS4. Os três lados do touchpad (`touchpad_left`, `touchpad_center`,
-  `touchpad_right`) geram um toque em x = 480, 960 ou 1440, com y = 471.
-- **OUT-002**: O touchpad físico do controle continua passando a posição real dos dedos e o clique,
-  como hoje ([runtime_pad.c:118-130](../../src/runtime_pad.c#L118-L130)), independente de bindings.
-  Como no shadPS4, o botão físico `touchpad` não pode ser remapeado.
-- **OUT-003**: Um botão ou tecla ligado a `l2` ou `r2` aciona o bit do botão e põe o analógico em 255.
-- **OUT-004**: Um gatilho físico ligado a uma saída de botão aciona o botão quando passa de 30 em
-  0..255, o limiar atual do bbport. Ligado a `l2`/`r2`, passa o valor analógico e aciona o bit acima
-  de 30.
-- **OUT-005**: Um meio eixo físico (`axis_left_x_plus` etc.) ligado a uma saída de botão aciona o
-  botão acima de metade do curso, como no shadPS4 (`0x40` de `0x7f`).
-- **OUT-006**: A combinação L3+R3 que abre o menu usa os botões físicos, independente do remap.
+- **OUT-001**: Valid outputs are listed in §4.1. Buttons, axis directions and full axes follow
+  shadPS4's names. The three touchpad zones (`touchpad_left`, `touchpad_center`, `touchpad_right`)
+  produce a touch at x = 480, 960 or 1440, y = 471.
+- **OUT-002**: The controller's physical touchpad still reports real finger position and click,
+  as today ([runtime_pad.c:118-130](../../src/runtime_pad.c#L118-L130)), independent of any
+  binding. Like shadPS4, the physical `touchpad` button cannot be remapped.
+- **OUT-003**: A button or key bound to `l2`/`r2` sets the button bit and drives the analog value
+  to 255.
+- **OUT-004**: A physical trigger bound to a button output fires the button once it passes 30 out
+  of 0..255 (bbport's existing threshold). Bound to `l2`/`r2`, it passes the analog value through
+  and fires the bit above 30.
+- **OUT-005**: A physical half axis (`axis_left_x_plus` etc.) bound to a button output fires past
+  half travel, matching shadPS4 (`0x40` of `0x7f`).
+- **OUT-006**: The L3+R3 combo that opens the menu uses the physical buttons, independent of any
+  remap.
 
-### Combinação
+### Mixing
 
-- **MIX-001**: Teclado, controle e mouse são lidos em toda amostra, com ou sem controle conectado.
-- **MIX-002**: Botões: basta um binding ativo para a saída ficar ativa (OU).
-- **MIX-003**: Eixos, como no shadPS4: as contribuições de todos os bindings ativos (teclas e meio
-  eixos com ±127, eixos físicos com o valor lido, mouse com o valor da seção 4.4) são somadas em
-  unidades de eixo. Depois vêm a zona morta (`analog_deadzone`) e o fator do halfmode, e o resultado
-  é limitado a -127..127. Direções opostas se anulam.
-- **MIX-004**: Gatilhos analógicos: soma das contribuições, limitada a 0..255.
-- **MIX-005**: A ordem de `sample()` não muda: amostra do host (teclado, controle e mouse
-  combinados), depois gravação (`BB_PAD_RECORD`), injeção (`BB_PAD_FILE`) e replay
-  (`BB_PAD_REPLAY`). A gravação registra o estado já combinado, mouse incluído.
-- **MIX-006**: Com o menu ou a caixa de texto abertos, o jogo recebe entrada neutra, e o atraso de
-  liberação depois do fechamento (`hold_after_capture`) continua valendo.
+- **MIX-001**: Keyboard, controller and mouse are all read every sample, with or without a
+  controller connected.
+- **MIX-002**: Buttons: any one active binding is enough to activate the output (OR).
+- **MIX-003**: Axes, as in shadPS4: every active binding's contribution (keys and half axes at
+  ±127, physical axes at their read value, mouse at the value from §4.4) is summed in axis units.
+  Deadzone (`analog_deadzone`) and the halfmode factor apply after that, and the result is clamped
+  to -127..127. Opposite directions cancel out.
+- **MIX-004**: Analog triggers: contributions sum, clamped to 0..255.
+- **MIX-005**: `sample()`'s order is unchanged: host sample (keyboard, controller and mouse
+  combined), then recording (`BB_PAD_RECORD`), injection (`BB_PAD_FILE`) and replay
+  (`BB_PAD_REPLAY`). Recording captures the already-combined state, mouse included.
+- **MIX-006**: With the menu or text box open, the game receives neutral input, and the
+  post-close release delay (`hold_after_capture`) still applies.
 
-### Halfmode e zona morta
+### Halfmode and deadzone
 
-- **HLF-001**: Enquanto um binding de `leftjoystick_halfmode` (ou `rightjoystick_halfmode`) estiver
-  ativo, a saída do stick correspondente é multiplicada por 0.5 depois da zona morta, como no
-  shadPS4. O arquivo padrão não traz tecla para isso.
-- **DZN-001**: `analog_deadzone = <leftjoystick|rightjoystick|l2|r2>, <interno>, <externo>`, com
-  valores de 1 a 127. Abaixo do interno a saída é 0; do interno ao externo cresce linearmente até
-  127; acima do externo é 127. A fórmula é a de `ApplyDeadzone` do shadPS4. O padrão é `1, 127`,
-  praticamente sem zona morta, que equivale ao comportamento atual.
+- **HLF-001**: While a `leftjoystick_halfmode` (or `rightjoystick_halfmode`) binding is active,
+  that stick's output is multiplied by 0.5 after deadzone, matching shadPS4. The default file
+  binds no key to this.
+- **DZN-001**: `analog_deadzone = <leftjoystick|rightjoystick|l2|r2>, <inner>, <outer>`, values
+  1 to 127. Below `inner` the output is 0; from `inner` to `outer` it ramps linearly to 127; at or
+  above `outer` it is 127. This is shadPS4's `ApplyDeadzone` formula. The default (`1, 127`) is
+  effectively no deadzone, matching the pre-existing behavior.
 
 ### Mouse
 
-- **MOU-001**: `mouse_to_joystick = left|right` escolhe o stick do mouse. Sem essa linha o modo
-  mouse não existe, F7 não faz nada e o cursor nunca é capturado. O arquivo padrão traz a linha
-  comentada, então o mouse começa desligado.
-- **MOU-002**: Com `mouse_to_joystick` definido, o modo mouse começa ligado ao abrir o jogo. A tecla
-  de `hotkey_toggle_mouse_to_joystick` (padrão F7) alterna entre ligado e desligado, e o estado não
-  é salvo entre sessões.
-- **MOU-003**: A captura fica ativa se e somente se todas estas condições forem verdadeiras: o modo
-  mouse está ligado, a janela tem foco, o menu está fechado e a caixa de texto está inativa.
-- **MOU-004**: A thread da janela avalia MOU-003 a cada `PollEvents` e chama
-  `SDL_SetWindowRelativeMouseMode` só quando o resultado muda. O menu também fecha pela thread de
-  render ([bbport_overlay.cpp:396](../../gpu/shim/bbport_overlay.cpp#L396)), então a decisão não
-  pode depender só dos eventos de abrir e fechar.
-- **MOU-005**: Só durante a captura a thread da janela acumula `xrel`/`yrel`, o estado dos botões e
-  os passos da roda. Quando a captura termina, tudo é zerado e nenhum botão fica preso.
-- **MOU-006**: Botões e roda do mouse só acionam saídas durante a captura. Clicar na janela para dar
-  foco nunca dispara uma ação. Isso diverge do shadPS4.
-- **MOU-007**: Cada passo da roda mantém a entrada `mousewheel*` ativa por 33 ms, como no shadPS4.
-  Passos seguidos se emendam.
-- **MOU-008**: A thread do pad consome o acumulado a cada amostra (lê e zera) por
-  `bbgpu_mouse_take` (seção 4.5), e nunca chama funções de mouse do SDL.
-- **MOU-009**: A conversão para o stick usa a fórmula do shadPS4 (seção 4.4) e os parâmetros de
-  `mouse_movement_params`. O deslocamento é normalizado para uma janela de 33 ms, para que a
-  sensibilidade não dependa do FPS e os valores do shadPS4 se transfiram direto.
+- **MOU-001**: `mouse_to_joystick = left|right` picks the mouse's stick. Without this line, mouse
+  mode doesn't exist, F7 does nothing, and the cursor is never captured. The default file ships
+  this line commented out, so the mouse starts off.
+- **MOU-002**: With `mouse_to_joystick` set, mouse mode starts on when the game opens.
+  `hotkey_toggle_mouse_to_joystick` (default F7) toggles it on/off, and the state isn't saved
+  between sessions.
+- **MOU-003**: Capture is active if and only if all of these hold: mouse mode is on, the window
+  has focus, the menu is closed, and the text box is inactive.
+  **MOU-004**: The window thread evaluates MOU-003 on every `PollEvents` and calls
+  `SDL_SetWindowRelativeMouseMode` only when the result changes. The menu can also close from the
+  render thread ([bbport_overlay.cpp:396](../../gpu/shim/bbport_overlay.cpp#L396)), so the decision
+  can't depend only on open/close events.
+- **MOU-005**: Only while captured does the window thread accumulate `xrel`/`yrel`, button state
+  and wheel steps. When capture ends, all of it is cleared and no button stays stuck.
+- **MOU-006**: Mouse buttons and wheel only activate outputs while captured. Clicking the window
+  to give it focus never fires an action. This diverges from shadPS4.
+- **MOU-007**: Each wheel step keeps its `mousewheel*` input active for 33 ms, matching shadPS4.
+  Consecutive steps merge.
+- **MOU-008**: The pad thread drains the accumulated state every sample (read and clear) via
+  `bbgpu_mouse_take` (§4.5), and never calls SDL mouse functions itself.
+- **MOU-009**: Conversion to a stick value uses the formula in §4.4 and `mouse_movement_params`.
 
-### Teclas reservadas e hotkeys
+### Reserved keys and hotkeys
 
-- **HOT-001**: `Insert` e `Escape` (menu) e `F9` (`BB_PAD_RECORD`) são reservadas. Um binding de
-  saída do jogo para elas é ignorado com aviso.
-- **HOT-002**: `hotkey_toggle_mouse_to_joystick` (padrão `f7`) e `hotkey_reload_inputs` (padrão
-  `f8`) podem ser remapeados no `input.ini`. A tecla atribuída a eles também passa a ser reservada.
-  Se o arquivo não tiver uma dessas linhas, vale o padrão.
-- **HOT-003**: Os hotkeys são tratados na thread da janela, por eventos de tecla, e não pela leitura
-  do pad. Eles funcionam com o menu aberto (F8) e com a captura desligada (F7).
+- **HOT-001**: `Insert`, `Escape` (menu) and `F9` (`BB_PAD_RECORD`) are reserved. A game-output
+  binding to any of them is ignored with a warning.
+- **HOT-002**: `hotkey_toggle_mouse_to_joystick` (default `f7`) and `hotkey_reload_inputs`
+  (default `f8`) can be remapped in `input.ini`. Whatever key is assigned becomes reserved too.
+  Missing either line falls back to its default.
+- **HOT-003**: Hotkeys are handled on the window thread, via key events, not through the pad
+  read path. They work with the menu open (F8) and with capture off (F7).
 
-### Compatibilidade e restrições
+### Compatibility and constraints
 
-- **CON-001**: Não entram dependências novas. Só SDL3 e a biblioteca padrão.
-- **CON-002**: O código segue o estilo existente: C11 em `src/`, C++ em `gpu/shim/`, comentários no
-  mesmo tom e densidade. Tabelas copiadas do shadPS4 mantêm o cabeçalho SPDX e a origem num
-  comentário.
-- **CON-003**: `BB_PAD_FILE`, `BB_PAD_RECORD` e `BB_PAD_REPLAY` continuam funcionando com o mesmo
-  formato de arquivo.
-- **CON-004**: O mouse é emulado como stick. A rotação satura na velocidade máxima de câmera do jogo
-  e herda a aceleração dele. Isso é limitação conhecida, documentada, e não bug.
-- **CON-005**: Comparado à versão atual, sem `input.ini` (gerado com os padrões) o comportamento muda
-  só no previsto: o teclado funciona junto do controle (MIX-001), Q passa a ser R3 e Triangle vai
-  para V, e o mouse fica desligado.
-- **CON-006**: Compila no Linux e no Windows sem `#ifdef` novos de plataforma para a lógica de input.
+- **CON-001**: No new dependencies. Only SDL3 and the standard library.
+- **CON-002**: Code follows existing style: C11 in `src/`, C++ in `gpu/shim/`, comments in the
+  same tone and density. Tables copied from shadPS4 keep their SPDX header and a source comment.
+- **CON-003**: `BB_PAD_FILE`, `BB_PAD_RECORD` and `BB_PAD_REPLAY` keep working with the same file
+  format.
+- **CON-004**: The mouse is emulated as a stick. Rotation saturates at the game's own maximum
+  turn speed and inherits its acceleration curve. This is a known, documented limitation, not a
+  bug.
+- **CON-005**: Compared to the pre-existing behavior, generating `input.ini` from defaults changes
+  only what's expected: the keyboard works alongside a controller (MIX-001), Q becomes R3 and
+  Triangle moves to V, and the mouse starts off.
+- **CON-006**: Builds on Linux and Windows with no new platform `#ifdef`s in the input logic.
 
-### Diretrizes
+### Guidelines
 
-- **GUD-001**: O parse fica num módulo C próprio (`src/runtime_input_config.c`), testável sem GPU e
-  sem janela. As tabelas de nomes do shadPS4 são portadas para arrays C.
-- **GUD-002**: A configuração carregada é imutável. A releitura (F8) monta uma estrutura nova e só
-  então troca o ponteiro sob o lock do pad, que já protege `sample()`
-  ([src/runtime_pad.c:58](../../src/runtime_pad.c#L58)). O carregamento em si (I/O de disco, parse)
-  roda fora do lock: o mutex do pad também é adquirido por `pad_read_state` a cada frame
-  ([src/runtime_pad.c:313-319](../../src/runtime_pad.c#L313-L319)), e I/O sob esse lock travaria a
-  leitura do pad do jogo enquanto o arquivo é lido.
-- **GUD-003**: A tabela de nomes de `BB_PAD_FILE` ([runtime_pad.c:181-186](../../src/runtime_pad.c#L181-L186))
-  passa a usar os mesmos valores de saída do módulo, sem mudar os nomes aceitos pela injeção.
+- **GUD-001**: Parsing lives in its own C module (`src/runtime_input_config.c`), testable without
+  GPU or a window. shadPS4's name tables are ported to C arrays.
+- **GUD-002**: The loaded config is immutable. A reload (F8) builds a new struct and only then
+  swaps the pointer under the pad lock, which already serializes `sample()`
+  ([src/runtime_pad.c:58](../../src/runtime_pad.c#L58)). Loading itself (disk I/O, parsing) runs
+  outside the lock: the pad mutex is also taken by `pad_read_state` every frame
+  ([src/runtime_pad.c:313-319](../../src/runtime_pad.c#L313-L319)), and I/O under that lock would
+  stall the game's own pad read while the file loads.
+- **GUD-003**: `BB_PAD_FILE`'s name table ([runtime_pad.c:181-186](../../src/runtime_pad.c#L181-L186))
+  now uses the module's own output values, without changing the names injection accepts.
 
-## 4. Interfaces e contratos de dados
+## 4. Interfaces and data contracts
 
-### 4.1 Saídas
+### 4.1 Outputs
 
-| Saída | Tipo | Efeito no `PadData` |
+| Output | Type | Effect on `PadData` |
 |---|---|---|
-| `cross` `circle` `square` `triangle` `l1` `r1` `l3` `r3` `options` | botão | bit em `buttons` |
-| `pad_up` `pad_down` `pad_left` `pad_right` | botão | bit do D-pad em `buttons` |
-| `l2` `r2` | botão + gatilho | bit em `buttons` e `l2`/`r2` (OUT-003, OUT-004) |
-| `touchpad_left` `touchpad_center` `touchpad_right` | touchpad | `BTN_TOUCHPAD` e um toque em x=480/960/1440, y=471 |
-| `axis_left_x_minus` `axis_left_x_plus` `axis_left_y_minus` `axis_left_y_plus` | meio eixo | contribuição -127 ou +127 em `left_x`/`left_y` |
-| `axis_right_x_minus` … `axis_right_y_plus` | meio eixo | o mesmo em `right_x`/`right_y` |
-| `axis_left_x` `axis_left_y` `axis_right_x` `axis_right_y` | eixo inteiro | contribuição do eixo físico ligado |
-| `leftjoystick_halfmode` `rightjoystick_halfmode` | modo | HLF-001 |
+| `cross` `circle` `square` `triangle` `l1` `r1` `l3` `r3` `options` | button | bit in `buttons` |
+| `pad_up` `pad_down` `pad_left` `pad_right` | button | D-pad bit in `buttons` |
+| `l2` `r2` | button + trigger | bit in `buttons` and `l2`/`r2` (OUT-003, OUT-004) |
+| `touchpad_left` `touchpad_center` `touchpad_right` | touchpad | `BTN_TOUCHPAD` and a touch at x=480/960/1440, y=471 |
+| `axis_left_x_minus` `axis_left_x_plus` `axis_left_y_minus` `axis_left_y_plus` | half axis | -127 or +127 contribution to `left_x`/`left_y` |
+| `axis_right_x_minus` … `axis_right_y_plus` | half axis | same, to `right_x`/`right_y` |
+| `axis_left_x` `axis_left_y` `axis_right_x` `axis_right_y` | full axis | contribution of the bound physical axis |
+| `leftjoystick_halfmode` `rightjoystick_halfmode` | mode | HLF-001 |
 | `hotkey_toggle_mouse_to_joystick` `hotkey_reload_inputs` | hotkey | HOT-002 |
 
-### 4.2 Linhas especiais
+### 4.2 Special lines
 
-| Linha | Parâmetros | Padrão sem a linha |
+| Line | Parameters | Default without the line |
 |---|---|---|
-| `mouse_to_joystick = left\|right` | stick do mouse | modo mouse inexistente |
-| `mouse_movement_params = <deadzone_offset>, <speed>, <speed_offset>` | três floats | `0.5, 1, 0.125` |
-| `analog_deadzone = <dispositivo>, <interno>, <externo>` | `leftjoystick`/`rightjoystick`/`l2`/`r2`, 1..127, 1..127 | `1, 127` |
+| `mouse_to_joystick = left\|right` | the mouse's stick | mouse mode doesn't exist |
+| `mouse_movement_params = <deadzone_offset>, <speed>, <speed_offset>` | three floats | `0.5, 1, 0.125` |
+| `analog_deadzone = <device>, <inner>, <outer>` | `leftjoystick`/`rightjoystick`/`l2`/`r2`, 1..127, 1..127 | `1, 127` |
 
-Faixas válidas de `mouse_movement_params`: `deadzone_offset` e `speed_offset` de 0.0 a 1.0; `speed`
-de 0.01 a 20.0. Um valor fora da faixa invalida a linha inteira, que fica no padrão com aviso.
+Valid ranges for `mouse_movement_params`: `speed_offset` 0.0 to 1.0; `speed` 0.01 to 20.0.
+`deadzone_offset` is parsed (0.0 to 1.0) for file compatibility but has no effect on the current
+formula (§4.4) — an earlier iteration used it as a response floor; see §4.4's history note. A
+value outside its range invalidates the whole line, which falls back to the default with a
+warning.
 
-### 4.3 Arquivo padrão (`input.ini` gerado)
+### 4.3 Default file (generated `input.ini`)
 
 ```ini
 # bbport input (shadPS4 syntax: output = input, one input per line).
@@ -319,32 +324,66 @@ hotkey_toggle_mouse_to_joystick = f7
 hotkey_reload_inputs = f8
 ```
 
-O texto do arquivo gerado fica em inglês, como os comentários do código; a documentação para o
-usuário em `docs/` explica cada linha.
+### 4.4 Mouse-to-stick conversion
 
-### 4.4 Conversão mouse → stick (fórmula do shadPS4, `EmulateJoystick`)
-
-A cada amostra do pad, com o modo mouse ligado e a captura ativa:
+Every pad sample, with mouse mode on and capture active, `mouse_to_axis()`
+([src/runtime_pad.c](../../src/runtime_pad.c)) converts the raw mouse delta accumulated since the
+last sample into a stick contribution:
 
 ```text
-(dx, dy) = deslocamento consumido desde a amostra anterior (pixels SDL)
-dt       = tempo desde a amostra anterior, limitado a [1 ms, 100 ms]
-(dx, dy) = (dx, dy) * (33 ms / dt)        # normaliza para a janela de 33 ms do shadPS4
-se dx == 0 e dy == 0: contribuição = (0, 0)
-senão:
-    velocidade = clamp(sqrt(dx² + dy²) * speed + speed_offset * 128,
-                       deadzone_offset * 128, 128)
-    ângulo     = atan2(dy, dx)
-    contribuição = (cos(ângulo) * velocidade, sin(ângulo) * velocidade)   # unidades de eixo
+(dx, dy) = motion accumulated since the last sample (SDL pixels)
+dt       = time since the last sample, clamped to [1 ms, 100 ms]
+(sdx, sdy) = (dx, dy) * (33 ms / dt)             # rescale to shadPS4's fixed 33 ms window,
+                                                  # so sensitivity doesn't depend on frame rate
+magnitude = sqrt(sdx² + sdy²)
+if magnitude < 0.01: target = (0, 0)
+else:
+    offset_fade = min(magnitude / 1.0, 1.0)      # fades speed_offset in over the first 1 px,
+                                                  # instead of switching it on at a fixed threshold
+    speed       = min(magnitude * speed + speed_offset * 128 * offset_fade, 128)
+    angle       = atan2(sdy, sdx)
+    target      = (cos(angle) * speed, sin(angle) * speed)   # axis units
+
+alpha = 1 - exp(-dt / 25ms)
+stick += (target - stick) * alpha                # exponential lerp toward target; stick is
+                                                  # per-axis state that persists across samples
 ```
 
-- **CNV-001**: A contribuição entra na soma de MIX-003 no stick de `mouse_to_joystick`.
-- **CNV-002**: Sem movimento numa amostra, a contribuição é zero e o stick volta ao centro na mesma
-  amostra, como no shadPS4.
-- **CNV-003**: A única diferença em relação ao shadPS4 é a normalização por `dt`. O shadPS4 consulta o
-  mouse num timer fixo de 33 ms; o bbport amostra a cada leitura do pad e normaliza.
+- **CNV-001**: `stick`'s contribution enters MIX-003's sum on `mouse_to_joystick`'s stick.
+- **CNV-002**: With no motion in a sample, `target` is zero and `stick` lerps toward center
+  rather than snapping to it — see the history note below for why.
+- **CNV-003**: The 33 ms rescale keeps sensitivity independent of this port's actual frame rate
+  (30-150+ FPS, vs. shadPS4's fixed ~30 Hz poll), so `mouse_movement_params` values tuned for
+  shadPS4 carry over directly.
 
-### 4.5 API entre a biblioteca de GPU e o runtime (`gpu/bbgpu.h`)
+**History note:** this formula went through four iterations before settling here, all driven by
+how the camera actually felt to play, not by a failing test — the earlier ones all passed their
+own unit tests while still feeling wrong in-game:
+
+1. shadPS4's own `EmulateJoystick` clamps speed up to a hard floor (`deadzone_offset * 128`)
+   the instant any motion is seen — a step function. At this port's higher sample rate, a slow
+   mouse move produces per-sample deltas small enough that the camera alternated between 0 and
+   the floor every sample ("micro-jumps").
+2. Replacing the floor with a curve that ramped up smoothly removed the step at zero, but the
+   curve only asymptotically approached the floor, so switching from "use the curve" to "use the
+   line" at the crossing point was still an abrupt jump in value.
+3. Replacing that crossing with a single seamless exponential ramp (scaling the whole response by
+   each sample's *instantaneous* magnitude) removed the remaining jump, but was still stateless:
+   during a fast 180-degree reversal, magnitude dips near zero at the inflection point, resetting
+   the ramp exactly when responsiveness mattered most, and a single fast flick from a standstill
+   always started the ramp at 0.
+4. Filtering mouse *velocity* (dx/dt) with a per-component low-pass filter fixed the reversal
+   stall and slow start, but amplified the mouse's own sampling noise — velocity is a derivative,
+   and dividing small, irregular per-sample deltas by a small `dt` makes the filtered input
+   noisier, not smoother, which read as a jittery/"crispy" camera.
+
+The formula above is the fifth iteration: it moves smoothing from input space (velocity) to
+output space (the stick value the player perceives as camera rotation). The raw-delta formula
+runs unfiltered every call — so it reacts immediately, with no reversal-stall or slow-start risk
+— and only the final stick value is lerped toward that instantaneous target. A lerp has no
+near-zero singularity to stall at, so it damps jitter without reintroducing the earlier problems.
+
+### 4.5 GPU library/runtime API (`gpu/bbgpu.h`)
 
 ```c
 /* Mouse input accumulated by the window thread since the last call; the call resets it.
@@ -364,18 +403,19 @@ void bbgpu_input_configure(int mouse_mode_available, int toggle_scancode, int re
 int bbgpu_input_reload_requested(void);
 ```
 
-- **API-001**: O runtime chama `bbgpu_input_configure` depois de cada carregamento (abertura e F8).
-- **API-002**: `bbgpu_mouse_take` e `bbgpu_input_reload_requested` são seguras em qualquer thread e
-  não chamam o SDL. `BbMouseInput` tem 5 campos que precisam ser lidos e zerados como um grupo
-  consistente (por exemplo, `buttons` sem o `captured` correspondente pode virar um clique fantasma
-  depois que a captura terminou). Por isso o estado interno usa um mutex curto dedicado, não um
-  `std::atomic` por campo — diferente de `width`/`height`/`is_open` em
-  [sdl_window.h:39-40](../../gpu/shim/sdl_window.h#L39-L40), que são independentes entre si.
-  `bbgpu_mouse_take` copia a struct inteira sob esse mutex e zera o acumulado antes de soltá-lo.
-- **API-003**: `tests/test_pad.c` faz `#include` de `runtime_pad.c`, então ganha stubs dessas três
-  funções, controlados pelo teste.
+- **API-001**: The runtime calls `bbgpu_input_configure` after every load (open and F8).
+- **API-002**: `bbgpu_mouse_take` and `bbgpu_input_reload_requested` are safe from any thread and
+  never call SDL. `BbMouseInput`'s 5 fields need to be read and cleared as one consistent group
+  (e.g. `buttons` without its matching `captured` could become a phantom click after capture
+  ends), so the internal state uses one small dedicated mutex, not a `std::atomic` per field —
+  unlike `width`/`height`/`is_open` in
+  [sdl_window.h:39-40](../../gpu/shim/sdl_window.h#L39-L40), which are independent of each other.
+  `bbgpu_mouse_take` copies the whole struct under that mutex and clears the accumulator before
+  releasing it.
+- **API-003**: `tests/test_pad.c` `#include`s `runtime_pad.c`, so it gets test-controlled stubs
+  of these three functions for free.
 
-### 4.6 Módulo de configuração (`src/runtime_input_config.c`)
+### 4.6 Config module (`src/runtime_input_config.c`)
 
 ```c
 typedef struct InputConfig InputConfig;   /* bindings, special lines, hotkeys */
@@ -385,169 +425,178 @@ void input_config_free(InputConfig *config);
 const char *input_config_default_text(void);                /* section 4.3 */
 ```
 
-A estrutura interna fica a critério da implementação, mantendo a separação: parse sem vídeo do SDL
-nem GPU, testável a partir de texto em memória.
+The internal layout is an implementation detail, as long as the separation holds: parsing needs
+no SDL video or GPU, and is testable from in-memory text.
 
-- **GUD-004**: Toda linha é truncada em 255 bytes antes do parse (`fgets` com buffer de 256, como
-  `BbSettings::Load()` em [bbport_settings.cpp](../../gpu/shim/bbport_settings.cpp)). Um nome de
-  saída ou de entrada acima de 47 bytes (margem acima do maior nome real da tabela,
-  `hotkey_toggle_mouse_to_joystick`, com 31) é rejeitado em vez de comparado truncado contra as
-  tabelas da seção 4; nunca um `scanf`/`sscanf` com `%s` sem largura, pelo mesmo motivo de
-  [src/runtime_pad.c:191](../../src/runtime_pad.c#L191) (`fscanf(f,"%63s",token)`, já limitado).
-  Uma linha ou um nome que excede o limite é tratado como inválido (CFG-004: aviso, resto do arquivo
-  continua).
+- **GUD-004**: Every line is truncated to 255 bytes before parsing (`fgets` with a 256-byte
+  buffer, like `BbSettings::Load()` in [bbport_settings.cpp](../../gpu/shim/bbport_settings.cpp)).
+  An output or input name over 47 bytes (margin above the longest real table name,
+  `hotkey_toggle_mouse_to_joystick`, 31 bytes) is rejected rather than compared truncated against
+  the §4 tables; never a width-less `scanf`/`sscanf` `%s`, for the same reason
+  [src/runtime_pad.c:191](../../src/runtime_pad.c#L191) (`fscanf(f,"%63s",token)`) is already
+  bounded. A line or name past the limit is treated as invalid (CFG-004: warning, rest of the
+  file still loads).
 
-## 5. Critérios de aceite
+## 5. Acceptance criteria
 
-- **AC-001**: Dado `cross = j` no `input.ini`, quando o jogo lê o pad com J pressionado, então
-  `BTN_CROSS` está ativo. Sem outra linha de `cross` para teclado, Space não aciona `cross`.
-- **AC-002**: Dada a linha `cross = banana`, então ela é ignorada, há um aviso no carregamento e as
-  demais linhas valem.
-- **AC-003**: Dado `r1 = insert`, então a linha é ignorada como reservada e Insert continua abrindo
-  o menu.
-- **AC-004**: Dado o arquivo padrão e um controle conectado, quando W é pressionado, então `left_y`
-  = 0. O teclado funciona junto do controle.
-- **AC-005**: Dado o stick esquerdo do controle em +72 no X e A pressionado (-127), então `left_x` =
+- **AC-001**: Given `cross = j` in `input.ini`, when the game reads the pad with J held, then
+  `BTN_CROSS` is active. With no other `cross` keyboard line, Space does not trigger `cross`.
+- **AC-002**: Given the line `cross = banana`, then it's ignored, a load-time warning is logged,
+  and the rest of the file still applies.
+- **AC-003**: Given `r1 = insert`, then the line is ignored as reserved and Insert still opens
+  the menu.
+- **AC-004**: Given the default file and a connected controller, when W is pressed, then
+  `left_y` moves accordingly — the keyboard works alongside the controller.
+- **AC-005**: Given the controller's left stick at +72 on X and A held (-127), then `left_x` =
   128 + (72 − 127) = 73.
-- **AC-006**: Dado `cross = circle`, quando o botão leste do controle é pressionado, então
-  `BTN_CROSS` está ativo.
-- **AC-007**: Dado `r1 = r2`, quando o gatilho direito passa de 30, então `BTN_R1` está ativo.
-- **AC-008**: Dado o arquivo padrão do shadPS4 (`GetDefaultInputConfig`, commit `0fe263a`) copiado
-  como `input.ini`, então o jogo carrega sem erro, os bindings de teclado e controle funcionam e só
-  `override_controller_color` gera aviso.
-- **AC-009**: Dado `input.ini` inexistente, quando o jogo abre o pad, então o arquivo é criado com o
-  texto da seção 4.3 e o comportamento é o de CON-005.
-- **AC-010**: Dado `mouse_to_joystick = right`, com a janela em foco e o menu fechado, então o cursor
-  está capturado. Ao abrir o menu (Insert, L3+R3) o cursor volta; ao fechar pelo botão "Fechar" ele
-  some de novo.
-- **AC-011**: Dado `mouse_to_joystick = right`, quando a janela perde o foco, então a captura
-  termina e nenhum botão do mouse fica preso. Ao recuperar o foco, a captura volta.
-- **AC-012**: Dado `mouse_to_joystick = right`, quando F7 é pressionado, então o modo mouse desliga e
-  o cursor é solto; um novo F7 liga e captura de novo.
-- **AC-013**: Sem `mouse_to_joystick`, então o cursor nunca é capturado, F7 não faz nada e cliques
-  não geram entrada.
-- **AC-014**: Com o mouse capturado e o cursor solto por F7, um clique esquerdo não aciona `r1`.
-- **AC-015**: Dado o mesmo movimento em velocidade constante, a contribuição do mouse é a mesma
-  (±2 unidades) com amostras a cada 33 ms e a cada 7 ms.
-- **AC-016**: Dado `mouse_movement_params = 0.5, 1, 0.125` e um deslocamento de 10 px em X em 33 ms,
-  então a contribuição em X é clamp(10 + 16, 64, 128) = 64 (mínimo do `deadzone_offset`), e
-  `right_x` = 192.
-- **AC-017**: Dado `leftjoystick_halfmode = lalt` com W e Alt esquerdo pressionados, então `left_y`
-  = 128 − 63 = 65 (−127 × 0.5, truncado).
-- **AC-018**: Dado o jogo rodando, quando `cross = j` é adicionado ao `input.ini` e F8 é
-  pressionado, então J passa a acionar `cross` sem reiniciar.
-- **AC-019**: Dado `hotkey_toggle_mouse_to_joystick = f6`, então F6 alterna o mouse e F7 fica livre
-  para bindings.
-- **AC-020**: Dado `mousewheelup` ligado a `pad_up`, cada passo da roda gera `BTN_UP` por 33 ms.
-- **AC-021**: `BB_PAD_FILE`, `BB_PAD_RECORD` e `BB_PAD_REPLAY` passam nos testes existentes de
-  `test_pad.c` sem mudança de formato.
-- **AC-022**: `bash build.sh --test` e `python3 -m unittest discover -s tests` passam no Linux, e o
-  build MSYS2 CLANG64 compila sem avisos novos.
+- **AC-006**: Given `cross = circle`, when the controller's east button is pressed, then
+  `BTN_CROSS` is active.
+- **AC-007**: Given `r1 = r2`, when the right trigger passes 30, then `BTN_R1` is active.
+- **AC-008**: Given shadPS4's own default input config (`GetDefaultInputConfig`, commit
+  `0fe263a`) copied in as `input.ini`, then the game loads it without error, keyboard and
+  controller bindings work, and only `override_controller_color` warns.
+- **AC-009**: Given no `input.ini`, when the game opens the pad, then the file is created with
+  §4.3's text and behaves per CON-005.
+- **AC-010**: Given `mouse_to_joystick = right`, with the window focused and the menu closed,
+  then the cursor is captured. Opening the menu (Insert, L3+R3) releases it; closing it via the
+  "Close" button releases it too.
+- **AC-011**: Given `mouse_to_joystick = right`, when the window loses focus, then capture ends
+  and no mouse button stays stuck. Regaining focus re-captures.
+- **AC-012**: Given `mouse_to_joystick = right`, when F7 is pressed, then mouse mode turns off
+  and the cursor is released; another F7 turns it back on and re-captures.
+- **AC-013**: Without `mouse_to_joystick`, the cursor is never captured, F7 does nothing, and
+  clicks produce no input.
+- **AC-014**: With the mouse captured and the cursor released via F7, a left click does not
+  trigger `r1`.
+- **AC-015**: Given the same constant-velocity motion, the mouse's steady-state contribution is
+  the same (within a small tolerance) sampled every 33 ms or every 7 ms — CNV-003's frame-rate
+  independence.
+- **AC-016**: Given `mouse_movement_params = 0.5, 1, 0.125` and a steady 10 px/33 ms motion in X,
+  held long enough for the lerp to settle, then the contribution converges to the unfiltered
+  formula's own value for that magnitude (§4.4) — not necessarily its first-sample value.
+- **AC-017**: Given `leftjoystick_halfmode = lalt` with W and left Alt held, then `left_y` =
+  128 − 63 = 65 (−127 × 0.5, truncated).
+- **AC-018**: Given the game running, when `cross = j` is added to `input.ini` and F8 is pressed,
+  then J starts triggering `cross` without a restart.
+- **AC-019**: Given `hotkey_toggle_mouse_to_joystick = f6`, then F6 toggles the mouse and F7 is
+  free for bindings.
+- **AC-020**: Given `mousewheelup` bound to `pad_up`, each wheel step produces `BTN_UP` for 33 ms.
+- **AC-021**: `BB_PAD_FILE`, `BB_PAD_RECORD` and `BB_PAD_REPLAY` pass `test_pad.c`'s existing
+  tests with no format change.
+- **AC-022**: `bash build.sh --test` and `python3 -m unittest discover -s tests` pass on Linux,
+  and the MSYS2 CLANG64 build compiles with no new warnings.
 
-## 6. Estratégia de testes
+## 6. Test strategy
 
-- **Níveis:** unitário (parse, fórmula do mouse, zona morta, halfmode), integração (`sample()` com
-  controle virtual do SDL e o stub do mouse) e manual (no jogo).
-- **Ferramentas:** testes em C com `assert`, compilados por `build.sh --test`, no padrão de
-  `tests/test_pad.c` (SDL com vídeo `dummy` e `SDL_AttachVirtualJoystick`).
-- **Dados:** texto de configuração em memória (`input_config_parse`) e o arquivo padrão do shadPS4
-  embutido como fixture (`tests/data/shadps4_default_input.ini`) para AC-008.
-- **Unitários:** cada regra de CFG-003 a CFG-006; nomes de NAM-001 a NAM-005; reservas
-  (HOT-001, HOT-002); AC-016 e AC-017 com valores exatos; normalização por `dt` (AC-015).
-- **Integração:** combinação (AC-004, AC-005), remap do controle virtual (AC-006, AC-007), botões e
-  roda pelo stub (AC-014, AC-020), entrada neutra com o menu aberto, releitura (AC-018 com o stub
-  de `bbgpu_input_reload_requested`).
-- **Manual:** AC-010 a AC-013 e AC-019 no Windows e no Linux (X11 e Wayland).
-- **CI:** não há pipeline; os testes rodam localmente antes de cada merge.
+- **Levels:** unit (parsing, mouse formula, deadzone, halfmode), integration (`sample()` with an
+  SDL virtual controller and the mouse stub), and manual (in-game).
+- **Tools:** C tests using `assert`, compiled by `build.sh --test`, matching `tests/test_pad.c`'s
+  existing pattern (`dummy` SDL video driver, `SDL_AttachVirtualJoystick`).
+- **Data:** in-memory config text (`input_config_parse`) and shadPS4's own default file embedded
+  as a fixture (`tests/data/shadps4_default_input.ini`) for AC-008.
+- **Unit:** every rule in CFG-003 to CFG-006; names in NAM-001 to NAM-005; reserved keys
+  (HOT-001, HOT-002); the mouse formula's steady-state and frame-rate-independence behavior
+  (AC-015, AC-016).
+- **Integration:** mixing (AC-004, AC-005), virtual-controller remap (AC-006, AC-007), buttons
+  and wheel via the stub (AC-014, AC-020), neutral input with the menu open, reload (AC-018 via
+  the `bbgpu_input_reload_requested` stub).
+- **Manual:** AC-010 to AC-013 and AC-019 on Windows and Linux (X11 and Wayland).
+- **CI:** no pipeline; tests run locally before each merge.
 
-## 7. Justificativa e contexto
+## 7. Rationale
 
-- **Formato do shadPS4 num arquivo próprio:** quem já joga Bloodborne no shadPS4 reaproveita a
-  configuração. O formato é documentado pela comunidade, e o arquivo separado não é regravado pelo
-  menu do jogo (`BbSettings::Save()` reescreve o `bbport.ini` só com as chaves que conhece).
-- **Tecla única por linha:** cobre os arquivos comuns do shadPS4 sem trazer a lógica de combos e de
-  consumo de teclas, que é a parte mais complexa do `input_handler.cpp`.
-- **Soma de eixos:** paridade com o shadPS4; o mouse entra na mesma soma, em vez de sobrescrever o
-  eixo como lá.
-- **Mouse ligado pela linha do arquivo:** mantém o mouse desligado por padrão e evita ter de apertar
-  F7 a cada sessão.
-- **Cliques só com captura:** clicar para dar foco à janela não pode disparar um ataque.
-- **Normalização para 33 ms:** o jogo lê o pad uma vez por frame (30 a 150 FPS). A normalização
-  torna a sensibilidade independente do FPS e mantém os valores de `mouse_movement_params` do
-  shadPS4.
-- **Captura decidida pela thread da janela a cada frame:** o menu também fecha pela thread de
-  render, e as funções de janela do SDL precisam rodar na thread da janela.
-- **Nomes de tecla do shadPS4 como teclas lógicas:** é a semântica do shadPS4 (`SDLK_*`), e o arquivo
-  importado se comporta igual nos dois. A conversão para scancode no carregamento mantém a leitura
-  por `SDL_GetKeyboardState`.
-- **Q como lock-on, V como Triangle, mouse sem botão do meio, sem tecla de halfmode:** decisões do
-  responsável.
+- **shadPS4's format in a dedicated file:** anyone already playing Bloodborne on shadPS4 reuses
+  their config as-is. The format is community-documented, and a separate file is never rewritten
+  by the game's own menu (`BbSettings::Save()` only rewrites `bbport.ini`'s known keys).
+- **One key per line:** covers typical shadPS4 files without bringing in combo/key-consumption
+  logic, the most complex part of `input_handler.cpp`.
+- **Summed axes:** parity with shadPS4; the mouse adds into the same sum instead of overriding
+  the axis the way some other emulators do.
+- **Mouse enabled by the file's own line:** keeps the mouse off by default and avoids needing F7
+  every session.
+- **Clicks only while captured:** clicking the window to give it focus must never fire an attack.
+- **33 ms rescale:** the game reads the pad once per frame (30-150+ FPS). Rescaling keeps
+  sensitivity independent of frame rate and lets shadPS4's own `mouse_movement_params` values
+  carry over.
+- **Capture decided by the window thread every frame:** the menu can also close from the render
+  thread, and SDL window functions must run on the window thread.
+- **shadPS4's key names as logical keys:** matches shadPS4's own semantics (`SDLK_*`), so an
+  imported file behaves the same in both. Converting to a scancode at load time keeps runtime
+  reads going through `SDL_GetKeyboardState`.
+- **Q as lock-on, V as Triangle, no middle-mouse default, no halfmode key by default:** product
+  decisions, not technical constraints.
+- **Output-space lerp for the mouse formula (§4.4):** see that section's history note — four
+  earlier iterations each fixed one in-game feel problem while introducing another, until
+  smoothing moved from the input (velocity) to the output (stick value).
 
-## 8. Dependências e integrações externas
+## 8. Dependencies and external integrations
 
-### Dependências de plataforma
+### Platform dependencies
 
-- **PLT-001**: SDL3: estado do teclado, controles, eventos de mouse, modo relativo e
-  `SDL_GetScancodeFromKey`. Já é dependência do projeto.
-- **PLT-002**: Linux (X11 e Wayland) e Windows. No Wayland o modo relativo depende do compositor
-  suportar pointer constraints; isso é verificado no teste manual.
+- **PLT-001**: SDL3: keyboard state, controllers, mouse events, relative mode, and
+  `SDL_GetScancodeFromKey`. Already a project dependency.
+- **PLT-002**: Linux (X11 and Wayland) and Windows. On Wayland, relative mode depends on the
+  compositor supporting pointer constraints; checked in the manual test pass.
 
-### Dependências internas
+### Internal dependencies
 
-- **INT-001**: `BbSettings::Path()` (`gpu/shim/bbport_settings.cpp`): define a pasta do `input.ini`
-  (CFG-001). O runtime em C precisa da mesma regra; a forma recomendada é replicá-la em C (é um
-  `getenv` e um `dirname`).
-- **INT-002**: `BbOverlay::CapturesInput()`: menu e caixa de texto para MOU-003.
-- **INT-003**: Launchers: o Windows (`launcher/bbport_launcher_win.py`) tem um botão que abre o
-  `bbport.ini`; um botão equivalente para o `input.ini` fica para a fase 2.
+- **INT-001**: `BbSettings::Path()` (`gpu/shim/bbport_settings.cpp`): defines `input.ini`'s
+  folder (CFG-001). The C runtime needs the same rule; replicating it in C (a `getenv` and a
+  `dirname`) is the simplest approach.
+- **INT-002**: `BbOverlay::CapturesInput()`: menu and text box state for MOU-003.
+- **INT-003**: Launchers: the Windows launcher (`launcher/bbport_launcher_win.py`) has a Controls
+  page that edits `input.ini` directly (keyboard and mouse-button bindings); a Linux launcher
+  equivalent, and in-game remap, remain future work.
 
-### Referência externa
+### External reference
 
-- **EXT-001**: shadPS4 `src/input/input_handler.h` (tabelas de nomes), `input_handler.cpp` (parse,
-  `ApplyDeadzone`, padrão), `input_mouse.cpp` (`EmulateJoystick`), `sdl_window.cpp` (pulso da roda
-  de 33 ms).
+- **EXT-001**: shadPS4 `src/input/input_handler.h` (name tables), `input_handler.cpp` (parsing,
+  `ApplyDeadzone`, defaults), `input_mouse.cpp` (`EmulateJoystick`, the formula this feature's own
+  mouse conversion was originally inspired by — see §4.4's history note for how it diverged),
+  `sdl_window.cpp` (the 33 ms wheel pulse).
 
-## 9. Exemplos e casos de borda
+## 9. Examples and edge cases
 
 ```ini
-# Arquivo do shadPS4 com linhas fora do escopo
+# A shadPS4 file with some out-of-scope lines
 cross = n
-hotkey_screenshot_with_overlays = lalt, f12   # hotkey fora de F7/F8: ignorado com aviso
-key_toggle = f1, w                            # key_toggle: ignorado com aviso
-l2 = lshift, mousewheelup                     # combo: ignorado com aviso
-r1:1 = r1:2                                   # sufixos de controle: aceitos e descartados
+hotkey_screenshot_with_overlays = lalt, f12   # hotkey other than F7/F8: ignored with a warning
+key_toggle = f1, w                            # key_toggle: ignored with a warning
+l2 = lshift, mousewheelup                     # combo: ignored with a warning
+r1:1 = r1:2                                   # controller-index suffixes: accepted and discarded
 mouse_to_joystick = right
 mouse_movement_params = 0.4, 1.5, 0.1
 ```
 
-Casos de borda:
+Edge cases:
 
-- `cross =` (entrada vazia): linha ignorada com aviso.
-- `Cross = SPACE`: válida (CFG-004).
-- Duas linhas iguais (`cross = space` duas vezes): sem efeito extra e sem aviso.
-- `mouse_to_joystick = both`: inválido; a linha é ignorada e o modo mouse não existe.
-- `hotkey_reload_inputs = f9`: F9 já é reservada (HOT-001); a linha é ignorada e F8 continua valendo.
-- `mouse_movement_params = 0.5, 1`: faltam parâmetros; a linha fica no padrão com aviso.
-- Mouse e stick direito do controle ao mesmo tempo: as contribuições somam (MIX-003).
-- F8 com o arquivo quebrado (por exemplo, apagado no meio da edição): vale o CFG-002 (o arquivo é
-  recriado com os padrões) e o log avisa. O jogo nunca fica sem configuração.
-- F8 com uma tecla segurada: a configuração nova vale na próxima amostra; a tecla segurada passa a
-  acionar o que o arquivo novo diz.
+- `cross =` (empty input): line ignored with a warning.
+- `Cross = SPACE`: valid (CFG-004).
+- Two identical lines (`cross = space` twice): no extra effect, no warning.
+- `mouse_to_joystick = both`: invalid; the line is ignored and mouse mode doesn't exist.
+- `hotkey_reload_inputs = f9`: F9 is already reserved (HOT-001); the line is ignored and F8 keeps
+  working.
+- `mouse_movement_params = 0.5, 1`: missing a parameter; the line falls back to the default with
+  a warning.
+- Mouse and the controller's right stick at the same time: contributions sum (MIX-003).
+- F8 with a broken file (e.g. deleted mid-edit): CFG-002 applies (the file is recreated with
+  defaults) and the log warns. The game is never left without a config.
+- F8 with a key held down: the new config applies on the next sample; the held key now triggers
+  whatever the new file says.
 
-## 10. Critérios de validação
+## 10. Validation criteria
 
-- Todos os critérios da seção 5 verificados: os automatizáveis em `build.sh --test`, os manuais com
-  registro no PR.
-- Nenhuma regressão em `tests/test_pad.c` nem em `python3 -m unittest discover -s tests`.
-- README (seção de teclas) e `docs/INPUT.md` com o formato, o layout padrão, como importar do
-  shadPS4, o que é ignorado (CFG-005, CFG-006), as teclas reservadas e a limitação CON-004.
-- Build Linux e Windows compilando.
+- Every criterion in §5 verified: automatable ones in `build.sh --test`, manual ones recorded in
+  the PR.
+- No regression in `tests/test_pad.c` or `python3 -m unittest discover -s tests`.
+- README (keyboard section) and `docs/INPUT.md` cover the format, the default layout, how to
+  import from shadPS4, what's ignored (CFG-005, CFG-006), reserved keys, and the CON-004
+  limitation.
+- Linux and Windows builds both compile.
 
-## 11. Especificações relacionadas e leitura adicional
+## 11. Related specs and further reading
 
-- [keyboard-and-mouse-addition.md](keyboard-and-mouse-addition.md): pedido original.
-- [handout-from-another-llm.md](handout-from-another-llm.md): handoff anterior; esta spec o substitui
-  onde houver conflito.
-- [tasks.md](tasks.md): quebra em tarefas.
-- shadPS4: https://github.com/shadps4-emu/shadPS4 (pasta `src/input/`).
+- [tasks.md](tasks.md): summary of what was built and why.
+- [docs/INPUT.md](../../docs/INPUT.md): the user-facing reference for `input.ini`.
+- shadPS4: https://github.com/shadps4-emu/shadPS4 (`src/input/` folder).
 - SDL3: `SDL_GetScancodeFromKey`, `SDL_SetWindowRelativeMouseMode` (wiki.libsdl.org).
