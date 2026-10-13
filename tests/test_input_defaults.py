@@ -41,6 +41,25 @@ class InputDefaultsTests(unittest.TestCase):
             self.assertIn(line + '\n', text)
         self.assertNotIn('cross = space\n', text)
 
+    def test_wheel_binds_to_a_button(self):
+        self.assertEqual(config.wheel_to_name(120), 'mousewheelup')
+        self.assertEqual(config.wheel_to_name(-240), 'mousewheeldown')
+        self.assertEqual(config.wheel_to_name(120, horizontal=True), 'mousewheelright')
+        self.assertEqual(config.wheel_to_name(-120, horizontal=True), 'mousewheelleft')
+        self.assertIsNone(config.wheel_to_name(0))
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'input.ini'
+            bindings, lines, *_rest = config.load_input_ini(path)
+            first = {key: (values[0] if values else None) for key, values in bindings.items()}
+            first['l1'] = 'mousewheelup'
+            config.save_input_ini(path, first, lines)
+            again = config.load_input_ini(path)[0]
+        self.assertEqual(again['l1'][0], 'mousewheelup')
+        # The game's parser knows the same names.
+        source = (ROOT / 'src/runtime_input_config.c').read_text(encoding='utf-8')
+        for name in config.MOUSE_WHEEL_NAMES:
+            self.assertIn(f'"{name}"', source)
+
 
 if __name__ == '__main__':
     unittest.main()

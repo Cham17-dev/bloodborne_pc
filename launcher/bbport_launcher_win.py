@@ -128,7 +128,7 @@ import bbport_lang  # noqa: E402
 import bbport_trophies as trophies  # noqa: E402
 from bbport_input_config import (KEYBOARD_OUTPUTS, BUTTON_OUTPUTS, STICK_OUTPUTS, OUTPUT_LABELS, keysym_to_name,
                                   button_num_to_name, input_ini_path, load_input_ini, reserved_keys,
-                                  save_input_ini, save_mouse_settings)  # noqa: E402
+                                  save_input_ini, save_mouse_settings, wheel_to_name)  # noqa: E402
 
 LANG = 'en'
 
@@ -1460,10 +1460,12 @@ class Launcher:
                      'Добавляется поверх чувствительности; поднимает минимальную скорость для '
                      'медленных движений, почти не влияя на быстрые.'), 0.0, 1.0)
 
-        self.note(f, _('The scroll wheel is configured in input.ini directly (see docs/INPUT.md) '
-                       '— mouse buttons are bound from the Buttons section above.',
-                       'Колесо мыши настраивается напрямую в input.ini (см. docs/INPUT.md) — '
-                       'кнопки мыши назначаются в разделе «Кнопки» выше.'), top=10)
+        self.note(f, _('Mouse buttons and the scroll wheel are bound in the Buttons section above: '
+                       'press Set… and click or turn the wheel. They work while the mouse is captured '
+                       '(mouse look on).',
+                       'Кнопки мыши и колесо назначаются в разделе «Кнопки» выше: нажмите «Назначить…» '
+                       'и щёлкните или прокрутите колесо. Они работают, пока мышь захвачена '
+                       '(обзор мышью включён).'), top=10)
         self.note(f, _('Changes apply the next time the game starts, or press F8 in-game to '
                        'reload input.ini without restarting.',
                        'Изменения применяются при следующем запуске игры, либо нажмите F8 в '
@@ -1492,7 +1494,8 @@ class Launcher:
         leftbutton" the instant capture starts."""
         is_stick = output in STICK_OUTPUTS
         original_text = set_btn['text']
-        key_label.configure(text=_('Press a key or mouse button…', 'Нажмите клавишу или кнопку мыши…')
+        key_label.configure(text=_('Press a key, a mouse button or turn the wheel…',
+                                   'Нажмите клавишу, кнопку мыши или прокрутите колесо…')
                             if not is_stick else _('Press a key…', 'Нажмите клавишу…'))
         set_btn.configure(state='disabled')
         self.root.grab_set()
@@ -1500,6 +1503,8 @@ class Launcher:
         def finish():
             self.root.unbind_all('<KeyPress>')
             self.root.unbind_all('<ButtonPress>')
+            self.root.unbind_all('<Shift-MouseWheel>')
+            self.root.bind_all('<MouseWheel>', self.wheel)  # the pages scroll again
             self.root.grab_release()
             set_btn.configure(state='normal', text=original_text)
             self.refresh_remap_row(output)
@@ -1541,9 +1546,18 @@ class Launcher:
                 return
             apply(name)
 
+        def on_wheel(event, horizontal=False):
+            name = wheel_to_name(event.delta, horizontal)
+            if name:
+                apply(name)
+            return 'break'
+
         self.root.bind_all('<KeyPress>', on_key)
         if not is_stick:
             self.root.after_idle(lambda: self.root.bind_all('<ButtonPress>', on_click))
+            # While waiting, the wheel binds instead of scrolling the page.
+            self.root.bind_all('<MouseWheel>', on_wheel)
+            self.root.bind_all('<Shift-MouseWheel>', lambda e: on_wheel(e, True))
 
     def build_advanced(self):
         ttk = self.ttk

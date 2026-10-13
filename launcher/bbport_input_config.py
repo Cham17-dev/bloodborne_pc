@@ -52,9 +52,11 @@ KEY_NAMES = (
 )
 KEY_NAMES_SET = set(KEY_NAMES)
 
-# Names runtime_input_config.c's kMouseButtonNames accepts. Only buttons a BUTTON_OUTPUTS slot
-# can take (the wheel is a repeating pulse, not a holdable press, and stays input.ini-only).
-MOUSE_BUTTON_NAMES = ('leftbutton', 'middlebutton', 'rightbutton', 'sidebuttonback', 'sidebuttonforward')
+# Names runtime_input_config.c's kMouseButtonNames and kMouseWheelNames accept: what a
+# BUTTON_OUTPUTS slot can take from the mouse. A wheel step is a short press (33 ms in the game).
+MOUSE_WHEEL_NAMES = ('mousewheelup', 'mousewheeldown', 'mousewheelleft', 'mousewheelright')
+MOUSE_BUTTON_NAMES = ('leftbutton', 'middlebutton', 'rightbutton', 'sidebuttonback', 'sidebuttonforward',
+                      *MOUSE_WHEEL_NAMES)
 MOUSE_BUTTON_NAMES_SET = set(MOUSE_BUTTON_NAMES)
 
 # What a BUTTON_OUTPUTS/STICK_OUTPUTS line's value may be for load_input_ini/save_input_ini to
@@ -113,6 +115,16 @@ def button_num_to_name(num):
     """Tk's event.num from a <ButtonPress> -> our mouse button name, or None for a button number
     Tk reports that bbport has no name for."""
     return TK_BUTTON_NUM_TO_NAME.get(num)
+
+
+def wheel_to_name(delta, horizontal=False):
+    """Tk's <MouseWheel> event.delta -> our wheel name. Windows reports a tilt of the wheel
+    (horizontal scrolling) as <Shift-MouseWheel>, positive to the right."""
+    if not delta:
+        return None
+    if horizontal:
+        return 'mousewheelright' if delta > 0 else 'mousewheelleft'
+    return 'mousewheelup' if delta > 0 else 'mousewheeldown'
 
 
 def input_ini_path(bbport_ini_path):
