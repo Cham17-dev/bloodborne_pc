@@ -497,6 +497,99 @@ void input_config_defaults(InputConfig *out) {
     input_config_parse(out, input_config_default_text());
 }
 
+/* ---- Default file text (section 4.3) -------------------------------------------------- */
+
+/* In sections: input_config_load adds the controller and keyboard ones to a file without a
+ * single binding of that kind. launcher/bbport_input_config.py has a copy of the whole text
+ * (tests/test_input_defaults.py checks that they match). */
+#define DEFAULT_HEADER \
+"# bbport input (shadPS4 syntax: output = input, one input per line).\n" \
+"# A shadPS4 input config (user/input_config/CUSA03173.ini) can be copied over this file.\n" \
+"# F7 toggles the mouse, F8 reloads this file.\n" \
+"\n"
+
+#define DEFAULT_KEYBOARD \
+"# Keyboard\n" \
+"cross = space\n" \
+"circle = lshift\n" \
+"square = e\n" \
+"triangle = v\n" \
+"l1 = 1\n" \
+"r1 = 3\n" \
+"l2 = r\n" \
+"r2 = f\n" \
+"l3 = z\n" \
+"r3 = q\n" \
+"r3 = c\n" \
+"options = enter\n" \
+"pad_up = i\n" \
+"pad_down = k\n" \
+"pad_left = j\n" \
+"pad_right = l\n" \
+"touchpad_left = tab\n" \
+"touchpad_right = backspace\n" \
+"\n" \
+"axis_left_x_minus = a\n" \
+"axis_left_x_plus = d\n" \
+"axis_left_y_minus = w\n" \
+"axis_left_y_plus = s\n" \
+"axis_right_x_minus = left\n" \
+"axis_right_x_plus = right\n" \
+"axis_right_y_minus = up\n" \
+"axis_right_y_plus = down\n" \
+"\n"
+
+#define DEFAULT_HALFMODE \
+"# Hold to halve the left stick (walk): uncomment and pick a key\n" \
+"# leftjoystick_halfmode = lalt\n" \
+"\n"
+
+#define DEFAULT_MOUSE \
+"# Mouse (uncomment mouse_to_joystick to turn it on; buttons work only while captured)\n" \
+"# mouse_to_joystick = right\n" \
+"mouse_movement_params = 0.5, 1, 0.125\n"
+
+#define DEFAULT_MOUSE_BUTTONS \
+"r1 = leftbutton\n" \
+"r2 = rightbutton\n" \
+"circle = sidebuttonback\n" \
+"square = sidebuttonforward\n" \
+"\n"
+
+#define DEFAULT_CONTROLLER \
+"# Controller\n" \
+"cross = cross\n" \
+"circle = circle\n" \
+"square = square\n" \
+"triangle = triangle\n" \
+"l1 = l1\n" \
+"r1 = r1\n" \
+"l2 = l2\n" \
+"r2 = r2\n" \
+"l3 = l3\n" \
+"r3 = r3\n" \
+"options = options\n" \
+"touchpad_left = back\n" \
+"pad_up = pad_up\n" \
+"pad_down = pad_down\n" \
+"pad_left = pad_left\n" \
+"pad_right = pad_right\n" \
+"axis_left_x = axis_left_x\n" \
+"axis_left_y = axis_left_y\n" \
+"axis_right_x = axis_right_x\n" \
+"axis_right_y = axis_right_y\n" \
+"\n"
+
+#define DEFAULT_HOTKEYS \
+"# Hotkeys\n" \
+"hotkey_toggle_mouse_to_joystick = f7\n" \
+"hotkey_reload_inputs = f8\n"
+
+const char *input_config_default_text(void) {
+    return DEFAULT_HEADER DEFAULT_KEYBOARD DEFAULT_HALFMODE DEFAULT_MOUSE DEFAULT_MOUSE_BUTTONS
+           DEFAULT_CONTROLLER DEFAULT_HOTKEYS;
+}
+
 /* ---- Path and file I/O (CFG-001, CFG-002) --------------------------------------------- */
 
 int input_config_path(char *out, size_t out_size) {
@@ -520,6 +613,18 @@ int input_config_path(char *out, size_t out_size) {
     if (dir_len) { memcpy(out, config, dir_len); out[dir_len] = '/'; strcpy(out + dir_len + 1, suffix); }
     else strcpy(out, suffix);
     return 1;
+}
+
+/* Whether any game output has a controller (1) or keyboard (0) binding. */
+static int HasBinding(const InputConfig *cfg, int controller) {
+    for (int o = 0; o < OUT_COUNT; ++o) {
+        for (int i = 0; i < cfg->table.binding_count[o]; ++i) {
+            InputKind kind = cfg->table.bindings[o][i].kind;
+            if (controller ? kind == IN_CBUTTON || kind == IN_AXIS || kind == IN_AXIS_HALF : kind == IN_KEY)
+                return 1;
+        }
+    }
+    return 0;
 }
 
 int input_config_load(InputConfig *out, const char *path) {
@@ -555,81 +660,30 @@ int input_config_load(InputConfig *out, const char *path) {
     if (!text) { text = malloc(1); if (!text) { input_config_defaults(out); return 0; } len = 0; }
     text[len] = '\0';
     input_config_parse(out, text);
+
+    /* The 1.7 launcher, saving its Controls page before the game had made this file, wrote
+     * only the lines it edits: the controller (and often the keyboard) then did nothing. A
+     * file without a single controller or keyboard binding gets the default ones back, in
+     * the file too, so the launcher shows them. */
+    int no_controller = !HasBinding(out, 1), no_keyboard = !HasBinding(out, 0);
+    if (no_controller || no_keyboard) {
+        static const char note[] = "# Added by bbport: this file had no controller or keyboard lines\n";
+        const char *lead = len && text[len - 1] != '\n' ? "\n\n" : "\n";
+        const char *controller = no_controller ? DEFAULT_CONTROLLER : "";
+        const char *keyboard = no_keyboard ? DEFAULT_KEYBOARD : "";
+        size_t added = strlen(lead) + strlen(note) + strlen(controller) + strlen(keyboard);
+        char *merged = malloc(len + added + 1);
+        if (merged) {
+            memcpy(merged, text, len);
+            sprintf(merged + len, "%s%s%s%s", lead, note, controller, keyboard);
+            input_config_parse(out, merged);
+            FILE *a = fopen(path, "ab");
+            if (a) { fputs(merged + len, a); fclose(a); }
+            fprintf(stderr, "Input config: %s had no %s bindings; added the defaults\n", path,
+                    no_controller && no_keyboard ? "controller or keyboard" : no_controller ? "controller" : "keyboard");
+            free(merged);
+        }
+    }
     free(text);
     return 1;
-}
-
-/* ---- Default file text (section 4.3) -------------------------------------------------- */
-
-const char *input_config_default_text(void) {
-    return
-"# bbport input (shadPS4 syntax: output = input, one input per line).\n"
-"# A shadPS4 input config (user/input_config/CUSA03173.ini) can be copied over this file.\n"
-"# F7 toggles the mouse, F8 reloads this file.\n"
-"\n"
-"# Keyboard\n"
-"cross = space\n"
-"circle = lshift\n"
-"square = e\n"
-"triangle = v\n"
-"l1 = 1\n"
-"r1 = 3\n"
-"l2 = r\n"
-"r2 = f\n"
-"l3 = z\n"
-"r3 = q\n"
-"r3 = c\n"
-"options = enter\n"
-"pad_up = i\n"
-"pad_down = k\n"
-"pad_left = j\n"
-"pad_right = l\n"
-"touchpad_left = tab\n"
-"touchpad_right = backspace\n"
-"\n"
-"axis_left_x_minus = a\n"
-"axis_left_x_plus = d\n"
-"axis_left_y_minus = w\n"
-"axis_left_y_plus = s\n"
-"axis_right_x_minus = left\n"
-"axis_right_x_plus = right\n"
-"axis_right_y_minus = up\n"
-"axis_right_y_plus = down\n"
-"\n"
-"# Hold to halve the left stick (walk): uncomment and pick a key\n"
-"# leftjoystick_halfmode = lalt\n"
-"\n"
-"# Mouse (uncomment mouse_to_joystick to turn it on; buttons work only while captured)\n"
-"# mouse_to_joystick = right\n"
-"mouse_movement_params = 0.5, 1, 0.125\n"
-"r1 = leftbutton\n"
-"r2 = rightbutton\n"
-"circle = sidebuttonback\n"
-"square = sidebuttonforward\n"
-"\n"
-"# Controller\n"
-"cross = cross\n"
-"circle = circle\n"
-"square = square\n"
-"triangle = triangle\n"
-"l1 = l1\n"
-"r1 = r1\n"
-"l2 = l2\n"
-"r2 = r2\n"
-"l3 = l3\n"
-"r3 = r3\n"
-"options = options\n"
-"touchpad_left = back\n"
-"pad_up = pad_up\n"
-"pad_down = pad_down\n"
-"pad_left = pad_left\n"
-"pad_right = pad_right\n"
-"axis_left_x = axis_left_x\n"
-"axis_left_y = axis_left_y\n"
-"axis_right_x = axis_right_x\n"
-"axis_right_y = axis_right_y\n"
-"\n"
-"# Hotkeys\n"
-"hotkey_toggle_mouse_to_joystick = f7\n"
-"hotkey_reload_inputs = f8\n";
 }

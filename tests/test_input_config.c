@@ -328,6 +328,40 @@ static void TestLoadCreatesMissingFile(void) {
     unlink(path);
 }
 
+/* What the 1.7 launcher wrote when its Controls page was saved before the game had made the
+ * file: mouse lines only. Loading it adds the default controller and keyboard lines, to the
+ * file as well; a file with both kinds is left as it is. */
+static void TestLoadRestoresMissingControllerAndKeyboard(void) {
+    char path[] = "/tmp/bbport-input-test-XXXXXX";
+    int fd = mkstemp(path);
+    assert(fd >= 0);
+    static const char mouse_only[] = "mouse_to_joystick = right\nmouse_movement_params = 0.5, 1, 0.125";
+    assert(write(fd, mouse_only, strlen(mouse_only)) == (ssize_t)strlen(mouse_only));
+    close(fd);
+    InputConfig cfg;
+    assert(input_config_load(&cfg, path));
+    assert(HasCButtonBinding(&cfg, OUT_CROSS, SDL_GAMEPAD_BUTTON_SOUTH));
+    assert(HasKeyBinding(&cfg, OUT_CROSS, SDL_SCANCODE_SPACE));
+    assert(cfg.mouse.stick == 2);
+
+    FILE *f = fopen(path, "rb");
+    assert(f);
+    char text[8192];
+    size_t n = fread(text, 1, sizeof(text) - 1, f);
+    fclose(f);
+    text[n] = '\0';
+    assert(!strncmp(text, mouse_only, strlen(mouse_only)));
+    assert(strstr(text, "cross = cross\n") && strstr(text, "cross = space\n"));
+
+    /* Loaded again: nothing more is added. */
+    assert(input_config_load(&cfg, path));
+    f = fopen(path, "rb");
+    assert(f);
+    assert(fread(text, 1, sizeof(text) - 1, f) == n);
+    fclose(f);
+    unlink(path);
+}
+
 /* CFG-001: BB_INPUT_CONFIG wins over a bbport.ini-derived path. */
 static void TestPathPrefersEnvOverride(void) {
     char out[512];
@@ -371,6 +405,7 @@ int main(void) {
     TestDefaultTextParsesCleanly();
     TestShadps4DefaultFileImports();
     TestLoadCreatesMissingFile();
+    TestLoadRestoresMissingControllerAndKeyboard();
     TestPathPrefersEnvOverride();
     puts("test_input_config: all tests passed");
     return 0;

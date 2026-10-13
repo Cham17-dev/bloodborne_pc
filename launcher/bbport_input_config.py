@@ -124,6 +124,82 @@ def input_ini_path(bbport_ini_path):
     return Path(bbport_ini_path).parent / 'input.ini'
 
 
+# The file the game writes when there is none (src/runtime_input_config.c,
+# input_config_default_text; tests/test_input_defaults.py checks that they match). The
+# launcher starts from it too, or saving the Controls page before the first game start would
+# write only the edited lines, and the controller would then do nothing.
+DEFAULT_INPUT_INI = '''\
+# bbport input (shadPS4 syntax: output = input, one input per line).
+# A shadPS4 input config (user/input_config/CUSA03173.ini) can be copied over this file.
+# F7 toggles the mouse, F8 reloads this file.
+
+# Keyboard
+cross = space
+circle = lshift
+square = e
+triangle = v
+l1 = 1
+r1 = 3
+l2 = r
+r2 = f
+l3 = z
+r3 = q
+r3 = c
+options = enter
+pad_up = i
+pad_down = k
+pad_left = j
+pad_right = l
+touchpad_left = tab
+touchpad_right = backspace
+
+axis_left_x_minus = a
+axis_left_x_plus = d
+axis_left_y_minus = w
+axis_left_y_plus = s
+axis_right_x_minus = left
+axis_right_x_plus = right
+axis_right_y_minus = up
+axis_right_y_plus = down
+
+# Hold to halve the left stick (walk): uncomment and pick a key
+# leftjoystick_halfmode = lalt
+
+# Mouse (uncomment mouse_to_joystick to turn it on; buttons work only while captured)
+# mouse_to_joystick = right
+mouse_movement_params = 0.5, 1, 0.125
+r1 = leftbutton
+r2 = rightbutton
+circle = sidebuttonback
+square = sidebuttonforward
+
+# Controller
+cross = cross
+circle = circle
+square = square
+triangle = triangle
+l1 = l1
+r1 = r1
+l2 = l2
+r2 = r2
+l3 = l3
+r3 = r3
+options = options
+touchpad_left = back
+pad_up = pad_up
+pad_down = pad_down
+pad_left = pad_left
+pad_right = pad_right
+axis_left_x = axis_left_x
+axis_left_y = axis_left_y
+axis_right_x = axis_right_x
+axis_right_y = axis_right_y
+
+# Hotkeys
+hotkey_toggle_mouse_to_joystick = f7
+hotkey_reload_inputs = f8
+'''
+
 # shadPS4/bbport defaults when mouse_movement_params is absent (spec section 4.2 / 4.3).
 MOUSE_SETTINGS_DEFAULTS = {'enabled': False, 'stick': 'right',
                             'deadzone_offset': 0.5, 'speed': 1.0, 'speed_offset': 0.125}
@@ -168,11 +244,13 @@ def load_input_ini(path):
     just whether the mouse is live right now -- uncommenting it is exactly what the "Enable
     mouse look" checkbox does in save_input_ini.
     """
-    bindings, lines = {key: [] for key in KEYBOARD_OUTPUTS}, []
+    bindings = {key: [] for key in KEYBOARD_OUTPUTS}
     try:
         lines = Path(path).read_text(encoding='utf-8').splitlines()
+    except FileNotFoundError:
+        lines = DEFAULT_INPUT_INI.splitlines()
     except OSError:
-        pass
+        lines = []
     toggle_key, reload_key = 'f7', 'f8'
     mouse = dict(MOUSE_SETTINGS_DEFAULTS)
     for raw in lines:
