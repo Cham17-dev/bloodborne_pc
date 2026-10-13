@@ -374,7 +374,7 @@ void Menu() {
     ImGui::SameLine();
     // One ID for both labels ("###bb_quit"): with a new ID the button lost the pad's or keyboard's
     // focus at the first press, which disarmed it at once.
-    if (ImGui::Button(quit_armed ? "Нажмите ещё раз для выхода###bb_quit" : "Выйти из игры###bb_quit")) {
+    if (ImGui::Button(quit_armed ? "Press again to quit###bb_quit" : "Quit game###bb_quit")) {
         if (quit_armed) {
             SDL_Event quit{};
             quit.type = SDL_EVENT_QUIT;
