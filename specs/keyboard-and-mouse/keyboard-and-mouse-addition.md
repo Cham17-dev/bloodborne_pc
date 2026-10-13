@@ -1,2 +1,0 @@
--tela de remap dos controles do teclado
--adiçao de controle com o mouse estilo no shadps4
