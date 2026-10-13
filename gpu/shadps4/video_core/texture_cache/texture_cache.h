@@ -404,6 +404,10 @@ private:
     u64 gc_evictions = 0, gc_downloads = 0; ///< bbport: pressure report
     u64 gc_kept = 0, gc_kept_bytes = 0; ///< bbport: old images the latest pass could not evict
     std::chrono::steady_clock::time_point gc_report_time{};
+    /// bbport: registered images and their guest size, for the once-a-minute memory line.
+    u64 image_count = 0, image_bytes = 0;
+    std::chrono::steady_clock::time_point memory_report_time{};
+    void ReportMemory();
     /// bbport: gc_tick at each of the last 64 seconds (GarbageCollectImages).
     std::array<u64, 64> gc_tick_at_second{};
     u64 gc_second = 0;

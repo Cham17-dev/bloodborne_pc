@@ -3,6 +3,7 @@
 
 #include <xxhash.h>
 
+#include "bbport_process_memory.h"
 #include "bbport_toggles.h"
 #include "common/assert.h"
 #include "common/debug.h"
@@ -888,6 +889,8 @@ void TextureCache::RegisterImage(ImageId image_id) {
     image.flags |= ImageFlagBits::Registered;
     ++registry_generation;
     total_used_memory += Common::AlignUp(image.info.guest_size, 1024);
+    ++image_count;
+    image_bytes += image.info.guest_size;
     image.lru_id = lru_cache.Insert(image_id, gc_tick);
     image.lru_touched_tick = gc_tick;
     ForEachPage(image.info.guest_address, image.info.guest_size,
@@ -902,6 +905,8 @@ void TextureCache::UnregisterImage(ImageId image_id) {
     ++registry_generation;
     lru_cache.Free(image.lru_id);
     total_used_memory -= Common::AlignUp(image.info.guest_size, 1024);
+    --image_count;
+    image_bytes -= image.info.guest_size;
     ForEachPage(image.info.guest_address, image.info.guest_size, [this, image_id](u64 page) {
         const auto page_it = page_table.find(page);
         if (page_it == nullptr) {
@@ -1026,6 +1031,48 @@ void TextureCache::UntrackImageTail(ImageId image_id) {
     tracker.UpdatePageWatchers<false>(addr, size);
 }
 
+// bbport: once a minute, what the game holds: VRAM, the texture cache, the old GPU-written
+// tiled images the collector cannot free, and the process's own memory. A log ending in a
+// crash after hours of play then shows what was growing.
+void TextureCache::ReportMemory() {
+    const auto now = std::chrono::steady_clock::now();
+    if (now - memory_report_time < std::chrono::seconds(60)) {
+        return;
+    }
+    const bool first = memory_report_time == std::chrono::steady_clock::time_point{};
+    memory_report_time = now;
+    if (first) {
+        return; // a minute after the first submission, not at once
+    }
+    // Unused for a minute: the tick at the start of the second a minute ago.
+    const u64 minute_tick = gc_tick_at_second[(gc_second - 60) % gc_tick_at_second.size()];
+    u64 idle = 0, idle_bytes = 0, kept = 0, kept_bytes = 0;
+    {
+        std::scoped_lock lock{mutex};
+        lru_cache.ForEachItemBelow(minute_tick, [&](ImageId image_id) {
+            const auto& image = slot_images[image_id];
+            ++idle;
+            idle_bytes += image.info.guest_size;
+            if (image.info.IsTiled() && image.SafeToDownload()) {
+                ++kept;
+                kept_bytes += image.info.guest_size;
+            }
+        });
+    }
+    const u64 vram = instance.CanReportMemoryUsage() ? instance.GetDeviceMemoryUsage() : 0;
+    const auto process = BbProcessMemory::Get();
+    std::printf("Memory: VRAM %llu MiB; textures %llu (%llu MiB), unused for a minute %llu "
+                "(%llu MiB), of them GPU-written tiled %llu (%llu MiB); process %llu MiB "
+                "committed, %llu MiB in RAM\n",
+                (unsigned long long)(vram >> 20), (unsigned long long)image_count,
+                (unsigned long long)(image_bytes >> 20), (unsigned long long)idle,
+                (unsigned long long)(idle_bytes >> 20), (unsigned long long)kept,
+                (unsigned long long)(kept_bytes >> 20),
+                (unsigned long long)(process.private_bytes >> 20),
+                (unsigned long long)(process.working_set >> 20));
+    std::fflush(stdout);
+}
+
 void TextureCache::GarbageCollectImages() {
     if (instance.CanReportMemoryUsage()) {
         total_used_memory = instance.GetDeviceMemoryUsage();
@@ -1061,6 +1108,7 @@ void TextureCache::GarbageCollectImages() {
         gc_second = second;
         gc_tick_at_second[second % gc_tick_at_second.size()] = gc_tick;
     }
+    ReportMemory();
     if (total_used_memory < trigger_gc_memory) {
         return;
     }
