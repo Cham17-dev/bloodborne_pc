@@ -36,6 +36,7 @@ extern "C" {
 // runtime_memory.c
 int runtime_memory_is_mapped(uintptr_t address, uint64_t size);
 int runtime_memory_write_backing(uintptr_t address, const void* data, uint64_t size);
+void runtime_memory_read_backing(uintptr_t address, void* data, uint64_t size);
 uint64_t runtime_memory_clamp(uintptr_t address, uint64_t size);
 int runtime_memory_region(uintptr_t address, uintptr_t* start, uintptr_t* end, int* mapped);
 void runtime_memory_gpu_protect(uintptr_t address, uint64_t size, int read, int write);
@@ -106,6 +107,15 @@ u64 MemoryManager::ClampRangeSize(VAddr virtual_addr, u64 size) {
     return runtime_memory_clamp(virtual_addr, size);
 }
 static void CopySparseSerial(VAddr source, u8* dest, u64 size) {
+    // BB_READBACKS=2 protects GPU-written pages against reads: the copy threads and recorders
+    // read through the backing view, as a read fault on them would wait for the GPU thread,
+    // which waits for them.
+    static const bool precise =
+        EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Precise;
+    if (precise) {
+        runtime_memory_read_backing(source, dest, size);
+        return;
+    }
     while (size) {
         uintptr_t start = 0, end = 0;
         int mapped = 0;
