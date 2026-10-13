@@ -65,6 +65,16 @@ if [[ -f out/bbport_dlss.dll && -f out/nvngx_dlss.dll ]]; then
 else
     echo "DLSS bridge not built (packaging/windows/build_dlss.sh): no DLSS in this package" >&2
 fi
+# The Hunter's Dream co-op pool: bbbridge by MaskZeus (GPL-3.0-or-later, source in bbbridge/),
+# built with MSVC by packaging/windows/build_bbbridge.sh.
+if [[ -f out/bbbridge-cli.exe ]]; then
+    cp out/bbbridge-cli.exe "$dest/bin/"
+    mkdir -p "$dest/licenses"
+    cp bbbridge/LICENSE "$dest/licenses/bbbridge-LICENSE.txt"
+    cp bbbridge/THIRD_PARTY_NOTICES.txt "$dest/licenses/bbbridge-THIRD_PARTY_NOTICES.txt"
+else
+    echo "bbbridge not built (packaging/windows/build_bbbridge.sh): no Hunter's Dream pool in this package" >&2
+fi
 # Online co-op: the libraries compiled in (wepoll, cpp-httplib) and the MSYS2 DLLs it loads.
 mkdir -p "$dest/licenses"
 cp gpu/third_party/wepoll/LICENSE "$dest/licenses/wepoll-LICENSE.txt"

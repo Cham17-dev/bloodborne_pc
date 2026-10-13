@@ -92,6 +92,13 @@ Everyone you want to play with needs game version 1.09 and the same co-op server
 shadNet server (from the [shadp2p](https://github.com/Wozzardman/shadp2p) project) works too:
 put its address in **Server address**.
 
+To play with the players of bbhost (The Hunter's Dream's own PC port) instead, choose
+**The Hunter's Dream** under **Co-op pool** and press **Sign in with Discord**: no shadNet
+account is needed. The game then goes online through
+[bbbridge](https://github.com/MaskZeus/bbbridge-bbport-online-tool) by MaskZeus, which the
+launcher starts with the game. Its account file is `user\bbbridge\bbbridge_state.json`: never
+share it.
+
 ## Known issues
 
 - Some AMD graphics cards may still crash when the game world loads; please send
@@ -115,7 +122,8 @@ Crashes on AMD RDNA2 cards, slow FSR 4 and online errors are collected in
 
 See [packaging/windows/README.md](packaging/windows/README.md): MSYS2 CLANG64, `bash build.sh`,
 then `bash packaging/windows/package.sh`. DLSS is built separately with
-`packaging/windows/build_dlss.sh`.
+`packaging/windows/build_dlss.sh`, bbbridge with `packaging/windows/build_bbbridge.sh` (both need
+Visual Studio 2022).
 
 ## Credits
 
@@ -126,7 +134,10 @@ renderer. The original README is in [docs/original-readme](docs/original-readme/
 Online play uses the network and PSN code of [shadp2p](https://github.com/Wozzardman/shadp2p)
 by Wozzardman (the shadPS4 Bloodborne co-op project), the shadNet server of the
 [shadPS4](https://shadps4.net) team, and [The Hunter's Dream](https://thehuntersdream.com) server
-by droogie and its team.
+by droogie and its team. The Hunter's Dream co-op pool goes through
+[bbbridge](https://github.com/MaskZeus/bbbridge-bbport-online-tool) by MaskZeus (GPL-3.0-or-later,
+its source in [bbbridge/](bbbridge)), built on the protocol of
+[bbhost](https://github.com/droogie/bbhost) by droogie.
 
 Also used: [FSR-Vulkan](https://github.com/FireBurn/FSR-Vulkan) and the AMD FidelityFX SDK
 (FSR), FSR 4 assets from [FireBurn/Q2RTX](https://github.com/FireBurn/Q2RTX), the DLSS bridge
