@@ -1503,8 +1503,11 @@ void TemporalUpscaler::RunUiOnly(VideoCore::ImageId color_id, VideoCore::ImageId
     };
     cmd.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
     // Ultrawide: menus without a scene draw their backdrop over the 1920-wide stage only and
-    // leave the game's grey clear color beside it. Those columns are black instead.
-    const float side = 0.5f * (1.0f - 1920.0f / float(UiComposition::Canvas()[0]));
+    // leave the game's grey clear color beside it. Those columns are black instead. A frame
+    // with a scene (G-buffer depth this frame) fills the whole width: upscaler off, or a menu
+    // over the world.
+    const bool scene = !camera_motion.Enabled() || camera_motion.Depth();
+    const float side = scene ? 0.0f : 0.5f * (1.0f - 1920.0f / float(UiComposition::Canvas()[0]));
     const s32 src_side = s32(std::lround(source_width * side));
     const s32 dst_side = s32(std::lround(ui_width * side));
     if (dst_side > 0) {
