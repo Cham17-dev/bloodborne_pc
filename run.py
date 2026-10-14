@@ -290,10 +290,32 @@ def main():
                  'game when the gestures menu opens (the port has its own 60 fps): copy eboot.bin '
                  'from a clean dump of the 1.09 update into the game folder, replacing this one. '
                  'BB_SKIP_GAME_CHECK=1 starts it anyway.')
+    sys.path.insert(0, str(PORT / 'scripts'))
+    from patches import OUTPUT_SIZE, game_app_version, hud_canvas, output_size, read_settings
+    # Quit to Desktop (bbport.ini quit_to_desktop, patches.py): the entries' names in the menu
+    # texts of every language and six-row title and System menus, also a layer below the mods
+    # (before the ultrawide one, which builds on its menu movies).
+    text_layer = out / 'quit_text'
+    shutil.rmtree(text_layer, ignore_errors=True)
+    if ini_value(config, 'quit_to_desktop') != '0' and (game_app_version(game) in (None, '01.09') or env.get('BB_FORCE_PATCHES')):
+        run_script('quit_menu.py', game, '--out', text_layer)
+    # Ultrawide outputs: the menu movies with full-screen backdrops widened and the HUD's corner
+    # groups toward the screen edges (bbport.ini hud_position, 0 centred .. 100 edges), a layer
+    # below the mods. Only for the
+    # 01.09 game, whose camera and HUD canvas the patches widen (patches.py hud_canvas).
+    hud_layer = out / 'hud_layout'
+    shutil.rmtree(hud_layer, ignore_errors=True)
+    canvas = hud_canvas(output_size(read_settings(Path(config))))
+    if canvas != OUTPUT_SIZE and (game_app_version(game) in (None, '01.09') or env.get('BB_FORCE_PATCHES')):
+        position = ini_value(config, 'hud_position') or '100'
+        run_script('hud_layout.py', game, '--out', hud_layer, '--canvas-width', canvas[0],
+                   '--position', max(0, min(100, int(position) if position.isdigit() else 100)) / 100,
+                   '--source', text_layer)
     game = Path(run_script('mods.py', game, '--out', out,
                            '--mods-dir', env.get('BB_MODS_DIR', data / 'mods'),
                            '--config', env.get('BB_MODS_CONFIG', data / 'mods.json'),
-                           '--enabled', env.get('BB_MODS_ENABLED', '1'), capture=True).strip())
+                           '--enabled', env.get('BB_MODS_ENABLED', '1'),
+                           '--layer', text_layer, '--layer', hud_layer, capture=True).strip())
     mod_view = game if game.resolve() != original_game else None
     bridge = None
     try:
@@ -345,6 +367,15 @@ def main():
                                         text=True, creationflags=no_console())
                 live = result.stdout.strip() if result.returncode == 0 else '0'
             live = '1' if live == '1' or not patched else '0'
+            # Ultrawide: the camera and HUD need the startup patch (patches.py hud_canvas).
+            from patches import OUTPUT_SIZE, hud_canvas
+            canvas = hud_canvas(tuple(int(v) for v in scaled_output.split('x')))
+            if patched and canvas != OUTPUT_SIZE:
+                live = '0'
+                env['BB_UI_RES'] = f'{canvas[0]}x{canvas[1]}'
+                print(f'Output {scaled_output}: ultrawide, HUD {env["BB_UI_RES"]}')
+        if live == '1' or not scaled_output:
+            env.pop('BB_UI_RES', None)
         if live == '1':
             print(f'Output {scaled_output}: live resolution changes (live_resolution=0: startup patch)')
         elif scaled_output:
