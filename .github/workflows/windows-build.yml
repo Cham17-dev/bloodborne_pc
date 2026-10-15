@@ -1,0 +1,63 @@
+# Builds the Windows package (Bloodborne.exe + bin/) on every push to the windows branch.
+# The result is downloadable from the run's page, under "Artifacts".
+name: Windows build
+
+on:
+  push:
+    branches: [windows, 'hdr*']
+  workflow_dispatch:
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Windows Python (for the launcher's PyInstaller freeze)
+        id: py
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: MSYS2 CLANG64
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: git patch
+          pacboy: >-
+            toolchain:p cmake:p ninja:p pkgconf:p python:p
+            vulkan-headers:p vulkan-loader:p vulkan-memory-allocator:p glslang:p
+            sdl3:p fmt:p boost:p robin-map:p xxhash:p ffmpeg:p zydis:p
+            spirv-tools:p spirv-headers:p spirv-cross:p
+            protobuf:p openssl:p zlib:p miniupnpc:p nlohmann-json:p
+
+      - name: Build
+        run: |
+          export MSYS2_ROOT="$(cygpath -u '${{ steps.msys2.outputs.msys2-location }}')"
+          bash build.sh
+
+      - name: Package
+        run: |
+          export MSYS2_ROOT="$(cygpath -u '${{ steps.msys2.outputs.msys2-location }}')"
+          export WINPYTHON="$(cygpath -u '${{ steps.py.outputs.python-path }}')"
+          bash packaging/windows/package.sh
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v4
+        with:
+          name: bbport-windows-${{ github.ref_name }}-${{ github.run_number }}
+          path: out/stage/bbport-windows/
+          retention-days: 14
