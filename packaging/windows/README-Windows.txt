@@ -82,9 +82,10 @@ Mods and patches
 - Third-party patches: shadPS4/GoldHEN XML files for 1.09 in patches\.
 
 Credits
-- Online play: shadp2p by Wozzardman (https://github.com/Wozzardman/shadp2p), shadNet by the
-  shadPS4 team, The Hunter's Dream by droogie, bbbridge by MaskZeus
-  (https://github.com/MaskZeus/bbbridge-bbport-online-tool, GPL-3.0-or-later).
+- Online play: shadPS4 0.20's network code and shadNet by the shadPS4 team, put together by
+  Awaken (https://github.com/Awakenchan/BloodBorneButPc) with the backend for The Hunter's Dream
+  from bbhost by droogie (GPL-3.0-or-later); thanks to Metr1k and The Hunter's Dream team.
+  The first online version was built on shadp2p by Wozzardman.
 - bbport (the Linux port this is built on): https://github.com/deadinside28/bloodborne_pc
 - Windows port: https://github.com/Supermedo/bloodborne_pc
 - The full list of projects and patch authors is in README.md (Credits and licenses).

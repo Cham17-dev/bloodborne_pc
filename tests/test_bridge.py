@@ -19,44 +19,37 @@ sys.path.insert(0, str(ROOT / 'launcher'))
 launcher = load('bb_launcher', 'launcher/bbport_launcher_win.py')
 
 
-class BridgeTests(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp.cleanup)
-        self.user = Path(self.temp.name)
+class HuntersDreamTests(unittest.TestCase):
+    """The Hunter's Dream pool: the engine's own backend (BB_NET_BACKEND=thd)."""
 
-    def test_config_points_at_the_account_file_in_the_saves(self):
-        folder, config = run.bridge_files(self.user)
-        self.assertEqual(folder, self.user / 'bbbridge')
-        data = json.loads(config.read_text(encoding='utf-8'))
-        self.assertEqual(data['state_file'], str(folder / 'bbbridge_state.json'))
-        # The launcher writes the same file.
-        self.assertEqual(launcher.bridge_config(str(self.user))[1], config)
+    def test_run_sets_the_backend_and_http_overrides(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env = {'BB_THD_TOKEN': 't', 'BB_THD_ONLINE_ID': 'Hunter1', 'BB_SHADNET_SERVER': 'x:1'}
+            run.hunters_dream(env, Path(temp))
+            overrides = json.loads((Path(temp) / 'host_overrides.json').read_text(encoding='utf-8'))
+        self.assertEqual(overrides['*.scej-network.jp'], 'https://thehuntersdream.com')
+        self.assertEqual(overrides['bb-playlog-prod.s3.amazonaws.com'], 'https://thehuntersdream.com:18671')
+        self.assertEqual(env['BB_THD_SERVER'], 'https://thehuntersdream.com:18671')
+        self.assertNotIn('BB_SHADNET_SERVER', env)
 
-    def test_accounts_from_the_state_file(self):
-        self.assertEqual(run.bridge_accounts(self.user), [])
-        folder = self.user / 'bbbridge'
-        folder.mkdir()
-        (folder / 'bbbridge_state.json').write_text(json.dumps(
-            {'accounts': {'Hunter1': {'token': 't'}}}), encoding='utf-8')
-        self.assertEqual(run.bridge_accounts(self.user), ['Hunter1'])
-        self.assertEqual(launcher.bridge_accounts(str(self.user)), ['Hunter1'])
+    def test_shadnet_pool_sends_game_functions_over_http_only(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env = {'BB_SHADNET_WEBAPI': 'http://srv.shadps4.net:31315'}
+            run.online_overrides(env, Path(temp))
+            overrides = json.loads((Path(temp) / 'host_overrides.json').read_text(encoding='utf-8'))
+        self.assertFalse(any('31315' in v for v in overrides.values()))
 
-    def test_launcher_environment_for_the_hunters_dream(self):
-        settings = {**launcher.APP_DEFAULTS, 'game_dir': 'x', 'online': True, 'online_npid': 'shadnet_name',
-                    'online_password': 'secret', 'online_pool': 'huntersdream'}
+    def test_launcher_environment(self):
+        launcher.HUNTERS_DREAM_POOL = True
+        settings = {**launcher.APP_DEFAULTS, 'game_dir': 'x', 'online': True, 'online_pool': 'huntersdream',
+                    'thd_online_id': 'Hunter1', 'thd_token': 'tok'}
         env = launcher.game_environment(settings)
-        self.assertEqual((env['BB_ONLINE'], env['BB_BRIDGE'], env['BB_BRIDGE_LIVE_MAP']), ('1', '1', '1'))
-        self.assertEqual((env['BB_SHADNET_NPID'], env['BB_SHADNET_PASSWORD']), ('', ''))
-        env = launcher.game_environment({**settings, 'online_pool': 'shadnet'})
-        self.assertNotIn('BB_BRIDGE', env)
-        self.assertEqual(env['BB_SHADNET_NPID'], 'shadnet_name')
-
-    def test_live_map_patch_exists_for_1_09(self):
-        import xml.etree.ElementTree as ET
-        names = {m.get('Name') for m in ET.parse(ROOT / 'patches/Bloodborne.xml').getroot().iter('Metadata')
-                 if m.get('AppVer') == '01.09'}
-        self.assertIn(run.LIVE_MAP_PATCH, names)
+        self.assertEqual((env['BB_NET_BACKEND'], env['BB_THD_ONLINE_ID'], env['BB_THD_TOKEN']),
+                         ('thd', 'Hunter1', 'tok'))
+        self.assertTrue(env['BB_CLIENT_VERSION'].startswith('bbport '))
+        launcher.HUNTERS_DREAM_POOL = False
+        env = launcher.game_environment(settings)
+        self.assertNotIn('BB_NET_BACKEND', env)
 
 
 if __name__ == '__main__':
