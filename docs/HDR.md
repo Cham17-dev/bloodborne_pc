@@ -87,6 +87,11 @@ Points à vérifier en codant :
   qu'il ne recouvre pas le dessin 1 ;
 - la tolérance de détection de l'interface face à l'AA du jeu (`da1faca9`) et au grain.
 
+Mesures du 15/10 (captures JXR décodées) : fenêtre de la clinique jusqu'à 916 nits (cœur 560–700, halo 200–450) ;
+dehors au crépuscule, ciel 13–30 nits, rien au-dessus du seuil (122 nits) : normal. Détection de l'interface :
+tolérance croissante avec la luminosité (`0.04 + 0.22·g²`), puis comparaison à la plage min–max du canal sur 3×3
+texels (l'AA mélange les voisins : les barreaux de fenêtre étaient pris pour l'interface).
+
 Réglages prévus : luminosité max (nits, défaut selon l'écran), paper white (existe déjà), intensité des hautes
 lumières.
 

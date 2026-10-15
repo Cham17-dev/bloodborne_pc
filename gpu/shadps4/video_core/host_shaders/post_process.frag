@@ -111,12 +111,28 @@ void main() {
             // are raised by the channel's gain. Elsewhere (UI drawn over it) it stays SDR.
             vec4 channel = texture(hdrChannel, uv);
             float luma = dot(signal, vec3(0.2126390059, 0.7151686788, 0.0721923154));
+            // The game's AA (after the tonemap) blends each pixel with its neighbours: on thin
+            // contrasted details (window bars against bright panes) the frame then lies between
+            // the tonemap's values around it. So the frame is compared with the range of the
+            // channel over the 3x3 texels around it, not with the centre texel alone.
+            ivec2 size = textureSize(hdrChannel, 0);
+            ivec2 texel = clamp(ivec2(uv * vec2(size)), ivec2(0), size - 1);
+            float g_min = channel.g, g_max = channel.g;
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    float g = texelFetch(hdrChannel, clamp(texel + ivec2(dx, dy), ivec2(0),
+                                                           size - 1), 0).g;
+                    g_min = min(g_min, g);
+                    g_max = max(g_max, g);
+                }
+            }
+            float miss = max(max(g_min - luma, luma - g_max), 0.0);
             // The tolerance widens with brightness: the game's brightness curve (applied by its
             // display copy, after the tonemap) moves the brightest values the most, while UI over
             // the scene (light text on a dark scene, dark frames over a bright one) differs by
             // far more than that.
-            float tolerance = 0.04 + 0.22 * channel.g * channel.g;
-            float scene = 1.0 - smoothstep(tolerance, tolerance + 0.10, abs(luma - channel.g));
+            float tolerance = 0.04 + 0.22 * g_max * g_max;
+            float scene = 1.0 - smoothstep(tolerance, tolerance + 0.10, miss);
             float gain = mix(1.0, max(channel.r, 1.0), scene);
             nits = min(nits * gain, vec3(pp.hdr_peak_nits));
             if (pp.hdr_debug == 1u) {
