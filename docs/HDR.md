@@ -4,8 +4,8 @@
 
 | Étape | Contenu | État |
 |---|---|---|
-| 1 | Sortie HDR10 (Rec.2020 + PQ) de l'image SDR du jeu, paper white réglable, menu Insert en PQ | Codé, compile, **à tester sur écran HDR** |
-| — | Mire de test HDR (`BB_HDR_TEST_PATTERN=1`) | Codé, compile, à tester |
+| 1 | Sortie HDR10 (Rec.2020 + PQ) de l'image SDR du jeu, paper white réglable, menu Insert en PQ | **Validé** (15/10, MSI QD-OLED 4K, RTX 4090) : image identique au SDR, paper white OK |
+| — | Mire de test HDR (`BB_HDR_TEST_PATTERN=1`) | **Validé** : ombres distinctes, couleurs justes, écrêtage vers 1000 nits (réglage de l'écran) |
 | — | Mode « HDR diagnostic » : export des shaders + analyse d'une image toutes les 20 s | Codé, compile, à lancer une fois |
 | 2 | Identifier le shader de tonemap du jeu | En attente des fichiers du mode diagnostic |
 | 3 | Remplacer le tonemap (méthode RenoDX, `host_shaders/hdr/renodx.glsl` déjà porté) | À faire |
