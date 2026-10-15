@@ -29,8 +29,10 @@ float EnvFloat(const char* name, float fallback, float lo, float hi) {
 } // namespace
 
 HdrChannel& HdrChannel::Get() {
-    static HdrChannel channel;
-    return channel;
+    // Never destroyed: at exit the Vulkan device is gone before static objects, and freeing the
+    // images then would crash. The process exit frees them.
+    static HdrChannel* const channel = new HdrChannel();
+    return *channel;
 }
 
 bool HdrChannel::Enabled() {
