@@ -86,6 +86,16 @@ Points à vérifier en codant :
 Réglages prévus : luminosité max (nits, défaut selon l'écran), paper white (existe déjà), intensité des hautes
 lumières.
 
+**Fait le 15/10 au soir** : `hdr/bb_tonemap_hdr.frag` (pas encore branché, compilé avec le projet). Courbe : celle du
+jeu jusqu'au genou (`BB_HDR_KNEE`, 0,6 du blanc ≈ 122 nits à 203 de paper white), puis épaule Neutwo de même pente
+qui monte vers `BB_HDR_PEAK` (pic ÷ paper white, 1000/203 = 4,93). Vérifiée en Python avec les constantes
+capturées (clinique k = 2,30 c = 0,46 ; extérieur k = 1,97 c = 0,33) : identique au jeu sous le genou, sans saut ni
+cassure de pente, croissante, ~985 nits au maximum. Sortie : rgb HDR linéaire (1 = paper white), a = luminance de
+la sortie SDR du jeu (pour distinguer la scène de l'interface).
+À régler en le branchant : l'ordre des canaux (le jeu écrit la ligne 848 de la matrice dans le premier canal et
+les copies suivantes inversent B et R), et la façon de passer les spécialisations (`SetSpecConstant`, ids 1 et 2,
+flottants).
+
 ## Fiche de test
 
 Préparation : HDR activé dans Windows (Paramètres → Affichage → Utiliser le HDR), version de test
