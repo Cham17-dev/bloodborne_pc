@@ -206,7 +206,8 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'
                 'vk_validation': False, 'extra_env': '', 'close_on_play': False,
                 'check_updates': True, 'online': False, 'online_server': 'srv.shadps4.net:31313',
                 'online_webapi': '', 'online_npid': '', 'online_password': '', 'online_upnp': True,
-                'online_community': COMMUNITY_SERVER, 'online_pool': 'shadnet', 'bridge_live_map': True}
+                'online_community': COMMUNITY_SERVER, 'online_pool': 'shadnet', 'bridge_live_map': True,
+                'supermedo_user': '', 'supermedo_password': ''}
 # bbbridge's own app reads and writes the online_* keys above: keep their names.
 
 UPSCALERS = [('dlss', ('DLSS (NVIDIA GeForce RTX)',)),
@@ -482,6 +483,9 @@ def game_environment(s):
             env['BB_SHADNET_SERVER'] = SUPERMEDO_SERVER
             env['BB_SHADNET_WEBAPI'] = webapi_address(SUPERMEDO_SERVER)
             env['BB_POOL_NAME'] = 'SuperMedo Server'
+            env['BB_SHADNET_NPID'] = str(s.get('supermedo_user', '')).strip()
+            env['BB_SHADNET_PASSWORD'] = str(s.get('supermedo_password', ''))
+            env['BB_UPNP'] = '0'  # over Tailscale
         if s.get('online_pool') == 'huntersdream':
             # run.py starts bbbridge and signs the game in with the Hunter's Dream id.
             env['BB_BRIDGE'] = '1'
@@ -1052,12 +1056,28 @@ class Launcher:
         ttk.Radiobutton(pools, text=_("The Hunter's Dream (with bbhost players)"), variable=pool,
                         value='huntersdream').pack(side='left', padx=(16, 0))
         self.row(f, _('Play with'), pools,
-                 _("shadNet: the server and account below. SuperMedo Server: an account from "
-                   "supermedo.com in the Account boxes below, with Tailscale connected. The Hunter's "
-                   "Dream: the players of bbhost, the PC port by The Hunter's Dream's team; sign in "
-                   "with Discord below."))
+                 _("shadNet: a shadNet server and its account. SuperMedo Server: an account from "
+                   "supermedo.com, with Tailscale connected. The Hunter's Dream: the players of bbhost, "
+                   "the PC port by The Hunter's Dream's team, with a Discord sign-in."))
+        # Each pool shows only its own settings (show_pool below).
+        groups = {}
+        before = set(f.grid_slaves())
+
+        def group(name):
+            nonlocal before
+            now = set(f.grid_slaves())
+            groups[name] = groups.get(name, []) + list(now - before)
+            before = now
+
+        self.section(f, _('SuperMedo Server account'))
         self.row(f, '', ttk.Button(f, text=_('Sign up for SuperMedo Server'),
                                    command=lambda: webbrowser.open(SUPERMEDO_SIGNUP)))
+        self.row(f, _('Username'), ttk.Entry(f, textvariable=self.var('supermedo_user', 'app'), width=40),
+                 _('The account you made at supermedo.com. Tailscale must be connected.'))
+        self.row(f, _('Password'), ttk.Entry(f, textvariable=self.var('supermedo_password', 'app'), width=40,
+                                             show='•'),
+                 _('Saved on this PC with the other launcher settings.'))
+        group('supermedo')
         self.section(f, _("The Hunter's Dream account"))
         account = ttk.Label(f, text='', justify='left')
         user_dir = self.var('user_dir', 'app')
@@ -1133,6 +1153,7 @@ class Launcher:
                                      "The Hunter's Dream are by droogie."), style='Muted.TLabel', cursor='hand2')
         credit.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(8, 0))
         credit.bind('<Button-1>', lambda _e: webbrowser.open(BRIDGE_PAGE))
+        group('huntersdream')
         self.section(f, _('Game server (messages, bloodstains, ghosts)'))
         community = self.var('online_community', 'app')
         self.row(f, _('Game server'), ttk.Entry(f, textvariable=community, width=40),
@@ -1151,9 +1172,11 @@ class Launcher:
                    'owner of a private server.'))
         self.row(f, _('Password'), ttk.Entry(f, textvariable=self.var('online_password', 'app'), width=40, show='•'),
                  _('Saved on this PC with the other launcher settings.'))
+        group('shadnet')
         self.section(f, _('Connection'))
         self.check(f, 'online_upnp', 'app', _('UPnP (open a port on the router automatically)'),
                    _('Turn it off on Tailscale or another VPN.'))
+        group('upnp')
         result = ttk.Label(f, text='', style='Muted.TLabel', justify='left')
 
         def check():
@@ -1180,7 +1203,7 @@ class Launcher:
                     text = text.replace('http://' + SUPERMEDO_SERVER.split(':')[0] + ':31315', 'SuperMedo Server')
                     text = text.replace(SUPERMEDO_SERVER, 'SuperMedo Server')
                     text = text.replace(SUPERMEDO_SERVER.split(':')[0], 'SuperMedo Server')
-                    if 'not reachable' in text:
+                    if 'SuperMedo Server: not reachable' in text:
                         text += '\n' + _('SuperMedo Server needs Tailscale connected to its network.')
                 else:
                     text = server_check(address, webapi, game)
@@ -1195,6 +1218,21 @@ class Launcher:
         self.note(f, _('Everyone in a session needs the same game version (1.09) and the same server. '
                        'Cheats change the game for the other players too: turn them off when you play together.'))
         show_code()  # hidden until a sign-in shows one; its row stays reserved (rows are counted above)
+        shown = {'shadnet': {'shadnet', 'upnp'}, 'supermedo': {'supermedo'},
+                 'huntersdream': {'huntersdream', 'upnp'}}
+
+        def show_pool(*_args):
+            want = shown.get(pool.get(), shown['shadnet'])
+            for name, widgets in groups.items():
+                for widget in widgets:
+                    if widget is not code_box:
+                        widget.grid() if name in want else widget.grid_remove()
+            if 'huntersdream' in want:
+                show_code(code_label.cget('text'))
+            else:
+                code_box.grid_remove()
+        pool.trace_add('write', show_pool)
+        show_pool()
 
     def build_mods(self):
         f = self.scrolled_page('mods', _('Mods & patches', 'Моды и патчи'),
@@ -1882,13 +1920,21 @@ class Launcher:
             if choice is None:
                 return
             online.set(bool(choice))
-        hunters_dream = self.var('online_pool', 'app').get() == 'huntersdream'
+        pool_name = self.var('online_pool', 'app').get()
+        hunters_dream = pool_name == 'huntersdream'
         if online.get() and hunters_dream and not bridge_accounts(self.var('user_dir', 'app').get()):
             self.messagebox.showwarning(
                 'Bloodborne', _("To play online with The Hunter's Dream, sign in with Discord first."))
             self.show('online')
             return
-        if online.get() and not hunters_dream and '@' in npid.get():
+        if online.get() and pool_name == 'supermedo' and not (
+                self.var('supermedo_user', 'app').get().strip() and self.var('supermedo_password', 'app').get()):
+            self.messagebox.showwarning(
+                'Bloodborne', _('To play on SuperMedo Server, enter your supermedo.com username and password '
+                                'on the Online co-op page (Sign up there if you have no account).'))
+            self.show('online')
+            return
+        if online.get() and pool_name == 'shadnet' and '@' in npid.get():
             self.messagebox.showwarning(
                 'Bloodborne', _('The Online ID is the account name (NPID) you registered on the server, '
                                 'not your email address.'))
