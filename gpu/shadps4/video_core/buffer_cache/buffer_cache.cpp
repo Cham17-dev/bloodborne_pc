@@ -92,6 +92,7 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
         FindMemoryType(instance.GetMemoryProperties(), vk::MemoryPropertyFlagBits::eDeviceLocal,
                        reqs.memoryTypeBits)
             .value();
+    arena_memory_type_bits = reqs.memoryTypeBits;
 
     const u64 bda_pagetable_size =
         (blocks_per_arena_page * num_arena_pages) * sizeof(vk::DeviceAddress);
@@ -468,11 +469,30 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
     }
     BbStats::Timer timer{BbStats::t_resident};
 
-    const vk::MemoryAllocateInfo alloc_info = {
+    vk::MemoryAllocateInfo alloc_info = {
         .allocationSize = resident_blocks << block_shift,
         .memoryTypeIndex = arena_memory_type_index,
     };
-    const auto device_memory = Vulkan::Check(instance.GetDevice().allocateMemory(alloc_info));
+    auto [alloc_result, device_memory] = instance.GetDevice().allocateMemory(alloc_info);
+    if (alloc_result == vk::Result::eErrorOutOfDeviceMemory) {
+        // bbport: VRAM full. The guest memory the GPU uses is backed here and only grows as areas
+        // load; on 4-8 GB cards it ran out ("ErrorOutOfDeviceMemory" stopped the game). Another
+        // memory type the arena accepts, outside VRAM (system memory the GPU reaches), is slower
+        // but keeps the game going.
+        const auto& props = instance.GetMemoryProperties();
+        const u32 vram_heap = props.memoryTypes[arena_memory_type_index].heapIndex;
+        for (u32 i = 0; i < props.memoryTypeCount && alloc_result != vk::Result::eSuccess; ++i) {
+            if (((arena_memory_type_bits >> i) & 1) == 0 || props.memoryTypes[i].heapIndex == vram_heap) {
+                continue;
+            }
+            alloc_info.memoryTypeIndex = i;
+            std::tie(alloc_result, device_memory) = instance.GetDevice().allocateMemory(alloc_info);
+        }
+        if (alloc_result == vk::Result::eSuccess) {
+            Vulkan::NoteOverBudget("buffer");
+        }
+    }
+    device_memory = Vulkan::Check(vk::ResultValue<vk::DeviceMemory>{alloc_result, device_memory});
 
     boost::container::small_vector<vk::BufferCopy, 8> copies;
     const auto staging =
