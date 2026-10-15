@@ -193,10 +193,10 @@ TWEAKS = [
     ('quit_to_desktop', ('Quit to Desktop in the title menu and in the System menu',
                          'Пункт «Выйти на рабочий стол» в главном меню и в меню «Система»'), True),
 ]
-INI_FLAGS = {'sharpen', 'object_motion', 'show_fps', *(k for k, _t, _o in EFFECTS + EXTRAS + CHEATS + TWEAKS)}
+INI_FLAGS = {'sharpen', 'object_motion', 'show_fps', 'mute_unfocused', *(k for k, _t, _o in EFFECTS + EXTRAS + CHEATS + TWEAKS)}
 INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': '0.50',
                 'object_motion': '1', 'show_fps': '1', 'output_res': '1920x1080', 'model_lod': '0',
-                'live_resolution': 'auto', 'hud_position': '100',
+                'live_resolution': 'auto', 'hud_position': '100', 'fov': '43', 'mute_unfocused': '0',
                 **{key: '1' if on else '0' for key, _t, on in EFFECTS + EXTRAS + CHEATS + TWEAKS}}
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'), 'user_dir': '', 'dlc_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
@@ -224,6 +224,15 @@ OUTPUTS = [('1280x720', ('1280 × 720 (Steam Deck)',)), ('1920x1080', ('1920 × 
            ('2560x1080', ('2560 × 1080 (21:9)',)), ('3440x1440', ('3440 × 1440 (21:9)',)),
            ('3840x1600', ('3840 × 1600 (21:9)',)), ('5120x2160', ('5120 × 2160 (21:9)',)),
            ('3840x1080', ('3840 × 1080 (32:9)',)), ('5120x1440', ('5120 × 1440 (32:9)',))]
+# Vertical field of view in degrees (scripts/fov.py; the game's camera has 43).
+FOVS = [('43', ('Game (43°)', 'Как в игре (43°)')), *((str(d), (f'{d}°',)) for d in (50, 55, 60, 65, 70, 75, 80, 90))]
+
+
+def fov_options(current):
+    """FOVS, with a value set in the game's menu (any degree from 30 to 90) kept as a choice."""
+    if current in (v for v, _t in FOVS) or not str(current).isdigit() or not 30 <= int(current) <= 90:
+        return FOVS
+    return sorted([*FOVS, (current, (f'{current}°',))], key=lambda o: int(o[0]))
 HUD_POSITIONS = [('100', ('Screen edges', 'У краёв экрана')), ('75', ('75%',)), ('50', ('Halfway', 'Посередине')),
                  ('25', ('25%',)), ('0', ('Centred (16:9)', 'По центру (16:9)'))]
 LIVE = [('auto', ('Auto (by graphics card)', 'Авто (по видеокарте)')), ('0', ('Off (faster)', 'Выключена (быстрее)')),
@@ -982,7 +991,12 @@ class Launcher:
         self.section(f, _('Detail', 'Детализация'))
         self.row(f, _('Model detail (LOD)', 'Детализация моделей'), self.choice(f, 'model_lod', 'ini', LODS),
                  _('A game patch (game version 1.09).', 'Патч игры (версия 1.09).'))
+        self.row(f, _('Field of view', 'Поле зрения'), self.choice(f, 'fov', 'ini', fov_options(self.ini.get('fov'))),
+                 _('Vertical, in degrees. Every camera of the game is widened by the same amount.',
+                   'По вертикали, в градусах. Все камеры игры расширяются одинаково.'))
         self.check(f, 'show_fps', 'ini', _('Show the FPS counter', 'Показывать FPS'))
+        self.check(f, 'mute_unfocused', 'ini', _('Mute when the game is in the background',
+                                                 'Без звука, когда игра в фоне'))
 
     def build_display(self):
         ttk = self.ttk
