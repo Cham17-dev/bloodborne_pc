@@ -5,6 +5,7 @@ name: Windows build
 on:
   push:
     branches: [windows, 'hdr*']
+    paths-ignore: ['docs/**', '**.md']
   workflow_dispatch:
 
 concurrency:
