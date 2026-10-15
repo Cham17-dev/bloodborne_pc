@@ -50,6 +50,9 @@ public:
         return surface_format;
     }
 
+    // bbport: the format of the images actually presented (HDR10 when HDR output is on).
+    vk::Format GetOutputFormat() const;
+
     vk::SwapchainKHR GetHandle() const {
         return swapchain;
     }

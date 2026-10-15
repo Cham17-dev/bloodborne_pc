@@ -56,6 +56,16 @@ public:
     bool IsDumpShaders() { static const auto value = Flag("BB_DUMP_SHADERS", false); return value; }
     bool IsFsrEnabled() { static const auto value = Flag("BB_FSR1", false); return value; }
     bool IsHdrAllowed() { static const auto value = Flag("BB_HDR", false); return value; }
+    // bbport HDR: the SDR frame is sent in HDR10 (Rec.2020, PQ) with its white at this luminance.
+    u32 GetHdrPaperWhite() {
+        static const auto value = [] {
+            const long nits = Number("BB_HDR_PAPER_WHITE", 203);
+            return u32(nits < 80 ? 80 : nits > 500 ? 500 : nits);
+        }();
+        return value;
+    }
+    // Decode the SDR frame with a pure 2.2 power (as SDR displays show it) instead of sRGB.
+    bool IsHdrGamma22() { static const auto value = Flag("BB_HDR_GAMMA22", true); return value; }
     bool IsNullGPU() { static const auto value = Flag("BB_NULL_GPU", false); return value; }
     bool IsPatchShaders() { return false; }
     bool IsPipelineCacheArchived() { return false; }

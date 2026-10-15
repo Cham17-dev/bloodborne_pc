@@ -292,7 +292,8 @@ int VideoOutDriver::ChangeBufferAttribute(VideoOutPort* port, s32 attributeIndex
 void VideoOutDriver::Flip(const Request& req) {
     // Update HDR status before presenting, then present the frame (bbport: on the swap thread).
     RunPresenter([this, frame = req.frame, hdr = req.port->is_hdr] {
-        presenter->SetHDR(hdr);
+        // bbport: BB_HDR forces HDR10 output for the game's SDR frames.
+        presenter->SetHDR(hdr || EmulatorSettings.IsHdrAllowed());
         presenter->Present(frame);
     });
     Vulkan::FrameCapture::OnFlip(req.index >= 0 ? req.port->buffer_slots[req.index].address_left

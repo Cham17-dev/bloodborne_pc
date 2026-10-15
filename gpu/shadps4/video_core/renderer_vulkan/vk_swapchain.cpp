@@ -85,6 +85,10 @@ void Swapchain::Recreate(u32 width_, u32 height_) {
     Create(width_, height_);
 }
 
+vk::Format Swapchain::GetOutputFormat() const {
+    return needs_hdr ? SURFACE_FORMAT_HDR.format : surface_format.format;
+}
+
 void Swapchain::SetHDR(bool hdr) {
     if (needs_hdr == hdr) {
         return;
@@ -164,6 +168,14 @@ void Swapchain::FindPresentFormat() {
         }) != formats.end();
     // Also make sure that user allowed us to use HDR
     supports_hdr &= EmulatorSettings.IsHdrAllowed();
+    // bbport: Bloodborne never asks for HDR itself, so BB_HDR=1 means "present in HDR10": the
+    // swapchain is HDR from the start, and the post-process pass encodes the SDR frame in PQ.
+    needs_hdr = supports_hdr;
+    if (EmulatorSettings.IsHdrAllowed()) {
+        LOG_INFO(Render_Vulkan, "HDR output: {} (paper white {} nits)",
+                 supports_hdr ? "on, HDR10 swapchain" : "off, the display offers no HDR10 format",
+                 EmulatorSettings.GetHdrPaperWhite());
+    }
 
     // If there is a single undefined surface format, the device doesn't care, so we'll just use
     // RGBA sRGB.

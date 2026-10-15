@@ -200,7 +200,7 @@ INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': 
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'), 'user_dir': '', 'dlc_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
                 'voice_language': 'auto',
-                'player_name': '', 'fullscreen': False, 'hdr': False, 'present_mode': 'Mailbox',
+                'player_name': '', 'fullscreen': False, 'hdr': False, 'hdr_paper_white': '', 'present_mode': 'Mailbox',
                 'fps_mode': 'uncap', 'frame_cap': '', 'draw_pipe': '', 'readbacks': '',
                 'frames_ahead': '', 'frame_stats': False, 'gpu_profile': False,
                 'vk_validation': False, 'extra_env': '', 'close_on_play': False,
@@ -251,6 +251,10 @@ FRAME_CAPS = [('', ('Auto: display refresh, max 120 (recommended)', 'Авто: �
               ('60', ('60',)), ('90', ('90',)), ('120', ('120',)), ('144', ('144  ⚠',)), ('165', ('165  ⚠',)),
               ('240', ('240  ⚠',)), ('0', ('No limit  ⚠', 'Без ограничения  ⚠'))]
 FRAMES_AHEAD = [('', ('1 (default)', '1 (по умолчанию)')), ('2', ('2',)), ('0', ('Unbounded', 'Без ограничения'))]
+# bbport HDR: luminance of the game's white (paper white) in HDR output, in nits.
+HDR_PAPER_WHITE = [('', ('203 nits (default)', '203 нит (по умолчанию)')), ('100', ('100 nits', '100 нит')),
+                   ('150', ('150 nits', '150 нит')), ('250', ('250 nits', '250 нит')),
+                   ('300', ('300 nits', '300 нит')), ('400', ('400 nits', '400 нит'))]
 UI_LANGUAGES = bbport_lang.LANGUAGE_NAMES
 
 FSR4_COMMIT = 'ae8d628fae208813172446d1e49ed94150b04658'
@@ -456,6 +460,8 @@ def game_environment(s):
     env['BB_PRESENT_MODE'] = s['present_mode']
     if s['hdr']:
         env['BB_HDR'] = '1'
+        if s.get('hdr_paper_white', ''):
+            env['BB_HDR_PAPER_WHITE'] = s['hdr_paper_white']
     env['BB_FPS'] = s['fps_mode']
     if s.get('frame_cap', ''):
         env['BB_FPS_LIMIT'] = s['frame_cap']
@@ -989,6 +995,10 @@ class Launcher:
         self.check(f, 'hdr', 'app', _('Allow HDR output', 'Разрешить HDR'),
                    _('When HDR is on in Windows and the display supports it.',
                      'Если HDR включён в Windows и монитор его поддерживает.'))
+        self.row(f, _('HDR brightness (paper white)', 'Яркость HDR (белый)'),
+                 self.choice(f, 'hdr_paper_white', 'app', HDR_PAPER_WHITE),
+                 _('How bright the game\'s white is in HDR. Raise it if the game looks dim.',
+                   'Яркость белого цвета игры в HDR. Увеличьте, если игра выглядит тусклой.'))
 
     def build_game(self):
         f = self.scrolled_page('game', _('Game & effects', 'Игра и эффекты'),

@@ -15,6 +15,7 @@
 #include "imgui_impl_vulkan.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
+#include "video_core/host_shaders/overlay_hdr_frag.h"
 
 // DejaVu Sans (Cyrillic), embedded (third_party/fonts, Bitstream Vera license).
 #ifdef _WIN32
@@ -504,6 +505,14 @@ void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count) 
         .colorAttachmentCount = 1,
         .pColorAttachmentFormats = &color_format,
     };
+    // bbport HDR: on the HDR10 swapchain the menu's SDR colors are encoded in PQ.
+    if (format == vk::Format::eA2B10G10R10UnormPack32) {
+        info.CustomShaderFragCreateInfo = {
+            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            .codeSize = sizeof(OVERLAY_HDR_FRAG),
+            .pCode = OVERLAY_HDR_FRAG,
+        };
+    }
     if (!ImGui_ImplVulkan_Init(&info)) {
         std::printf("Overlay: ImGui Vulkan backend init failed\n");
         ImGui::DestroyContext();
