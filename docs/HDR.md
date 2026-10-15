@@ -6,8 +6,8 @@
 |---|---|---|
 | 1 | Sortie HDR10 (Rec.2020 + PQ) de l'image SDR du jeu, paper white réglable, menu Insert en PQ | **Validé** (15/10, MSI QD-OLED 4K, RTX 4090) : image identique au SDR, paper white OK |
 | — | Mire de test HDR (`BB_HDR_TEST_PATTERN=1`) | **Validé** : ombres distinctes, couleurs justes, écrêtage vers 1000 nits (réglage de l'écran) |
-| — | Mode « HDR diagnostic » : export des shaders + analyse d'une image toutes les 20 s | Codé, compile, à lancer une fois |
-| 2 | Identifier le shader de tonemap du jeu | **Identifié** : passe à 2 dessins. Dessin 1, ps `5c02eaf8` (vs `1ea5a07e`) : exposition (texture 1×1), tonemap exponentiel `1 − exp(−k·v)` avec genou, bloom en mode écran, matrice couleur 3×4, gamma, grain, sortie RGBA8. Dessin 2, ps `ed4c7668` (vs `0b0acf50`) : LUT d'étalonnage 3D 16³ (préparée par cs `200820a1`). Reste : valeurs des constantes (capture avec `BB_CAPTURE_BUFFER_BYTES=4096`) et image d'entrée exacte (capture sans upscaler). |
+| — | Mode « HDR diagnostic » : export des shaders (cache désactivé) + analyse d'une image toutes les 20 s, constantes sur 4 Ko, textures par dessin | Validé |
+| 2 | Identifier le shader de tonemap du jeu | **Fait** — voir « Tonemap de Bloodborne » ci-dessous |
 | 3 | Remplacer le tonemap (méthode RenoDX, `host_shaders/hdr/renodx.glsl` déjà porté) | À faire. Attention : le cache de pipelines (`BB_PIPELINE_CACHE`) recharge les shaders sans passer par `CompileModule`, donc sans le remplacement de shader : le remplacement doit contourner ce cache. |
 | 4 | Upscalers (FSR/DLSS en mode mis à l'échelle travaillent sur l'image déjà tonemappée) | À faire |
 
@@ -23,6 +23,36 @@ Options (launcher → Fenêtre, ou variables d'environnement) :
 
 Le journal (`last_run.log`) contient `HDR output: on, HDR10 swapchain` quand la sortie HDR est active,
 ou `HDR output: off, the display offers no HDR10 format` quand l'écran ne propose pas le HDR10.
+
+## Tonemap de Bloodborne (relevé le 15/10)
+
+Passe `#…` à 2 dessins, cible `R8G8B8A8Unorm 1920x1080` (la cible de l'interface) :
+
+- **Dessin 1** : vs `1ea5a07e`, ps `5c02eaf8`. Textures : `img0` 1×1 RGBA8 (multiplicateur neutralisé par les
+  constantes : x = 1), `img1` **la scène HDR RGBA16F** (image remplacée par un proxy de bbport, donc absente des
+  listes de l'analyseur), `img2` bloom `B10G11R11 628x530`, `img3` grain 4×4.
+  Constantes (tampon slot 0, mots) : 616 = 1,5 (gain de la scène) · 832 = k (2,30 clinique, 1,97 extérieur) ·
+  833 = c genou (0,46 / 0,33) · 840–851 matrice 3×4 de désaturation (varie par lieu) · 808 = 1/2,2 · 809 = 1/255 et
+  810 = −0,5/255 (grain) · 617 = 1 · 744–756 : chemins neutralisés.
+  Calcul : `v = scène × 1,5` ; `y = 1 − exp(−k·v)` ; `T = y·(c·(y−1)+1)²` (clampé 0–1) ; bloom `U = clamp(bloom)` ;
+  écran `T + U − T·U` ; matrice couleur ; `pow(·, 1/2,2)` ; grain. Sortie en **gamma 2,2** (confirme le décodage
+  2,2 de l'étape 1). Alpha = scène.a.
+- **Dessin 2** : vs `0b0acf50`, ps `ed4c7668` : LUT 3D 16³ (`R32G32B32A32 16x16`, préparée par cs `200820a1`) sur
+  `0x10508e0000` (RGBA8). Rôle exact à confirmer (quad de 4 indices).
+- Après : copie `f7229091` vers `0x10508e0000`, AA du jeu `da1faca9` vers la cible UI, copie `57f3b8c2`, puis
+  l'interface ; au début de l'image suivante, copie de la cible UI vers le tampon d'affichage (RGBA8 sRGB).
+
+## Plan de l'étape 3
+
+1. **Remplacement du shader `5c02eaf8`** par une version HDR compilée avec le projet (pas un fichier `.spv` sur
+   disque), branchée dans `CompileModule` **et** dans le chargement depuis le cache de pipelines.
+2. **Courbe** : garder le rendu SDR d'origine (`T`, écran, matrice) comme référence et étendre les hautes lumières
+   avec `rd_upgrade_tonemap` / Neutwo (pic = luminosité max ÷ paper white), réglable.
+3. **Garder le HDR jusqu'à l'affichage** : la cible UI, les copies, l'AA et le tampon d'affichage sont en 8 bits.
+   Soit les passer en RGBA16F (comme les « resource upgrades » de RenoDX), soit encoder le HDR dans le 8 bits avec
+   une courbe réversible décodée par le post-process final. À trancher en lisant le cache de textures et la
+   composition de l'UI de bbport.
+4. Upscalers en mode mis à l'échelle (ils lisent l'image après tonemap).
 
 ## Fiche de test
 
