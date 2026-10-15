@@ -657,6 +657,8 @@ int main(int argc, char **argv) {
         }
         memcpy(image + relocs[i].target, &value, 8);
     }
+    /* The Hunter's Dream backend reads the game's code before the patches change it. */
+    bbnet_set_image(image, size);
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
@@ -692,6 +694,7 @@ int main(int argc, char **argv) {
             if (result) fail("module initializer failed");
         }
     }
+    bbnet_initialize(); /* the online session starts with the game */
     printf("Entering original x86-64 code at guest offset 0x%" PRIx64 "\n", entry);
     entered_game=1;
     struct { uint64_t argc; const char *argv[2]; } params = {1, {"/app0/eboot.bin", NULL}};
