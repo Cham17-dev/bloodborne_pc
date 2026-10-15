@@ -481,9 +481,10 @@ void input_config_parse(InputConfig *out, const char *text) {
     out->mouse.camera_sensitivity = 1.0f;
     for (int i = 0; i < DEADZONE_COUNT; ++i) { out->deadzone[i].inner = 1; out->deadzone[i].outer = 127; }
     out->stick_socd_last = 1;
-    out->stick_release_delay_ms = 0;
-    out->stick_circular = 1;
-    out->stick_turn_rate = 0;
+    /* Defaults that keep a keyboard sprint through direction changes (cassioKenji, PR #74). */
+    out->stick_release_delay_ms = 60;
+    out->stick_circular = 0;
+    out->stick_turn_rate = 900;
     out->toggle_scancode = SDL_SCANCODE_F7;
     out->reload_scancode = SDL_SCANCODE_F8;
 

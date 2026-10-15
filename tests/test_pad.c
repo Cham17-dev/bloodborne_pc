@@ -169,10 +169,24 @@ static void test_digital_stick_shape(void) {
     assert(x*x+y*y>=125*125);
     for (int i=0;i<2;++i) { x=-127; y=-127; now+=frame; shape_digital_stick(&t,&x,&y,1,900,now); }
     assert(x==-90 && y==-90);
-    /* reversal (more than 150 degrees): snaps, like a flick. */
+    /* reversal: turns as well (a jump of 45 degrees or more ends a sprint), one step per frame,
+     * on the circle. */
     x=127; y=127; now+=frame;
     shape_digital_stick(&t,&x,&y,1,900,now);
-    assert(x==90 && y==90);
+    assert(!(x==90 && y==90) && x*x+y*y>=125*125 && x*x+y*y<=129*129);
+    /* square gate (circular off): the larger axis stays 127 while turning, so a run stays a run. */
+    StickShapeState q={0,0,0};
+    uint64_t qn=1000000;
+    x=0; y=-127;
+    shape_digital_stick(&q,&x,&y,0,900,qn);
+    x=-127; y=-127; qn+=frame;
+    shape_digital_stick(&q,&x,&y,0,900,qn);
+    assert((abs(x)==127 || abs(y)==127) && x<0 && x>-127);
+    /* analog values pass untouched. */
+    StickShapeState a={0,0,0};
+    x=-60; y=-40;
+    shape_digital_stick(&a,&x,&y,0,900,qn);
+    assert(x==-60 && y==-40);
     /* neutral, then a new key: starts at that key's direction, no rotation from the old one. */
     x=0; y=0; now+=frame;
     shape_digital_stick(&t,&x,&y,1,900,now);
