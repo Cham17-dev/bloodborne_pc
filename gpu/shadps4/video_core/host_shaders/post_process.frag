@@ -111,7 +111,12 @@ void main() {
             // are raised by the channel's gain. Elsewhere (UI drawn over it) it stays SDR.
             vec4 channel = texture(hdrChannel, uv);
             float luma = dot(signal, vec3(0.2126390059, 0.7151686788, 0.0721923154));
-            float scene = 1.0 - smoothstep(0.03, 0.10, abs(luma - channel.g));
+            // The tolerance widens with brightness: the game's brightness curve (applied by its
+            // display copy, after the tonemap) moves the brightest values the most, while UI over
+            // the scene (light text on a dark scene, dark frames over a bright one) differs by
+            // far more than that.
+            float tolerance = 0.04 + 0.22 * channel.g * channel.g;
+            float scene = 1.0 - smoothstep(tolerance, tolerance + 0.10, abs(luma - channel.g));
             float gain = mix(1.0, max(channel.r, 1.0), scene);
             nits = min(nits * gain, vec3(pp.hdr_peak_nits));
             if (pp.hdr_debug == 1u) {
