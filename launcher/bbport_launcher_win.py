@@ -41,6 +41,8 @@ MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # This build; GitHub release tags are windows-v<VERSION>.
 VERSION = '1.7.8'
+# HDR test build (fork Cham17-dev/bloodborne_pc, branch hdr): no release updates.
+HDR_TEST_BUILD = True
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
 RELEASES_API = 'https://api.github.com/repos/Supermedo/bloodborne_pc/releases/latest'
@@ -2097,6 +2099,14 @@ class Launcher:
     # ---- updates -------------------------------------------------------------------------------
     def check_update(self, manual=False):
         """Helper thread: asks GitHub for the newest release and offers it when it is newer."""
+        if HDR_TEST_BUILD:
+            # The releases are Supermedo's builds, without the HDR work: installing one would
+            # replace this build. Updates come from the fork's own builds instead.
+            if manual:
+                self.ui_calls.put(lambda: self.messagebox.showinfo(
+                    'Bloodborne', _('This is an HDR test build: updates come from its own GitHub builds, '
+                                    'not from the releases.')))
+            return
         try:
             version, url, page = latest_release()
         except (OSError, ValueError, KeyError) as failure:
