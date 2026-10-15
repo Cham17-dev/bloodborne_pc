@@ -440,7 +440,7 @@ def main():
             writes+=compile_patches(a.xml,[heap],a.app_version,segments)
             names.append(heap)
         print(f'Patches: scene {size[0]}x{size[1]}; UI {ui[0]}x{ui[1]}')
-    if read_settings(a.settings).get('quit_to_desktop','1')!='0':
+    if read_settings(a.settings).get('quit_to_desktop','1')!='0' and os.environ.get('BB_QUIT_TO_DESKTOP')!='0':
         # Quit to Desktop in the title and System menus (quit_menu.py; its texts are a mod layer).
         sys.path.insert(0,str(Path(__file__).resolve().parent))
         import quit_menu
