@@ -7,8 +7,8 @@
 | 1 | Sortie HDR10 (Rec.2020 + PQ) de l'image SDR du jeu, paper white réglable, menu Insert en PQ | **Validé** (15/10, MSI QD-OLED 4K, RTX 4090) : image identique au SDR, paper white OK |
 | — | Mire de test HDR (`BB_HDR_TEST_PATTERN=1`) | **Validé** : ombres distinctes, couleurs justes, écrêtage vers 1000 nits (réglage de l'écran) |
 | — | Mode « HDR diagnostic » : export des shaders + analyse d'une image toutes les 20 s | Codé, compile, à lancer une fois |
-| 2 | Identifier le shader de tonemap du jeu | En attente des fichiers du mode diagnostic |
-| 3 | Remplacer le tonemap (méthode RenoDX, `host_shaders/hdr/renodx.glsl` déjà porté) | À faire |
+| 2 | Identifier le shader de tonemap du jeu | Analyse d'images faite : seule passe HDR→8 bits = passe ps `5c02eaf8` (bloom + LUT 3D 16³ de `200820a1`, après le combine `9a9cf8a9`). Code des shaders à récupérer (cache désactivé) |
+| 3 | Remplacer le tonemap (méthode RenoDX, `host_shaders/hdr/renodx.glsl` déjà porté) | À faire. Attention : le cache de pipelines (`BB_PIPELINE_CACHE`) recharge les shaders sans passer par `CompileModule`, donc sans le remplacement de shader : le remplacement doit contourner ce cache. |
 | 4 | Upscalers (FSR/DLSS en mode mis à l'échelle travaillent sur l'image déjà tonemappée) | À faire |
 
 Options (launcher → Fenêtre, ou variables d'environnement) :
@@ -18,7 +18,7 @@ Options (launcher → Fenêtre, ou variables d'environnement) :
 | Allow HDR output | `BB_HDR=1` | off |
 | HDR brightness (paper white) | `BB_HDR_PAPER_WHITE=80..500` | 203 |
 | HDR test pattern | `BB_HDR_TEST_PATTERN=1` | off |
-| HDR diagnostic (collect shaders) | `BB_DUMP_SHADERS=1`, `BB_CAPTURE_AUTO=20`, `BB_CAPTURE_DIR=<sauvegardes>/shader/dumps/frames` | off |
+| HDR diagnostic (collect shaders) | `BB_DUMP_SHADERS=1`, `BB_PIPELINE_CACHE=0`, `BB_CAPTURE_AUTO=20`, `BB_CAPTURE_DIR=<sauvegardes>/shader/dumps/frames` | off |
 | — | `BB_HDR_GAMMA22=0` : décodage sRGB au lieu de gamma 2.2 | 1 |
 
 Le journal (`last_run.log`) contient `HDR output: on, HDR10 swapchain` quand la sortie HDR est active,

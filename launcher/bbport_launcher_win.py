@@ -474,6 +474,8 @@ def game_environment(s):
         user = Path(s['user_dir'] or DATA_DIR / 'user')
         user = user if user.is_absolute() else PORT_DIR / user
         env['BB_DUMP_SHADERS'] = '1'
+        # Cached shaders are not compiled again, so they would never be dumped.
+        env['BB_PIPELINE_CACHE'] = '0'
         env['BB_CAPTURE_AUTO'] = '20'
         env['BB_CAPTURE_DIR'] = str(user / 'shader' / 'dumps' / 'frames')
     env['BB_FPS'] = s['fps_mode']
