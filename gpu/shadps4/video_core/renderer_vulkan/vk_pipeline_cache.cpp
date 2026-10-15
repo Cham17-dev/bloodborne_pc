@@ -9,6 +9,7 @@
 #include <ranges>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 #include "common/hash.h"
 #include "common/io_file.h"
@@ -28,8 +29,75 @@
 #include "video_core/renderer_vulkan/vk_pipeline_serialization.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
+#include "video_core/host_shaders/bb_tonemap_frag.h"
 
 namespace Vulkan {
+
+// bbport HDR ----------------------------------------------------------------------------------
+
+namespace {
+
+/// Bloodborne's tonemap pixel shader, and the FNV-1a hash of the SPIR-V bbport's recompiler makes
+/// of it (the replacement keeps that shader's interface, so it only stands in for that exact code).
+constexpr u64 TonemapPgmHash = 0x5c02eaf8;
+constexpr u64 TonemapSpirvHash = 0xfa06ea3003a7507dULL;
+
+u64 SpirvHash(std::span<const u32> spv) {
+    u64 hash = 0xcbf29ce484222325ULL;
+    for (const u32 word : spv) {
+        hash = (hash ^ word) * 0x100000001b3ULL;
+    }
+    return hash;
+}
+
+/// Sets the default value of specialization constant `spec_id` (an int) in a SPIR-V module.
+void SetSpecConstant(std::vector<u32>& spv, u32 spec_id, u32 value) {
+    constexpr u32 OpDecorate = 71, OpSpecConstant = 50, DecorationSpecId = 1;
+    u32 target = 0;
+    for (size_t i = 5; i < spv.size();) {
+        const u32 count = spv[i] >> 16, opcode = spv[i] & 0xffff;
+        if (count == 0) {
+            return;
+        }
+        if (opcode == OpDecorate && count >= 4 && spv[i + 2] == DecorationSpecId &&
+            spv[i + 3] == spec_id) {
+            target = spv[i + 1];
+        } else if (opcode == OpSpecConstant && count == 4 && target && spv[i + 2] == target) {
+            spv[i + 3] = value;
+            return;
+        }
+        i += count;
+    }
+}
+
+} // namespace
+
+std::span<const u32> GameShaderCode(u64 pgm_hash, std::span<const u32> original) {
+    static const int mode = EmulatorSettings.GetHdrTonemapMode();
+    if (mode <= 0 || pgm_hash != TonemapPgmHash) {
+        return original;
+    }
+    if (SpirvHash(original) != TonemapSpirvHash) {
+        static std::once_flag warned;
+        std::call_once(warned, [&] {
+            LOG_WARNING(Render_Vulkan,
+                        "HDR tonemap: the game's tonemap shader is not the expected one (SPIR-V "
+                        "hash {:#x}), kept as it is",
+                        SpirvHash(original));
+        });
+        return original;
+    }
+    static const std::vector<u32> replacement = [] {
+        std::vector<u32> spv(std::begin(BB_TONEMAP_FRAG), std::end(BB_TONEMAP_FRAG));
+        SetSpecConstant(spv, 0, mode == 2 ? 1u : 0u);
+        LOG_INFO(Render_Vulkan, "HDR tonemap: the game's tonemap shader is replaced (mode {})",
+                 mode);
+        return spv;
+    }();
+    return replacement;
+}
+
+// ---------------------------------------------------------------------------------------------
 
 using Shader::HwStage;
 using Shader::Output;
@@ -835,7 +903,7 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
         LOG_INFO(Loader, "Loaded patch for {} shader {:#x}", info.hw_stage, info.pgm_hash);
         module = CompileSPV(*patch, instance.GetDevice());
     } else {
-        module = CompileSPV(spv, instance.GetDevice());
+        module = CompileSPV(GameShaderCode(info.pgm_hash, spv), instance.GetDevice());
     }
 
     RegisterShaderBinary(std::move(spv), info.pgm_hash, perm_idx);

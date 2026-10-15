@@ -202,7 +202,7 @@ INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': 
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'), 'user_dir': '', 'dlc_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
                 'voice_language': 'auto',
-                'player_name': '', 'fullscreen': False, 'hdr': False, 'hdr_paper_white': '', 'hdr_test_pattern': False, 'hdr_probe': False, 'present_mode': 'Mailbox',
+                'player_name': '', 'fullscreen': False, 'hdr': False, 'hdr_paper_white': '', 'hdr_test_pattern': False, 'hdr_probe': False, 'hdr_tonemap': '', 'present_mode': 'Mailbox',
                 'fps_mode': 'uncap', 'frame_cap': '', 'draw_pipe': '', 'readbacks': '',
                 'frames_ahead': '', 'frame_stats': False, 'gpu_profile': False,
                 'vk_validation': False, 'extra_env': '', 'close_on_play': False,
@@ -253,6 +253,9 @@ FRAME_CAPS = [('', ('Auto: display refresh, max 120 (recommended)', 'Авто: �
               ('60', ('60',)), ('90', ('90',)), ('120', ('120',)), ('144', ('144  ⚠',)), ('165', ('165  ⚠',)),
               ('240', ('240  ⚠',)), ('0', ('No limit  ⚠', 'Без ограничения  ⚠'))]
 FRAMES_AHEAD = [('', ('1 (default)', '1 (по умолчанию)')), ('2', ('2',)), ('0', ('Unbounded', 'Без ограничения'))]
+# bbport HDR: the game's tonemap shader replaced by bbport's (step 3; for now the same image).
+HDR_TONEMAP = [('', ('Game (default)', 'Игры (по умолчанию)')), ('1', ('bbport', 'bbport')),
+               ('2', ('bbport, left half tinted (check)', 'bbport, левая половина окрашена (проверка)'))]
 # bbport HDR: luminance of the game's white (paper white) in HDR output, in nits.
 HDR_PAPER_WHITE = [('', ('203 nits (default)', '203 нит (по умолчанию)')), ('100', ('100 nits', '100 нит')),
                    ('150', ('150 nits', '150 нит')), ('250', ('250 nits', '250 нит')),
@@ -469,6 +472,8 @@ def game_environment(s):
             env['BB_HDR_PAPER_WHITE'] = s['hdr_paper_white']
         if s.get('hdr_test_pattern'):
             env['BB_HDR_TEST_PATTERN'] = '1'
+    if s.get('hdr_tonemap', ''):
+        env['BB_HDR_TONEMAP'] = s['hdr_tonemap']
     if s.get('hdr_probe'):
         # HDR diagnostic: the game's shaders and a few analysed frames, in <saves>/shader/dumps.
         user = Path(s['user_dir'] or DATA_DIR / 'user')
@@ -1015,6 +1020,12 @@ class Launcher:
                  self.choice(f, 'hdr_paper_white', 'app', HDR_PAPER_WHITE),
                  _('How bright the game\'s white is in HDR. Raise it if the game looks dim.',
                    'Яркость белого цвета игры в HDR. Увеличьте, если игра выглядит тусклой.'))
+        self.row(f, _('HDR tonemap (test)', 'Тонмаппинг HDR (тест)'),
+                 self.choice(f, 'hdr_tonemap', 'app', HDR_TONEMAP),
+                 _('Replaces the game\'s tonemap shader with bbport\'s. The check mode tints the left '
+                   'half of the screen magenta to show that it is active.',
+                   'Заменяет шейдер тонмаппинга игры шейдером bbport. Режим проверки окрашивает '
+                   'левую половину экрана в пурпурный.'))
         self.check(f, 'hdr_test_pattern', 'app', _('HDR test pattern', 'Тестовая таблица HDR'),
                    _('Shows a test pattern instead of the game, to check the HDR output.',
                      'Показывает тестовую таблицу вместо игры для проверки вывода HDR.'))

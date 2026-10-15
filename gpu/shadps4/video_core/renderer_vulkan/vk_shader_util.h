@@ -17,4 +17,9 @@ namespace Vulkan {
  */
 vk::ShaderModule CompileSPV(std::span<const u32> code, vk::Device device);
 
+/// bbport HDR: the SPIR-V to compile for a game shader: bbport's replacement for the shaders it
+/// replaces (Bloodborne's tonemap), when enabled and when the original is the expected one;
+/// otherwise the original.
+std::span<const u32> GameShaderCode(u64 pgm_hash, std::span<const u32> original);
+
 } // namespace Vulkan
