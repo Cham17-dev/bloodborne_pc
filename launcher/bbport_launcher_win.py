@@ -488,7 +488,6 @@ def game_environment(s):
             env['BB_POOL_NAME'] = 'SuperMedo Server'
             env['BB_SHADNET_NPID'] = str(s.get('supermedo_user', '')).strip()
             env['BB_SHADNET_PASSWORD'] = str(s.get('supermedo_password', ''))
-            env['BB_UPNP'] = '0'  # over Tailscale
         if s.get('online_pool') == 'huntersdream' and HUNTERS_DREAM_POOL:
             # run.py starts bbbridge and signs the game in with the Hunter's Dream id.
             env['BB_BRIDGE'] = '1'
@@ -1223,7 +1222,7 @@ class Launcher:
         self.note(f, _('Everyone in a session needs the same game version (1.09) and the same server. '
                        'Cheats change the game for the other players too: turn them off when you play together.'))
         show_code()  # hidden until a sign-in shows one; its row stays reserved (rows are counted above)
-        shown = {'shadnet': {'shadnet', 'upnp'}, 'supermedo': {'supermedo'},
+        shown = {'shadnet': {'shadnet', 'upnp'}, 'supermedo': {'supermedo', 'upnp'},
                  'huntersdream': {'huntersdream', 'upnp'}}
 
         def show_pool(*_args):
