@@ -27,22 +27,6 @@ GAME_SERVER = 'https://ss4.scej-network.jp:20443'
 COMMUNITY_API_PORT = 18671
 
 
-def summon_service(webapi):
-    """True when a shadNet WebAPI answers Bloodborne's summon calls: the route exists there
-    (an empty request is refused with 400), where other servers answer 404."""
-    import urllib.error
-    import urllib.request
-    request = urllib.request.Request(webapi.rstrip('/') + '/summon_messenger/create', data=b'',
-                                     method='POST')
-    try:
-        urllib.request.urlopen(request, timeout=4).close()
-        return True
-    except urllib.error.HTTPError as error:
-        return error.code != 404
-    except (OSError, ValueError):
-        return False
-
-
 def online_overrides(env, user_dir):
     """Writes user/host_overrides.json for this launch. A player who needs other addresses
     puts them in user/host_overrides.custom.json, which is then used as it is."""
@@ -52,20 +36,16 @@ def online_overrides(env, user_dir):
         community = (env.get('BB_COMMUNITY_SERVER') or COMMUNITY_SERVER).rstrip('/')
         if '://' not in community:
             community = 'https://' + community
-        host = community.split('://', 1)[1]
-        webapi = env.get('BB_SHADNET_WEBAPI') or 'http://127.0.0.1:31315'
-        # Game server -> community server (same port, 20443). Summon signs -> the shadNet
-        # WebAPI when that server has the Bloodborne summon service (the shadp2p server),
-        # otherwise they stay with the community server.
+        scheme, host = community.split('://', 1)
+        # The game's own server functions (messages, bloodstains, summon signs) go over HTTP to
+        # the game server only, as bbhost and Awaken's port send them; never through a shadNet
+        # WebAPI (Metr1k, The Hunter's Dream). Play logs go to its API port instead of
+        # FromSoftware's old storage buckets.
         overrides = {GAME_SERVER: community}
-        # BB_POOL_NAME (the launcher's SuperMedo Server): its name in the log, not its address.
-        shown = env.get('BB_POOL_NAME') or webapi
-        if summon_service(webapi):
-            overrides.update({f'{scheme}://{host}:{COMMUNITY_API_PORT}/summon_messenger': webapi
-                              for scheme in ('https', 'http')})
-            print(f'Co-op: summon signs through {shown}')
-        else:
-            print(f'Co-op: {shown} has no summon service; summon signs through {community}')
+        overrides.update({f'https://{bucket}:443': f'{scheme}://{host}:{COMMUNITY_API_PORT}'
+                          for bucket in ('bb-playlog-prod.s3.amazonaws.com',
+                                         'bb-playlog-test.s3.amazonaws.com')})
+        print(f'Co-op: game server {community}')
         path.write_text(json.dumps(overrides, indent=2) + '\n', encoding='utf-8')
     env['SHADPS4_HTTP_HOST_OVERRIDES_JSON'] = str(path)
 
