@@ -123,7 +123,7 @@ def run_script(name, *args, capture=False, optional=False):
     # Inside the packaged Bloodborne.exe (PyInstaller) the executable runs scripts itself.
     script = ['--script'] if getattr(sys, 'frozen', False) else []
     command = [sys.executable, *script, str(PORT / 'scripts' / name), *map(str, args)]
-    if optional:
+    if optional and not capture:
         try:
             return subprocess.run(command, stdin=subprocess.DEVNULL, creationflags=no_console()).returncode == 0
         except OSError:
@@ -132,6 +132,8 @@ def run_script(name, *args, capture=False, optional=False):
         result = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True,
                                 creationflags=no_console())
         if result.returncode:
+            if optional:
+                return None
             sys.exit(result.returncode)
         return result.stdout
     # stdin given: the output handles are passed explicitly (a windowed Bloodborne.exe child would
@@ -228,11 +230,19 @@ def main():
                           '--source', text_layer, optional=True):
             shutil.rmtree(hud_layer, ignore_errors=True)
             print('HUD layout: its menu files could not be written; the HUD stays in the centre')
-    game = Path(run_script('mods.py', game, '--out', out,
-                           '--mods-dir', env.get('BB_MODS_DIR', data / 'mods'),
-                           '--config', env.get('BB_MODS_CONFIG', data / 'mods.json'),
-                           '--enabled', env.get('BB_MODS_ENABLED', '1'),
-                           '--layer', text_layer, '--layer', hud_layer, capture=True).strip())
+    mod_args = [game, '--out', out, '--mods-dir', env.get('BB_MODS_DIR', data / 'mods'),
+                '--config', env.get('BB_MODS_CONFIG', data / 'mods.json'),
+                '--enabled', env.get('BB_MODS_ENABLED', '1')]
+    view = run_script('mods.py', *mod_args, '--layer', text_layer, '--layer', hud_layer,
+                      capture=True, optional=True)
+    if view is None:
+        # The game view could not be made with the port's own layers (Quit to Desktop's texts,
+        # the HUD layout); without them the game still starts, as it did before they existed.
+        print('Mods: the game view could not be made; starting without Quit to Desktop and the '
+              'HUD layout')
+        env['BB_QUIT_TO_DESKTOP'] = '0'
+        view = run_script('mods.py', *mod_args, capture=True)
+    game = Path(view.strip())
     mod_view = game if game.resolve() != original_game else None
     try:
         run_script('prepare.py', game, '--out', out)

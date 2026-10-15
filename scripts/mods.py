@@ -208,7 +208,9 @@ def expand(directory):
         directory.mkdir(exist_ok=True)
 
 
-def build_overlay(game, out, mods):
+def build_overlay(game, out, mods, beside_game=True):
+    """beside_game: on another drive than the game, the view goes next to the game (hard links
+    reach only one volume); False keeps it in `out` (files are then copied, folders linked)."""
     game = Path(game).resolve(strict=True)
     replacements = []
     owners = {}
@@ -226,7 +228,7 @@ def build_overlay(game, out, mods):
         return game
     out = Path(out).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    if os.name == 'nt' and out.drive.casefold() != game.drive.casefold():
+    if beside_game and os.name == 'nt' and out.drive.casefold() != game.drive.casefold():
         # Hard links only reach files on the same volume: the overlay goes beside the game.
         out = game.parent
     overlay = Path(tempfile.mkdtemp(prefix='mod-game-', dir=out))
@@ -279,7 +281,19 @@ def main():
         else:
             for name in selected(args.mods_dir, args.config):
                 layers.append((name, args.mods_dir / name))
-    print(build_overlay(args.game, args.out, layers))
+    try:
+        print(build_overlay(args.game, args.out, layers))
+    except OSError as error:
+        # [WinError 1] "Incorrect function": without symlink rights a folder becomes a junction,
+        # and junctions exist only on NTFS. A port on an exFAT or FAT32 drive (USB, external)
+        # gets its game view in the system drive's temporary folder instead, which is NTFS.
+        if os.name != 'nt' or getattr(error, 'winerror', None) != 1:
+            raise
+        fallback = Path(tempfile.gettempdir()) / 'bbport-game-view'
+        fallback.mkdir(parents=True, exist_ok=True)
+        print(f'Mods: links are not supported on the drive of {args.out}; '
+              f'the game view is made in {fallback}', file=sys.stderr)
+        print(build_overlay(args.game, fallback, layers, beside_game=False))
 
 
 if __name__ == '__main__':
