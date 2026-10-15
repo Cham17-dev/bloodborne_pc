@@ -323,6 +323,8 @@ def external_patches(directory, app_version='01.09', exclude=Path(__file__).reso
     directory=Path(directory)
     for path in sorted(directory.glob('*.xml')) if directory.is_dir() else []:
         if path.resolve()==Path(exclude).resolve(): continue  # the built-in file (patches/ in a checkout)
+        # Left by bbbridge's app: play logs every 5 s to The Hunter's Dream.
+        if path.name.lower()=='bbbridge-live-map.xml': continue
         try:
             root=ET.parse(path).getroot()
         except ET.ParseError as error:
