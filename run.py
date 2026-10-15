@@ -330,7 +330,12 @@ def main():
         return subprocess.run(command, stdin=subprocess.DEVNULL, creationflags=no_console()).returncode
     finally:
         if mod_view:
-            shutil.rmtree(mod_view, ignore_errors=True)
+            # Read-only game files leave read-only links (mods.remove_overlay clears them).
+            from mods import remove_overlay
+            try:
+                remove_overlay(mod_view, original_game)
+            except OSError:
+                pass
 
 
 if __name__ == '__main__':
