@@ -8,7 +8,8 @@
 | — | Mire de test HDR (`BB_HDR_TEST_PATTERN=1`) | **Validé** : ombres distinctes, couleurs justes, écrêtage vers 1000 nits (réglage de l'écran) |
 | — | Mode « HDR diagnostic » : export des shaders (cache désactivé) + analyse d'une image toutes les 20 s, constantes sur 4 Ko, textures par dessin | Validé |
 | 2 | Identifier le shader de tonemap du jeu | **Fait** — voir « Tonemap de Bloodborne » ci-dessous |
-| 3 | Remplacer le tonemap (méthode RenoDX, `host_shaders/hdr/renodx.glsl` déjà porté) | À faire. Attention : le cache de pipelines (`BB_PIPELINE_CACHE`) recharge les shaders sans passer par `CompileModule`, donc sans le remplacement de shader : le remplacement doit contourner ce cache. |
+| 3a | Remplacer le shader de tonemap (`hdr/bb_tonemap.frag`, `GameShaderCode()`, option *HDR tonemap (test)*, `BB_HDR_TONEMAP=0/1/2`) | **Validé** (15/10) : mode 2 teinte la partie gauche (environ un quart de l'écran : la cible fait plus de 1920 px de large en sortie 4K, à prendre en compte), mode 1 donne une image identique au jeu. Le cache de pipelines est contourné (remplacement aussi au chargement depuis le cache). |
+| 3b | Courbe HDR (méthode RenoDX, `hdr/renodx.glsl`) + garder le HDR jusqu'à l'affichage | À faire : voir le plan ci-dessous |
 | 4 | Upscalers (FSR/DLSS en mode mis à l'échelle travaillent sur l'image déjà tonemappée) | À faire |
 
 Options (launcher → Fenêtre, ou variables d'environnement) :
@@ -44,8 +45,7 @@ Passe `#…` à 2 dessins, cible `R8G8B8A8Unorm 1920x1080` (la cible de l'interf
 
 ## Plan de l'étape 3
 
-1. **Remplacement du shader `5c02eaf8`** par une version HDR compilée avec le projet (pas un fichier `.spv` sur
-   disque), branchée dans `CompileModule` **et** dans le chargement depuis le cache de pipelines.
+1. ~~Remplacement du shader `5c02eaf8`~~ : fait (étape 3a).
 2. **Courbe** : garder le rendu SDR d'origine (`T`, écran, matrice) comme référence et étendre les hautes lumières
    avec `rd_upgrade_tonemap` / Neutwo (pic = luminosité max ÷ paper white), réglable.
 3. **Garder le HDR jusqu'à l'affichage** : la cible UI, les copies, l'AA et le tampon d'affichage sont en 8 bits.
