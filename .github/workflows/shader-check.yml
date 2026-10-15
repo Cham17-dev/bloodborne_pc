@@ -1,5 +1,6 @@
 # Quick check (about a minute): compiles every host shader listed in gpu/CMakeLists.txt with the
-# same glslang options as the build, so a shader error shows up before the full Windows build.
+# same glslang options as the build, plus the HDR library checks (host_shaders/hdr/*_check.frag),
+# so a shader error shows up before the full Windows build. The result is an annotation.
 name: Shader check
 
 on:
@@ -19,16 +20,24 @@ jobs:
         run: |
           src=gpu/shadps4/video_core/host_shaders
           out=$(mktemp -d)
-          fail=0
+          ok=0; failed=0
+          compile() { # <label> <glslang arguments...>
+            local label=$1; shift
+            if glslangValidator --target-env vulkan1.3 "$@" > "$out/log.txt" 2>&1; then
+              ok=$((ok + 1))
+            else
+              failed=$((failed + 1))
+              echo "::error title=Shader $label::$(tr '\n' ' ' < "$out/log.txt" | cut -c1-900)"
+            fi
+          }
           # add_host_shader(<file> <name> [DEFINE=VALUE ...])
-          grep -E '^add_host_shader\(' gpu/CMakeLists.txt | sed -E 's/^add_host_shader\((.*)\)$/\1/' |
           while read -r file name defines; do
             args=()
             for d in $defines; do args+=("-D$d"); done
-            if glslangValidator --target-env vulkan1.3 -o "$out/$name.h" --vn "${name^^}" "${args[@]}" "$src/$file" > "$out/log.txt" 2>&1; then
-              echo "ok      $file ($name)"
-            else
-              echo "FAILED  $file ($name)"; cat "$out/log.txt"; echo 1 > "$out/failed"
-            fi
+            compile "$file ($name)" -o "$out/$name.h" --vn "${name^^}" "${args[@]}" "$src/$file"
+          done < <(grep -E '^add_host_shader\(' gpu/CMakeLists.txt | sed -E 's/^add_host_shader\((.*)\)$/\1/')
+          for check in "$src"/hdr/*_check.frag; do
+            compile "$check" -o "$out/check.spv" "$check"
           done
-          [[ ! -f "$out/failed" ]]
+          echo "::notice title=Shader check::$ok compiled, $failed failed"
+          [[ $ok -gt 0 && $failed -eq 0 ]]
