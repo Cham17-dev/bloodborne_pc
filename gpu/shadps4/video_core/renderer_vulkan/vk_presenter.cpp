@@ -11,6 +11,7 @@
 #include "sdl_window.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderdoc.h"
+#include "video_core/renderer_vulkan/vk_hdr_channel.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "bbport_overlay.h"
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
@@ -457,7 +458,17 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     pp_settings.hdr_paper_white = static_cast<float>(EmulatorSettings.GetHdrPaperWhite());
     pp_settings.hdr_gamma22 = EmulatorSettings.IsHdrGamma22() ? 1 : 0;
     pp_settings.hdr_test_pattern = EmulatorSettings.IsHdrTestPattern() ? 1 : 0;
-    pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings);
+    // bbport HDR side channel: the gains of the last tonemap draw (vk_hdr_channel.h).
+    vk::ImageView hdr_channel{};
+    if (frame->is_hdr && HdrChannel::Enabled()) {
+        if (const auto latest = HdrChannel::Get().LatestImage()) {
+            hdr_channel = latest->view;
+        }
+        pp_settings.hdr_channel = 1;
+        pp_settings.hdr_debug = HdrChannel::Debug();
+        pp_settings.hdr_peak_nits = HdrChannel::PeakNits();
+    }
+    pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings, hdr_channel);
     if (frame_dump) {
         // The presented image as the swapchain blit reads it (General after the pass).
         const vk::MemoryBarrier2 done{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,

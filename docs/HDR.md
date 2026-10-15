@@ -9,7 +9,7 @@
 | — | Mode « HDR diagnostic » : export des shaders (cache désactivé) + analyse d'une image toutes les 20 s, constantes sur 4 Ko, textures par dessin | Validé |
 | 2 | Identifier le shader de tonemap du jeu | **Fait** — voir « Tonemap de Bloodborne » ci-dessous |
 | 3a | Remplacer le shader de tonemap (`hdr/bb_tonemap.frag`, `GameShaderCode()`, option *HDR tonemap (test)*, `BB_HDR_TONEMAP=0/1/2`) | **Validé** (15/10) : mode 2 teinte la partie gauche (environ un quart de l'écran : la cible fait plus de 1920 px de large en sortie 4K, à prendre en compte), mode 1 donne une image identique au jeu. Le cache de pipelines est contourné (remplacement aussi au chargement depuis le cache). |
-| 3b | Courbe HDR (méthode RenoDX, `hdr/renodx.glsl`) + garder le HDR jusqu'à l'affichage | À faire : voir le plan ci-dessous |
+| 3b | Canal HDR : dessin fantôme du tonemap dans une image RGBA16F (gain HDR par pixel) + application du gain dans le post-process final là où l'image est encore la scène | **Codé le 15/10 au soir, compile, à tester** (*HDR tonemap (test)* = *bbport HDR*, `BB_HDR_TONEMAP=3`) |
 | 4 | Upscalers (FSR/DLSS en mode mis à l'échelle travaillent sur l'image déjà tonemappée) | À faire |
 
 Options (launcher → Fenêtre, ou variables d'environnement) :
@@ -19,6 +19,10 @@ Options (launcher → Fenêtre, ou variables d'environnement) :
 | Allow HDR output | `BB_HDR=1` | off |
 | HDR brightness (paper white) | `BB_HDR_PAPER_WHITE=80..500` | 203 |
 | HDR test pattern | `BB_HDR_TEST_PATTERN=1` | off |
+| HDR tonemap (test) | `BB_HDR_TONEMAP=0/1/2/3` (jeu / bbport / bbport + teinte / bbport HDR) | 0 |
+| HDR peak brightness | `BB_HDR_PEAK_NITS=200..10000` | 1000 |
+| HDR debug view | `BB_HDR_DEBUG=1` gain en couleurs, `=2` pixels pris pour l'interface en rouge | off |
+| — | `BB_HDR_KNEE=0.3..0.95` : part du blanc sous laquelle la courbe du jeu est gardée | 0.6 |
 | HDR diagnostic (collect shaders) | `BB_DUMP_SHADERS=1`, `BB_PIPELINE_CACHE=0`, `BB_CAPTURE_AUTO=20`, `BB_CAPTURE_DIR=<sauvegardes>/shader/dumps/frames` | off |
 | — | `BB_HDR_GAMMA22=0` : décodage sRGB au lieu de gamma 2.2 | 1 |
 
@@ -95,6 +99,37 @@ la sortie SDR du jeu (pour distinguer la scène de l'interface).
 À régler en le branchant : l'ordre des canaux (le jeu écrit la ligne 848 de la matrice dans le premier canal et
 les copies suivantes inversent B et R), et la façon de passer les spécialisations (`SetSpecConstant`, ids 1 et 2,
 flottants).
+
+## Implémentation de l'étape 3b (15/10 au soir)
+
+- `vk_hdr_channel.*` : deux images RGBA16F en alternance à la taille de la cible du tonemap, le module du shader
+  HDR (spécialisations pic ÷ paper white et genou), les réglages.
+- `vk_graphics_pipeline.cpp` : pour le pipeline du tonemap remplacé (`GameShaderReplaced`), une copie avec le shader
+  HDR et un attachement RGBA16F sans mélange (`HdrHandle()`).
+- `vk_rasterizer.cpp` (`DrawRecord`) : après le dessin du tonemap, fin de la passe du jeu, dessin fantôme dans
+  l'image du canal (effacée à gain 1), barrières, puis reprise de la passe du jeu en `Load`. L'image est préparée
+  avant `BeginRendering` (un redimensionnement attend le GPU).
+- `hdr/bb_tonemap_hdr.frag` : sortie r = gain (luminance HDR ÷ luminance du jeu, 1 sous le genou), g = luminance de
+  la sortie du jeu (encodée 2,2), b = luminance linéaire du jeu.
+- `post_process.frag` + `pp_pass` (binding 1) : gain appliqué là où la luminance finale (après AA, grain, courbe de
+  luminosité du jeu, interface) reste à ±0,03–0,10 de celle du canal ; ailleurs SDR. Écrêté au pic.
+- Pourquoi un gain et pas une couleur : la copie vers l'affichage applique une courbe 1D par canal (réglage de
+  luminosité du jeu) et l'ordre des canaux s'inverse plusieurs fois (tonemap BGR, copies, AA) ; un gain de
+  luminance appliqué à l'image finie garde tout le rendu du jeu.
+
+Limites connues à vérifier au premier test : décalage d'une image possible entre le canal et l'image affichée
+(deux images en alternance, pas de synchronisation fine avec l'affichage), interface sur les hautes lumières,
+réglage de luminosité du jeu très éloigné du défaut (la détection retombe alors en SDR).
+
+### Test de l'étape 3b
+
+1. *Allow HDR output* coché, *HDR tonemap (test)* = **bbport HDR**, *HDR peak brightness* = luminosité max de
+   l'écran, *HDR debug view* = Off. Lancer, aller dehors (ciel, lampadaires) et près d'une lampe ou d'un feu.
+   Attendu : tons moyens identiques au SDR, hautes lumières nettement plus intenses, interface normale.
+2. *HDR debug view* = **Highlight gain as colors** : gris = SDR, bleu → rouge = hautes lumières amplifiées. Les
+   lampes et le ciel doivent être colorés, le reste gris.
+3. *HDR debug view* = **Pixels taken as UI in red** : seuls l'interface et le texte doivent être rouges.
+4. En cas de problème : `last_run.log` (lignes `HDR channel:` et `HDR tonemap:`), une photo, et revenir à *bbport*.
 
 ## Fiche de test
 

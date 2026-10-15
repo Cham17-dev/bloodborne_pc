@@ -50,8 +50,9 @@ u64 SpirvHash(std::span<const u32> spv) {
     return hash;
 }
 
-/// Sets the default value of specialization constant `spec_id` (an int) in a SPIR-V module.
-void SetSpecConstant(std::vector<u32>& spv, u32 spec_id, u32 value) {
+} // namespace
+
+void SetSpirvSpecConstant(std::vector<u32>& spv, u32 spec_id, u32 value) {
     constexpr u32 OpDecorate = 71, OpSpecConstant = 50, DecorationSpecId = 1;
     u32 target = 0;
     for (size_t i = 5; i < spv.size();) {
@@ -70,7 +71,13 @@ void SetSpecConstant(std::vector<u32>& spv, u32 spec_id, u32 value) {
     }
 }
 
+namespace {
+std::atomic<bool> tonemap_replaced{false};
 } // namespace
+
+bool GameShaderReplaced(u64 pgm_hash) {
+    return pgm_hash == TonemapPgmHash && tonemap_replaced.load(std::memory_order_relaxed);
+}
 
 std::span<const u32> GameShaderCode(u64 pgm_hash, std::span<const u32> original) {
     static const int mode = EmulatorSettings.GetHdrTonemapMode();
@@ -89,11 +96,12 @@ std::span<const u32> GameShaderCode(u64 pgm_hash, std::span<const u32> original)
     }
     static const std::vector<u32> replacement = [] {
         std::vector<u32> spv(std::begin(BB_TONEMAP_FRAG), std::end(BB_TONEMAP_FRAG));
-        SetSpecConstant(spv, 0, mode == 2 ? 1u : 0u);
+        SetSpirvSpecConstant(spv, 0, mode == 2 ? 1u : 0u);
         LOG_INFO(Render_Vulkan, "HDR tonemap: the game's tonemap shader is replaced (mode {})",
                  mode);
         return spv;
     }();
+    tonemap_replaced.store(true, std::memory_order_relaxed);
     return replacement;
 }
 

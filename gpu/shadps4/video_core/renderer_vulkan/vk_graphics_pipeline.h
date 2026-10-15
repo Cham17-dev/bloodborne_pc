@@ -102,6 +102,11 @@ public:
         return key;
     }
 
+    /// bbport HDR: the side channel's pipeline for this draw (Bloodborne's tonemap), or null.
+    vk::Pipeline HdrHandle() const noexcept {
+        return *hdr_pipeline;
+    }
+
     /// Gets the attributes and bindings for vertex inputs.
     template <typename Attribute, typename Binding>
     void GetVertexInputs(VertexInputs<Attribute>& attributes, VertexInputs<Binding>& bindings,
@@ -110,6 +115,7 @@ public:
                          u32 step_rate_1) const;
 
 private:
+    vk::UniquePipeline hdr_pipeline; ///< bbport HDR side channel (vk_hdr_channel.h)
     void BuildDescSetLayout(bool preloading);
 
 private:

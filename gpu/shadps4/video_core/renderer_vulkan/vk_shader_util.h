@@ -4,6 +4,7 @@
 #pragma once
 
 #include <span>
+#include <vector>
 
 #include "common/types.h"
 #include "video_core/renderer_vulkan/vk_common.h"
@@ -21,5 +22,11 @@ vk::ShaderModule CompileSPV(std::span<const u32> code, vk::Device device);
 /// replaces (Bloodborne's tonemap), when enabled and when the original is the expected one;
 /// otherwise the original.
 std::span<const u32> GameShaderCode(u64 pgm_hash, std::span<const u32> original);
+
+/// bbport HDR: whether GameShaderCode() gave bbport's replacement for this game shader.
+bool GameShaderReplaced(u64 pgm_hash);
+
+/// Sets the default value (raw 32-bit word) of specialization constant `spec_id` in SPIR-V.
+void SetSpirvSpecConstant(std::vector<u32>& spv, u32 spec_id, u32 value);
 
 } // namespace Vulkan

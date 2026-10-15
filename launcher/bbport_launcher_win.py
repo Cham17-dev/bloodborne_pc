@@ -202,7 +202,7 @@ INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': 
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'), 'user_dir': '', 'dlc_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
                 'voice_language': 'auto',
-                'player_name': '', 'fullscreen': False, 'hdr': False, 'hdr_paper_white': '', 'hdr_test_pattern': False, 'hdr_probe': False, 'hdr_tonemap': '', 'present_mode': 'Mailbox',
+                'player_name': '', 'fullscreen': False, 'hdr': False, 'hdr_paper_white': '', 'hdr_test_pattern': False, 'hdr_probe': False, 'hdr_tonemap': '', 'hdr_peak_nits': '', 'hdr_debug': '', 'present_mode': 'Mailbox',
                 'fps_mode': 'uncap', 'frame_cap': '', 'draw_pipe': '', 'readbacks': '',
                 'frames_ahead': '', 'frame_stats': False, 'gpu_profile': False,
                 'vk_validation': False, 'extra_env': '', 'close_on_play': False,
@@ -255,7 +255,16 @@ FRAME_CAPS = [('', ('Auto: display refresh, max 120 (recommended)', 'Авто: �
 FRAMES_AHEAD = [('', ('1 (default)', '1 (по умолчанию)')), ('2', ('2',)), ('0', ('Unbounded', 'Без ограничения'))]
 # bbport HDR: the game's tonemap shader replaced by bbport's (step 3; for now the same image).
 HDR_TONEMAP = [('', ('Game (default)', 'Игры (по умолчанию)')), ('1', ('bbport', 'bbport')),
-               ('2', ('bbport, left half tinted (check)', 'bbport, левая половина окрашена (проверка)'))]
+               ('2', ('bbport, left half tinted (check)', 'bbport, левая половина окрашена (проверка)')),
+               ('3', ('bbport HDR: brighter highlights (experimental, needs HDR output)',
+                      'bbport HDR: яркие блики (эксперимент, нужен вывод HDR)'))]
+# bbport HDR: peak luminance of the display, in nits (BB_HDR_PEAK_NITS).
+HDR_PEAK_NITS = [('', ('1000 nits (default)', '1000 нит (по умолчанию)')), ('400', ('400 nits', '400 нит')),
+                 ('600', ('600 nits', '600 нит')), ('800', ('800 nits', '800 нит')),
+                 ('1500', ('1500 nits', '1500 нит')), ('2000', ('2000 nits', '2000 нит'))]
+# bbport HDR: debug views of the HDR highlights (BB_HDR_DEBUG).
+HDR_DEBUG = [('', ('Off', 'Выкл.')), ('1', ('Highlight gain as colors', 'Усиление бликов цветом')),
+             ('2', ('Pixels taken as UI in red', 'Пиксели интерфейса красным'))]
 # bbport HDR: luminance of the game's white (paper white) in HDR output, in nits.
 HDR_PAPER_WHITE = [('', ('203 nits (default)', '203 нит (по умолчанию)')), ('100', ('100 nits', '100 нит')),
                    ('150', ('150 nits', '150 нит')), ('250', ('250 nits', '250 нит')),
@@ -474,6 +483,10 @@ def game_environment(s):
             env['BB_HDR_TEST_PATTERN'] = '1'
     if s.get('hdr_tonemap', ''):
         env['BB_HDR_TONEMAP'] = s['hdr_tonemap']
+    if s.get('hdr_peak_nits', ''):
+        env['BB_HDR_PEAK_NITS'] = s['hdr_peak_nits']
+    if s.get('hdr_debug', ''):
+        env['BB_HDR_DEBUG'] = s['hdr_debug']
     if s.get('hdr_probe'):
         # HDR diagnostic: the game's shaders and a few analysed frames, in <saves>/shader/dumps.
         user = Path(s['user_dir'] or DATA_DIR / 'user')
@@ -1026,6 +1039,11 @@ class Launcher:
                    'half of the screen magenta to show that it is active.',
                    'Заменяет шейдер тонмаппинга игры шейдером bbport. Режим проверки окрашивает '
                    'левую половину экрана в пурпурный.'))
+        self.row(f, _('HDR peak brightness', 'Пиковая яркость HDR'),
+                 self.choice(f, 'hdr_peak_nits', 'app', HDR_PEAK_NITS),
+                 _('The brightest your display can show (with the bbport HDR tonemap).',
+                   'Максимальная яркость дисплея (для тонмаппинга bbport HDR).'))
+        self.row(f, _('HDR debug view', 'Отладка HDR'), self.choice(f, 'hdr_debug', 'app', HDR_DEBUG))
         self.check(f, 'hdr_test_pattern', 'app', _('HDR test pattern', 'Тестовая таблица HDR'),
                    _('Shows a test pattern instead of the game, to check the HDR output.',
                      'Показывает тестовую таблицу вместо игры для проверки вывода HDR.'))

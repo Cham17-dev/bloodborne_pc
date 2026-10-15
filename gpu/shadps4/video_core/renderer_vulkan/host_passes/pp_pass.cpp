@@ -23,6 +23,13 @@ void PostProcessingPass::Create(vk::Device device, const vk::Format surface_form
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eFragment,
         },
+        // bbport HDR side channel (the input again when there is none).
+        {
+            .binding = 1,
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment,
+        },
     };
 
     const vk::DescriptorSetLayoutCreateInfo desc_layout_ci{
@@ -182,7 +189,8 @@ void PostProcessingPass::Create(vk::Device device, const vk::Format surface_form
 }
 
 void PostProcessingPass::Render(vk::CommandBuffer cmdbuf, vk::ImageView input,
-                                vk::Extent2D input_size, Frame& frame, Settings settings) {
+                                vk::Extent2D input_size, Frame& frame, Settings settings,
+                                vk::ImageView hdr_channel) {
     if (EmulatorSettings.IsVkHostMarkersEnabled()) {
         cmdbuf.beginDebugUtilsLabelEXT(vk::DebugUtilsLabelEXT{
             .pLabelName = "Host/Post processing",
@@ -220,6 +228,15 @@ void PostProcessingPass::Render(vk::CommandBuffer cmdbuf, vk::ImageView input,
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
 
+    vk::DescriptorImageInfo hdr_info{
+        .sampler = *sampler,
+        .imageView = hdr_channel ? hdr_channel : input,
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+    };
+    if (!hdr_channel) {
+        settings.hdr_channel = 0;
+    }
+
     const std::array set_writes{
         vk::WriteDescriptorSet{
             .dstSet = VK_NULL_HANDLE,
@@ -228,6 +245,14 @@ void PostProcessingPass::Render(vk::CommandBuffer cmdbuf, vk::ImageView input,
             .descriptorCount = 1,
             .descriptorType = vk::DescriptorType::eCombinedImageSampler,
             .pImageInfo = &image_info,
+        },
+        vk::WriteDescriptorSet{
+            .dstSet = VK_NULL_HANDLE,
+            .dstBinding = 1,
+            .dstArrayElement = 0,
+            .descriptorCount = 1,
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+            .pImageInfo = &hdr_info,
         },
     };
 

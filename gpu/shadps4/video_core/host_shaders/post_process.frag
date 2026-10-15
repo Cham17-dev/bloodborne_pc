@@ -7,6 +7,9 @@ layout (location = 0) in vec2 uv;
 layout (location = 0) out vec4 color;
 
 layout (binding = 0) uniform sampler2D texSampler;
+// bbport HDR side channel (vk_hdr_channel.h): r = HDR gain, g = the game's output luminance
+// (gamma 2.2 encoded) where the gain was computed, b = the game's linear luminance.
+layout (binding = 1) uniform sampler2D hdrChannel;
 
 layout (push_constant) uniform settings {
     float gamma;
@@ -15,6 +18,9 @@ layout (push_constant) uniform settings {
     float hdr_paper_white; // bbport: nits of SDR white in HDR10 output
     bool hdr_gamma22;      // bbport: decode SDR with a 2.2 power instead of the sRGB curve
     bool hdr_test_pattern; // bbport: HDR10 test pattern instead of the game
+    bool hdr_channel;      // bbport: apply the HDR side channel's gains
+    uint hdr_debug;        // bbport: 1 = gain heat map, 2 = pixels taken as UI in red
+    float hdr_peak_nits;   // bbport: peak luminance
 } pp;
 
 const float cutoff = 0.0031308, a = 1.055, b = 0.055, d = 12.92;
@@ -98,7 +104,28 @@ void main() {
         // as an SDR display would, place its white at paper white and encode it in HDR10.
         if (pp.srgb_input) color_linear.rgb = degamma(color_linear.rgb);
         vec3 signal = clamp(gamma(clamp(color_linear.rgb, 0.0, 1.0)), 0.0, 1.0);
-        color = vec4(pq_encode(sdr_to_nits(signal)), 1.0);
+        vec3 nits = sdr_to_nits(signal);
+        if (pp.hdr_channel) {
+            // Where the finished frame is still what the tonemap wrote (same luminance, give or
+            // take the game's AA, grain and brightness setting), it is the scene: its highlights
+            // are raised by the channel's gain. Elsewhere (UI drawn over it) it stays SDR.
+            vec4 channel = texture(hdrChannel, uv);
+            float luma = dot(signal, vec3(0.2126390059, 0.7151686788, 0.0721923154));
+            float scene = 1.0 - smoothstep(0.03, 0.10, abs(luma - channel.g));
+            float gain = mix(1.0, max(channel.r, 1.0), scene);
+            nits = min(nits * gain, vec3(pp.hdr_peak_nits));
+            if (pp.hdr_debug == 1u) {
+                // Gain heat map: grey = 1 (SDR), blue to red = up to the peak.
+                float peak_gain = max(pp.hdr_peak_nits / pp.hdr_paper_white, 1.001);
+                float t = clamp((gain - 1.0) / (peak_gain - 1.0), 0.0, 1.0);
+                nits = gain > 1.001 ? mix(vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 0.0), t) *
+                                          pp.hdr_paper_white
+                                    : vec3(dot(nits, vec3(0.2627, 0.6780, 0.0593)) * 0.5);
+            } else if (pp.hdr_debug == 2u && scene < 0.5) {
+                nits = mix(nits, vec3(pp.hdr_paper_white, 0.0, 0.0), 0.6); // taken as UI
+            }
+        }
+        color = vec4(pq_encode(nits), 1.0);
     } else {
         if (pp.srgb_input) color_linear.rgb = degamma(color_linear.rgb);
         color = vec4(gamma(color_linear.rgb), color_linear.a);

@@ -8,6 +8,7 @@
 #include "common/assert.h"
 #include "shader_recompiler/backend/spirv/emit_spirv_discard_frag.h"
 #include "shader_recompiler/backend/spirv/emit_spirv_quad_rect.h"
+#include "video_core/renderer_vulkan/vk_hdr_channel.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -431,6 +432,47 @@ GraphicsPipeline::GraphicsPipeline(
     }
     pipeline = std::move(pipe);
     SetObjectName(device, *pipeline, "Graphics Pipeline {}", debug_str);
+
+    // bbport HDR: the side channel's copy of Bloodborne's tonemap pipeline (vk_hdr_channel.h):
+    // same layout, vertex input, dynamic state and vertex shader; the HDR fragment shader and an
+    // RGBA16F attachment without blending. Only for bbport's replacement of the tonemap shader,
+    // whose interface the HDR shader shares.
+    const auto* fs_stage = stages[u32(Shader::SwStage::Fragment)];
+    if (fs_stage && HdrChannel::Enabled() && GameShaderReplaced(fs_stage->pgm_hash) &&
+        key.num_color_attachments == 1 && key.z_format == AmdGpu::DepthBuffer::ZFormat::Invalid &&
+        key.stencil_format == AmdGpu::DepthBuffer::StencilFormat::Invalid) {
+        auto hdr_stages = shader_stages;
+        for (auto& hdr_stage : hdr_stages) {
+            if (hdr_stage.stage == vk::ShaderStageFlagBits::eFragment) {
+                hdr_stage.module = HdrChannel::Get().FragmentModule(instance);
+            }
+        }
+        const vk::Format hdr_format = vk::Format::eR16G16B16A16Sfloat;
+        auto hdr_rendering = pipeline_rendering_ci;
+        hdr_rendering.pNext = nullptr;
+        hdr_rendering.pColorAttachmentFormats = &hdr_format;
+        const vk::PipelineColorBlendAttachmentState hdr_attachment{
+            .blendEnable = false,
+            .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                              vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
+        };
+        auto hdr_blending = color_blending;
+        hdr_blending.logicOpEnable = false;
+        hdr_blending.pAttachments = &hdr_attachment;
+        auto hdr_info = pipeline_info;
+        hdr_info.pNext = &hdr_rendering;
+        hdr_info.stageCount = static_cast<u32>(hdr_stages.size());
+        hdr_info.pStages = hdr_stages.data();
+        hdr_info.pColorBlendState = &hdr_blending;
+        auto [hdr_result, hdr_pipe] = device.createGraphicsPipelineUnique(pipeline_cache, hdr_info);
+        if (hdr_result == vk::Result::eSuccess) {
+            hdr_pipeline = std::move(hdr_pipe);
+            LOG_INFO(Render_Vulkan, "HDR channel: pipeline for the tonemap draw {}", debug_str);
+        } else {
+            LOG_WARNING(Render_Vulkan, "HDR channel: cannot build the tonemap pipeline: {}",
+                        vk::to_string(hdr_result));
+        }
+    }
 }
 
 GraphicsPipeline::~GraphicsPipeline() = default;

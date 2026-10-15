@@ -4,6 +4,7 @@
 #include <xxhash.h>
 #include <mutex>
 #include <set>
+#include "video_core/renderer_vulkan/vk_hdr_channel.h"
 #include "video_core/renderer_vulkan/ui_composition.h"
 #include "bbport_toggles.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
@@ -1114,6 +1115,13 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     }
     UpdateDynamicState(pipeline, is_indexed);
     MarkPass(pipeline, state);
+    // bbport HDR side channel: its image before the pass begins (a resize waits for the GPU,
+    // which ends the current pass).
+    const vk::Pipeline hdr_handle = pipeline->HdrHandle();
+    std::optional<HdrChannel::Slot> hdr_slot;
+    if (hdr_handle) {
+        hdr_slot = HdrChannel::Get().Acquire(instance, scheduler, state.width, state.height);
+    }
     scheduler.BeginRendering(state);
 
     const auto& vs_info = pipeline->GetStage(Shader::SwStage::Vertex);
@@ -1133,6 +1141,90 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             cmdbuf.draw(num_indices, num_instances, first_vertex, first_instance);
         }
     });
+    // bbport HDR side channel: the tonemap draw again, into the channel's RGBA16F image, with the
+    // same descriptors, push constants, vertex buffers and dynamic state; then the game's pass
+    // continues (its attachments loaded, not cleared again).
+    if (hdr_slot) {
+        const auto slot = *hdr_slot;
+        const RenderState game_state = state;
+        scheduler.Record([=](vk::CommandBuffer cmdbuf) {
+            cmdbuf.endRendering();
+            const vk::ImageSubresourceRange range{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+            const vk::ImageMemoryBarrier2 to_attachment{
+                .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                .srcAccessMask = vk::AccessFlagBits2::eShaderRead,
+                .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+                .oldLayout = slot.layout,
+                .newLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                .image = slot.image,
+                .subresourceRange = range,
+            };
+            cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1,
+                                     .pImageMemoryBarriers = &to_attachment});
+            const vk::RenderingAttachmentInfo hdr_attachment{
+                .imageView = slot.view,
+                .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                .loadOp = vk::AttachmentLoadOp::eClear,
+                .storeOp = vk::AttachmentStoreOp::eStore,
+                .clearValue = vk::ClearValue{.color = vk::ClearColorValue{
+                                                 std::array{1.0f, 0.0f, 0.0f, 1.0f}}},
+            };
+            cmdbuf.beginRendering({
+                .renderArea = {{0, 0}, {game_state.width, game_state.height}},
+                .layerCount = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &hdr_attachment,
+            });
+            cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, hdr_handle);
+            if (is_indexed) {
+                cmdbuf.drawIndexed(num_indices, num_instances, 0, s32(first_vertex),
+                                   first_instance);
+            } else {
+                cmdbuf.draw(num_indices, num_instances, first_vertex, first_instance);
+            }
+            cmdbuf.endRendering();
+            const vk::ImageMemoryBarrier2 to_read{
+                .srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                .srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+                .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+                .oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+                .image = slot.image,
+                .subresourceRange = range,
+            };
+            cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1,
+                                     .pImageMemoryBarriers = &to_read});
+            // The game's pass again, loading what it has drawn so far.
+            std::array<vk::RenderingAttachmentInfo, 8> colors{};
+            for (u32 i = 0; i < game_state.num_color_attachments; ++i) {
+                colors[i] = vk::RenderingAttachmentInfo{
+                    .imageView = game_state.color_attachments[i].image_view,
+                    .imageLayout = game_state.color_attachments[i].image_layout,
+                    .loadOp = vk::AttachmentLoadOp::eLoad,
+                    .storeOp = vk::AttachmentStoreOp::eStore,
+                };
+            }
+            const auto& db = game_state.depth_stencil_attachment;
+            const vk::RenderingAttachmentInfo depth{
+                .imageView = db.image_view,
+                .imageLayout = db.image_layout,
+                .loadOp = vk::AttachmentLoadOp::eLoad,
+                .storeOp = vk::AttachmentStoreOp::eStore,
+            };
+            cmdbuf.beginRendering({
+                .renderArea = {{0, 0}, {game_state.width, game_state.height}},
+                .layerCount = game_state.num_layers,
+                .colorAttachmentCount = game_state.num_color_attachments,
+                .pColorAttachments = colors.data(),
+                .pDepthAttachment = db.has_depth ? &depth : nullptr,
+                .pStencilAttachment = db.has_stencil ? &depth : nullptr,
+            });
+            cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, handle);
+        });
+        HdrChannel::Get().Published(slot.index);
+    }
     if (FrameCapture::Active()) {
         const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
         FrameCapture::Draw(vs_info.pgm_hash, ps ? ps->pgm_hash : 0, num_indices, num_instances);

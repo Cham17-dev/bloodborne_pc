@@ -23,9 +23,14 @@
 //   - up to the knee (the game's output at BB_HDR_KNEE of white) the game's curve, unchanged;
 //   - above, a Neutwo shoulder (hdr/renodx.glsl) with the same slope at the knee, rising to
 //     BB_HDR_PEAK (peak luminance / paper white) instead of the game's white.
-// Output: rgb = HDR color, linear, Rec.709 primaries, 1.0 = paper white (the game's white);
-//         a   = luminance of the game's own output (gamma 2.2 encoded, no grain), so the final pass
-//               can tell the scene from the UI drawn over it.
+// Output (RGBA16F):
+//   r = HDR gain: luminance of the HDR color / luminance of the game's color (1 below the knee);
+//   g = luminance of the game's own output (gamma 2.2 encoded, no grain), so the final pass can
+//       tell the scene from the UI drawn over it;
+//   b = luminance of the game's color (linear), for the debug views; a = 1.
+// The final pass multiplies the game's finished image (UI, AA, grain and brightness setting
+// included) by the gain where the pixel is still the scene: the SDR image is kept as it is and
+// only its highlights are raised, so the channel order of the targets does not matter.
 // Specialization constants: 1 = BB_HDR_PEAK, 2 = BB_HDR_KNEE.
 
 layout(constant_id = 1) const float BB_HDR_PEAK = 4.926;
@@ -152,7 +157,11 @@ void main() {
     vec3 sdr_graded = (screen_rows(grade_rows, sdr_screen) + offsets).zyx;
     vec3 hdr_graded = (screen_rows(grade_rows, hdr_screen) + offsets).zyx;
 
+    // The game's channel order here is BGR (row 840, mostly red, goes to the third channel).
+    const vec3 luma_bgr = vec3(0.0721923154, 0.7151686788, 0.2126390059);
     vec3 sdr_encoded = exp2(c(808u) * log2(clamp(sdr_graded + 2.384185791015625e-07, 0.0, 1.0)));
-    frag_color0 = vec4(max(hdr_graded, 0.0),
-                       dot(sdr_encoded, vec3(0.2126390059, 0.7151686788, 0.0721923154)));
+    float sdr_luma = dot(max(sdr_graded, 0.0), luma_bgr);
+    float hdr_luma = dot(max(hdr_graded, 0.0), luma_bgr);
+    float gain = sdr_luma > 1e-4 ? max(hdr_luma / sdr_luma, 1.0) : 1.0;
+    frag_color0 = vec4(gain, dot(sdr_encoded, luma_bgr), sdr_luma, 1.0);
 }

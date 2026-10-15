@@ -22,12 +22,17 @@ public:
         float hdr_paper_white = 203.0f;
         u32 hdr_gamma22 = 1;
         u32 hdr_test_pattern = 0;
+        // bbport HDR side channel (vk_hdr_channel.h): use it, debug view, peak luminance.
+        u32 hdr_channel = 0;
+        u32 hdr_debug = 0;
+        float hdr_peak_nits = 1000.0f;
     };
 
     void Create(vk::Device device, vk::Format surface_format);
 
+    /// `hdr_channel`: the HDR side channel's image (ShaderReadOnlyOptimal), or null.
     void Render(vk::CommandBuffer cmdbuf, vk::ImageView input, vk::Extent2D input_size,
-                Frame& output, Settings settings);
+                Frame& output, Settings settings, vk::ImageView hdr_channel = {});
 
 private:
     vk::UniquePipeline pipeline{};
