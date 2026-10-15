@@ -249,6 +249,19 @@ void FrameCapture::Draw(u64 vs_hash, u64 ps_hash, u32 num_indices, u32 num_insta
     e.indices += u64(num_indices) * std::max(num_instances, 1u);
     AddShader(e, vs_hash);
     AddShader(e, ps_hash);
+    // bbport: for the first draws of a pass, the textures of each draw in binding order (the
+    // pass list merges them), to tell which image a shader's fs_imgN is.
+    if (e.draws <= 4) {
+        std::string line = std::format("\n  draw {} ps {:08x}:", e.draws, u32(ps_hash));
+        u32 slot = 0;
+        for (const auto& [t, storage] : pending_sampled) {
+            line += std::format(" [{}{}] {}", storage ? "w" : "", slot++, Describe(t));
+        }
+        if (pending_sampled.empty()) {
+            line += " (no texture bound by this draw)";
+        }
+        e.note += line;
+    }
     AddSampled(e);
     AddBuffers(e);
 }
