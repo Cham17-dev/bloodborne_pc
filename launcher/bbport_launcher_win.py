@@ -380,6 +380,10 @@ def server_check(server, webapi, community):
 # The Hunter's Dream co-op pool (with bbhost players): bbbridge (bbbridge/, by MaskZeus), which
 # run.py starts with the game. Its account (Discord sign-in) stays in <saves>/bbbridge.
 BRIDGE_PAGE = 'https://github.com/MaskZeus/bbbridge-bbport-online-tool'
+# The SuperMedo Server co-op pool: a shadNet server reached over Tailscale; accounts are made at
+# SUPERMEDO_SIGNUP. The launcher shows the pool's name, not its address.
+SUPERMEDO_SERVER = '100.65.30.50:31313'
+SUPERMEDO_SIGNUP = 'https://www.supermedo.com'
 
 
 def bridge_cli():
@@ -474,6 +478,10 @@ def game_environment(s):
         env['BB_SHADNET_PASSWORD'] = str(s['online_password'])
         env['BB_UPNP'] = '1' if s['online_upnp'] else '0'
         env['BB_COMMUNITY_SERVER'] = community_address(s['online_community'])
+        if s.get('online_pool') == 'supermedo':
+            env['BB_SHADNET_SERVER'] = SUPERMEDO_SERVER
+            env['BB_SHADNET_WEBAPI'] = webapi_address(SUPERMEDO_SERVER)
+            env['BB_POOL_NAME'] = 'SuperMedo Server'
         if s.get('online_pool') == 'huntersdream':
             # run.py starts bbbridge and signs the game in with the Hunter's Dream id.
             env['BB_BRIDGE'] = '1'
@@ -1039,11 +1047,17 @@ class Launcher:
         pool.trace_add('write', lambda *_a: self.refresh_status())
         pools = ttk.Frame(f)
         ttk.Radiobutton(pools, text=_('shadNet server'), variable=pool, value='shadnet').pack(side='left')
+        ttk.Radiobutton(pools, text=_('SuperMedo Server'), variable=pool,
+                        value='supermedo').pack(side='left', padx=(16, 0))
         ttk.Radiobutton(pools, text=_("The Hunter's Dream (with bbhost players)"), variable=pool,
                         value='huntersdream').pack(side='left', padx=(16, 0))
         self.row(f, _('Play with'), pools,
-                 _("shadNet: the server and account below. The Hunter's Dream: the players of bbhost, "
-                   "the PC port by The Hunter's Dream's team; sign in with Discord below."))
+                 _("shadNet: the server and account below. SuperMedo Server: an account from "
+                   "supermedo.com in the Account boxes below, with Tailscale connected. The Hunter's "
+                   "Dream: the players of bbhost, the PC port by The Hunter's Dream's team; sign in "
+                   "with Discord below."))
+        self.row(f, '', ttk.Button(f, text=_('Sign up for SuperMedo Server'),
+                                   command=lambda: webbrowser.open(SUPERMEDO_SIGNUP)))
         self.section(f, _("The Hunter's Dream account"))
         account = ttk.Label(f, text='', justify='left')
         user_dir = self.var('user_dir', 'app')
@@ -1148,7 +1162,8 @@ class Launcher:
             address = values['online_server'].strip() or APP_DEFAULTS['online_server']
             webapi, game = webapi_setting(values), community_address(values['online_community'])
             online_on = self.var('online', 'app').get()
-            hunters_dream = pool.get() == 'huntersdream'
+            pool_name = pool.get()
+            hunters_dream, supermedo = pool_name == 'huntersdream', pool_name == 'supermedo'
             signed_in = bridge_accounts(user_dir.get())
             result.configure(text=_('Checking…'))
 
@@ -1159,9 +1174,17 @@ class Launcher:
                                     _('Not signed in: use "Sign in with Discord" above.'))
                     if not bridge_cli():
                         text += '\n' + _('bbbridge-cli.exe is missing from this installation.')
+                elif supermedo:
+                    # The pool's name instead of its address.
+                    text = server_check(SUPERMEDO_SERVER, webapi_address(SUPERMEDO_SERVER), game)
+                    text = text.replace('http://' + SUPERMEDO_SERVER.split(':')[0] + ':31315', 'SuperMedo Server')
+                    text = text.replace(SUPERMEDO_SERVER, 'SuperMedo Server')
+                    text = text.replace(SUPERMEDO_SERVER.split(':')[0], 'SuperMedo Server')
+                    if 'not reachable' in text:
+                        text += '\n' + _('SuperMedo Server needs Tailscale connected to its network.')
                 else:
                     text = server_check(address, webapi, game)
-                if not hunters_dream and values['online_webapi'].strip() and values['online_webapi'].strip() != webapi:
+                if pool_name == 'shadnet' and values['online_webapi'].strip() and values['online_webapi'].strip() != webapi:
                     text += '\n' + _('The WebAPI box holds the game server address; it is ignored.')
                 if not online_on:
                     text += '\n' + _('"Play online" is off: the game starts offline.')
@@ -1690,6 +1713,8 @@ class Launcher:
         online = _('Online') if self.var('online', 'app').get() else _('Offline')
         if self.var('online', 'app').get() and self.var('online_pool', 'app').get() == 'huntersdream':
             online = _("Online (The Hunter's Dream)")
+        elif self.var('online', 'app').get() and self.var('online_pool', 'app').get() == 'supermedo':
+            online = _('Online (SuperMedo Server)')
         return f'{_(*fps)}   ·   {upscaler}   ·   {output}   ·   {online}'
 
     def detect_gpu(self):

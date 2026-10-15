@@ -58,12 +58,14 @@ def online_overrides(env, user_dir):
         # WebAPI when that server has the Bloodborne summon service (the shadp2p server),
         # otherwise they stay with the community server.
         overrides = {GAME_SERVER: community}
+        # BB_POOL_NAME (the launcher's SuperMedo Server): its name in the log, not its address.
+        shown = env.get('BB_POOL_NAME') or webapi
         if summon_service(webapi):
             overrides.update({f'{scheme}://{host}:{COMMUNITY_API_PORT}/summon_messenger': webapi
                               for scheme in ('https', 'http')})
-            print(f'Co-op: summon signs through {webapi}')
+            print(f'Co-op: summon signs through {shown}')
         else:
-            print(f'Co-op: {webapi} has no summon service; summon signs through {community}')
+            print(f'Co-op: {shown} has no summon service; summon signs through {community}')
         path.write_text(json.dumps(overrides, indent=2) + '\n', encoding='utf-8')
     env['SHADPS4_HTTP_HOST_OVERRIDES_JSON'] = str(path)
 
