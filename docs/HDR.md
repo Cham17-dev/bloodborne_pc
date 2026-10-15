@@ -9,7 +9,7 @@
 | — | Mode « HDR diagnostic » : export des shaders (cache désactivé) + analyse d'une image toutes les 20 s, constantes sur 4 Ko, textures par dessin | Validé |
 | 2 | Identifier le shader de tonemap du jeu | **Fait** — voir « Tonemap de Bloodborne » ci-dessous |
 | 3a | Remplacer le shader de tonemap (`hdr/bb_tonemap.frag`, `GameShaderCode()`, option *HDR tonemap (test)*, `BB_HDR_TONEMAP=0/1/2`) | **Validé** (15/10) : mode 2 teinte la partie gauche (environ un quart de l'écran : la cible fait plus de 1920 px de large en sortie 4K, à prendre en compte), mode 1 donne une image identique au jeu. Le cache de pipelines est contourné (remplacement aussi au chargement depuis le cache). |
-| 3b | Canal HDR : dessin fantôme du tonemap dans une image RGBA16F (gain HDR par pixel) + application du gain dans le post-process final là où l'image est encore la scène | **Codé le 15/10 au soir, compile, à tester** (*HDR tonemap (test)* = *bbport HDR*, `BB_HDR_TONEMAP=3`) |
+| 3b | Canal HDR : dessin fantôme du tonemap dans une image RGBA16F (gain HDR par pixel) + application du gain dans le post-process final là où l'image est encore la scène | **Fonctionne** (15/10, build hdr-15) : fenêtre de la clinique jusqu'à 916 nits, pas de plantage, interface normale. **En cours** : détection de l'interface (barreaux de fenêtre encore pris pour l'interface à cause de l'AA → correctif 3×3, build hdr-16, à tester) |
 | 4 | Upscalers (FSR/DLSS en mode mis à l'échelle travaillent sur l'image déjà tonemappée) | À faire |
 
 Options (launcher → Fenêtre, ou variables d'environnement) :
@@ -28,6 +28,32 @@ Options (launcher → Fenêtre, ou variables d'environnement) :
 
 Le journal (`last_run.log`) contient `HDR output: on, HDR10 swapchain` quand la sortie HDR est active,
 ou `HDR output: off, the display offers no HDR10 format` quand l'écran ne propose pas le HDR10.
+
+## Reprendre le projet (point au 15/10, 23 h)
+
+Où on en est : le HDR natif marche (étape 3b). La fenêtre de la clinique monte à 916 nits au lieu de 203 en SDR.
+Il reste à affiner quels pixels sont « la scène » (amplifiés) et lesquels sont « l'interface » (laissés en SDR).
+
+**Prochain test (build `bbport-windows-hdr-16`, commit `b5c6727`, comparaison sur 3×3 texels)** — devant la
+fenêtre lumineuse de la clinique (là où on se réveille), puis devant une lanterne ou un feu :
+
+1. Extraire l'artifact par-dessus `E:\Bloodborne\hdr`. Launcher : *Allow HDR output* coché, *HDR tonemap (test)*
+   = **bbport HDR**, *HDR peak brightness* = 1000.
+2. *HDR debug view* = **Pixels taken as UI in red** → capture JXR (Win + Alt + Impr. écran). Attendu : seule
+   l'interface en rouge, ni les vitres ni les barreaux.
+3. *HDR debug view* = **Off** → capture JXR au même endroit (mesure des nits).
+4. Même chose en *HDR tonemap (test)* = **bbport** (sans HDR) pour comparer.
+5. Envoyer les `.jxr` (dossier `Vidéos\Captures`).
+
+Analyse des captures : `docs/hdr-tools/jxr_nits.py` (mode d'emploi en tête du fichier : compiler jxrlib, décoder
+en `-c 25`, surtout pas `-c 28` qui donne une image zoomée fausse).
+
+Ensuite, dans l'ordre :
+- si des barreaux ou bords restent rouges : capturer la LUT de luminosité de la copie d'affichage (`38d65b32`)
+  pour une détection exacte, ou comparer à l'image juste avant l'interface (sortie de la copie `57f3b8c2`) ;
+- régler le seuil (`BB_HDR_KNEE`, 0.6) et le pic selon le rendu (ciel, lanternes, feu) ;
+- vérifier l'absence de décalage d'une image en mouvement rapide (caméra qui tourne devant une fenêtre) ;
+- étape 4 (FSR/DLSS en mode mis à l'échelle), traductions du launcher, fusion de Supermedo 1.8.1 (4 commits).
 
 ## Tonemap de Bloodborne (relevé le 15/10)
 
