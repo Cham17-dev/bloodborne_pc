@@ -272,7 +272,14 @@ void FrameCapture::Dispatch(u64 cs_hash, u32 x, u32 y, u32 z) {
 }
 
 void FrameCapture::Buffer(u64 stage_hash, u32 slot, VAddr address, const void* data, u64 size) {
-    const u64 bytes = std::min<u64>(size, 1024) & ~u64(3);
+    // bbport: BB_CAPTURE_BUFFER_BYTES raises the 1 KiB kept per buffer (the tonemap's constants
+    // are at about 3 KiB).
+    static const u64 limit = [] {
+        const char* v = std::getenv("BB_CAPTURE_BUFFER_BYTES");
+        const long n = v ? std::strtol(v, nullptr, 10) : 1024L;
+        return u64(n < 64 ? 64 : n > 65536 ? 65536 : n);
+    }();
+    const u64 bytes = std::min<u64>(size, limit) & ~u64(3);
     std::string out = std::format("  buffer stage {:016x} slot {} at {:#x} size {}:", stage_hash,
                                   slot, address, size);
     const auto* words = static_cast<const float*>(data);

@@ -7,7 +7,7 @@
 | 1 | Sortie HDR10 (Rec.2020 + PQ) de l'image SDR du jeu, paper white réglable, menu Insert en PQ | **Validé** (15/10, MSI QD-OLED 4K, RTX 4090) : image identique au SDR, paper white OK |
 | — | Mire de test HDR (`BB_HDR_TEST_PATTERN=1`) | **Validé** : ombres distinctes, couleurs justes, écrêtage vers 1000 nits (réglage de l'écran) |
 | — | Mode « HDR diagnostic » : export des shaders + analyse d'une image toutes les 20 s | Codé, compile, à lancer une fois |
-| 2 | Identifier le shader de tonemap du jeu | Analyse d'images faite : seule passe HDR→8 bits = passe ps `5c02eaf8` (bloom + LUT 3D 16³ de `200820a1`, après le combine `9a9cf8a9`). Code des shaders à récupérer (cache désactivé) |
+| 2 | Identifier le shader de tonemap du jeu | **Identifié** : passe à 2 dessins. Dessin 1, ps `5c02eaf8` (vs `1ea5a07e`) : exposition (texture 1×1), tonemap exponentiel `1 − exp(−k·v)` avec genou, bloom en mode écran, matrice couleur 3×4, gamma, grain, sortie RGBA8. Dessin 2, ps `ed4c7668` (vs `0b0acf50`) : LUT d'étalonnage 3D 16³ (préparée par cs `200820a1`). Reste : valeurs des constantes (capture avec `BB_CAPTURE_BUFFER_BYTES=4096`) et image d'entrée exacte (capture sans upscaler). |
 | 3 | Remplacer le tonemap (méthode RenoDX, `host_shaders/hdr/renodx.glsl` déjà porté) | À faire. Attention : le cache de pipelines (`BB_PIPELINE_CACHE`) recharge les shaders sans passer par `CompileModule`, donc sans le remplacement de shader : le remplacement doit contourner ce cache. |
 | 4 | Upscalers (FSR/DLSS en mode mis à l'échelle travaillent sur l'image déjà tonemappée) | À faire |
 
