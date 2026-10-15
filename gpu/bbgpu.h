@@ -61,9 +61,12 @@ void bbgpu_input_configure(int mouse_mode_available, int32_t toggle_scancode, in
  * thread polls this once per sample() (CFG-008) to know when to re-read input.ini. 0 if no
  * window exists yet. */
 int bbgpu_input_reload_requested(void);
-/* Direct mouse camera (mouse_camera = direct in input.ini): whether it is wanted and its
- * sensitivity multiplier. Safe from any thread; applied on the window thread's next PollEvents. */
-void bbgpu_mouse_camera_configure(int direct, float sensitivity);
+/* Direct mouse camera (mouse_camera = direct in input.ini): whether it is wanted, its
+ * sensitivity multiplier, and the motion's per-axis multipliers (input_mouse_scale_x/_y: -1 to
+ * invert, the vertical sensitivity) and whether the drawn position turns too (mouse_camera_sync).
+ * Safe from any thread; applied on the window thread's next
+ * PollEvents. */
+void bbgpu_mouse_camera_configure(int direct, float sensitivity, float scale_x, float scale_y, int sync);
 /* Number of symbols registered by the vendored libraries (diagnostics). */
 unsigned bbgpu_symbol_count(void);
 #ifdef __cplusplus

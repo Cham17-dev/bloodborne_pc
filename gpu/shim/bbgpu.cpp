@@ -387,6 +387,6 @@ extern "C" int bbgpu_input_reload_requested(void) {
     return g_window->TakeInputReloadRequested();
 }
 
-extern "C" void bbgpu_mouse_camera_configure(int direct, float sensitivity) {
-    Core::BloodborneCam::Instance().Configure(direct != 0, sensitivity);
+extern "C" void bbgpu_mouse_camera_configure(int direct, float sensitivity, float scale_x, float scale_y, int sync) {
+    Core::BloodborneCam::Instance().Configure(direct != 0, sensitivity, scale_x, scale_y, sync != 0);
 }

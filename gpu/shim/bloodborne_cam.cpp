@@ -152,11 +152,14 @@ void BloodborneCam::Shutdown() {
     SetEnabled(false);
 }
 
-void BloodborneCam::Configure(bool direct, float sensitivity) {
+void BloodborneCam::Configure(bool direct, float sensitivity, float scale_x, float scale_y, bool sync) {
     if (!(sensitivity > 0.0f) || sensitivity > 20.0f) {
         sensitivity = 1.0f;
     }
     m_scale.store(sensitivity, std::memory_order_relaxed);
+    m_scale_x.store(scale_x, std::memory_order_relaxed);
+    m_scale_y.store(scale_y, std::memory_order_relaxed);
+    m_sync.store(sync, std::memory_order_relaxed);
     m_configured.store(direct, std::memory_order_relaxed);
 }
 
@@ -445,8 +448,8 @@ void BloodborneCam::OnMouseMotion(float xrel, float yrel) {
     }
 
     const float scale = m_scale.load(std::memory_order_relaxed);
-    const float deltaPitch = (yrel / kCountsPerRadian) * scale;
-    const float deltaYaw = (xrel / kCountsPerRadian) * scale;
+    const float deltaPitch = (yrel / kCountsPerRadian) * scale * m_scale_y.load(std::memory_order_relaxed);
+    const float deltaYaw = (xrel / kCountsPerRadian) * scale * m_scale_x.load(std::memory_order_relaxed);
 
     if (m_monocularBase) {
         uintptr_t p1 = ReadMem<uintptr_t>(m_monocularBase);
@@ -484,6 +487,7 @@ void BloodborneCam::OnMouseMotion(float xrel, float yrel) {
 
     float curPitch = ReadMemFast<float>(pitch + 0x140);
     float curYaw = ReadMemFast<float>(pitch + 0x144);
+    const float oldPitch = curPitch;
 
     curPitch += deltaPitch;
 
@@ -515,6 +519,36 @@ void BloodborneCam::OnMouseMotion(float xrel, float yrel) {
     // Synchronize target yaw and convergence yaw.
     WriteMemFast<float>(pitch + 0x144, curYaw);
     WriteMemFast<float>(pitch + 0x270, curYaw);
+
+    if (m_sync.load(std::memory_order_relaxed)) {
+        TurnDrawnPosition(pitch, curPitch - oldPitch, deltaYaw);
+    }
+}
+
+// The camera is drawn from a position (+0x100) that follows its ideal one around the pivot
+// (+0xd0) with a spring, so a turn of the angles alone arrives over ~100 ms. Turning the drawn
+// position by the same angles leaves the spring nothing to catch up with: the turn is drawn
+// whole in the next frame. From Ryan Sousa's keyboard and mouse fork (src/runtime_camhook.c):
+// the drawn position is pivot - direction * r, direction = (sin y cos p, -sin p, cos y cos p).
+void BloodborneCam::TurnDrawnPosition(uintptr_t camera, float turnPitch, float turnYaw) {
+#ifdef _WIN32
+    if (!CanAccess(camera + 0xD0, 0x40, true)) {
+        return;
+    }
+#endif
+    const float px = ReadMemFast<float>(camera + 0xD0), py = ReadMemFast<float>(camera + 0xD4),
+                pz = ReadMemFast<float>(camera + 0xD8);
+    const double ox = ReadMemFast<float>(camera + 0x100) - px, oy = ReadMemFast<float>(camera + 0x104) - py,
+                 oz = ReadMemFast<float>(camera + 0x108) - pz;
+    const double r = std::sqrt(ox * ox + oy * oy + oz * oz);
+    if (!(r > 1e-3 && r < 100.0)) {
+        return; // not a camera around its pivot (a cutscene, a transition)
+    }
+    const double s = std::fmin(1.0, std::fmax(-1.0, oy / r));
+    const double p = std::asin(s) + turnPitch, y = std::atan2(-ox, -oz) + turnYaw;
+    WriteMemFast<float>(camera + 0x100, static_cast<float>(px - std::sin(y) * std::cos(p) * r));
+    WriteMemFast<float>(camera + 0x104, static_cast<float>(py + std::sin(p) * r));
+    WriteMemFast<float>(camera + 0x108, static_cast<float>(pz - std::cos(y) * std::cos(p) * r));
 }
 
 } // namespace Core

@@ -23,9 +23,12 @@ public:
 
     void Shutdown();
 
-    /// Any thread (input.ini load/reload): whether direct mode is wanted and its sensitivity
-    /// multiplier (1.0 = 900 mouse counts per radian). Applied by the window thread.
-    void Configure(bool direct, float sensitivity);
+    /// Any thread (input.ini load/reload): whether direct mode is wanted, its sensitivity
+    /// multiplier (1.0 = 900 mouse counts per radian) and the per-axis multipliers of the motion
+    /// (-1 inverts; the vertical one carries mouse_sensitivity_y). Applied by the window thread.
+    /// `sync` also turns the drawn position with the angles (TurnDrawnPosition).
+    void Configure(bool direct, float sensitivity, float scale_x = 1.0f, float scale_y = 1.0f,
+                   bool sync = true);
     [[nodiscard]] bool IsConfigured() const noexcept {
         return m_configured.load(std::memory_order_relaxed);
     }
@@ -52,10 +55,13 @@ private:
     BloodborneCam& operator=(const BloodborneCam&) = delete;
 
     bool InitializeAddresses();
+    void TurnDrawnPosition(uintptr_t camera, float turnPitch, float turnYaw);
 
     std::atomic<bool> m_enabled{false};
     std::atomic<bool> m_configured{false};
     std::atomic<float> m_scale{1.0f};
+    std::atomic<float> m_scale_x{1.0f}, m_scale_y{1.0f};
+    std::atomic<bool> m_sync{true};
     std::atomic<bool> m_lockedOn{false};
     bool m_addressesResolved = false;
     bool m_addressSearchFailed = false;

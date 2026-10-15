@@ -64,6 +64,52 @@ MOUSE_BUTTON_NAMES_SET = set(MOUSE_BUTTON_NAMES)
 # Sticks stay keyboard-only (KEY_NAMES_SET); buttons additionally accept a mouse button name.
 BINDABLE_NAMES_SET = KEY_NAMES_SET | MOUSE_BUTTON_NAMES_SET
 
+# Combos (src/runtime_input_config.c): "output = a, b, c", up to three inputs held together.
+# Shift, Ctrl and Alt start one on the Controls page: pressed alone they wait for the next input.
+MAX_COMBO = 3
+MODIFIER_NAMES = ('lshift', 'rshift', 'lctrl', 'rctrl', 'lalt', 'ralt')
+
+
+def binding_parts(value):
+    """The inputs of a binding value: ['lshift', 'leftbutton'] for 'lshift, leftbutton'."""
+    return [p.strip() for p in value.split(',')]
+
+
+def is_bindable(output, value):
+    """Whether `value` is a binding this editor shows and may replace for `output`: one key (or,
+    for a BUTTON_OUTPUTS entry, a mouse button or wheel step), or a combo of up to MAX_COMBO of
+    them, each at most once. A controller line ("cross = cross") never is one."""
+    parts = binding_parts(value)
+    if not 1 <= len(parts) <= MAX_COMBO or len(set(parts)) != len(parts):
+        return False
+    allowed = KEY_NAMES_SET | (MOUSE_BUTTON_NAMES_SET if output in BUTTON_OUTPUTS else set())
+    return all(p in allowed for p in parts)
+
+
+def format_binding(value):
+    """The file's spelling of a binding value: 'lshift, leftbutton'."""
+    return ', '.join(binding_parts(value))
+
+
+def binding_conflicts(bindings):
+    """{output: sorted other outputs} for every output whose binding clashes with another's,
+    from {output: value or None}. Two equal bindings fire both actions. A modifier (Shift, Ctrl,
+    Alt) that is a binding of its own and also starts a combo is pressed on its way into the
+    combo (Shift bound to Circle, the dodge, and Shift + left click to R2), which the game sees.
+    A plain key or button inside a combo is not a clash: the combo takes it while held."""
+    conflicts = {}
+    items = [(o, binding_parts(v)) for o, v in bindings.items() if v]
+    for i, (a, pa) in enumerate(items):
+        for b, pb in items[i + 1:]:
+            same = pa == pb or set(pa) == set(pb)
+            inside = (len(pa) == 1 and pa[0] in MODIFIER_NAMES and pa[0] in pb) or \
+                     (len(pb) == 1 and pb[0] in MODIFIER_NAMES and pb[0] in pa)
+            if same or inside:
+                conflicts.setdefault(a, set()).add(b)
+                conflicts.setdefault(b, set()).add(a)
+    return {o: sorted(others) for o, others in conflicts.items()}
+
+
 # Reserved regardless of the file (HOT-001/HOT-002): the menu (Insert), BB_PAD_RECORD, and
 # whichever key currently toggles the mouse or reloads input.ini. The last two are read from the
 # file itself (hotkey_toggle_mouse_to_joystick / hotkey_reload_inputs) by reserved_keys() below.
@@ -92,10 +138,21 @@ TK_KEYSYM_TO_NAME = {
 }
 
 
+# With Shift held (a Shift + key combination), Tk reports the shifted character's keysym: the
+# key that types it on a US layout.
+TK_SHIFTED_KEYSYM_TO_NAME = {
+    'exclam': '1', 'at': '2', 'numbersign': '3', 'dollar': '4', 'percent': '5',
+    'asciicircum': '6', 'ampersand': '7', 'asterisk': '8', 'parenleft': '9', 'parenright': '0',
+    'underscore': 'minus', 'plus': 'equals', 'braceleft': 'lbracket', 'braceright': 'rbracket',
+    'bar': 'backslash', 'colon': 'semicolon', 'quotedbl': 'apostrophe', 'less': 'comma',
+    'greater': 'period', 'question': 'slash', 'asciitilde': 'grave',
+}
+
+
 def keysym_to_name(keysym):
     """Tk's event.keysym -> our key name, or None if this key has no equivalent (e.g. a dead
     key, a media key, or a layout-specific glyph outside KEY_NAMES)."""
-    name = TK_KEYSYM_TO_NAME.get(keysym, keysym.lower())
+    name = TK_KEYSYM_TO_NAME.get(keysym) or TK_SHIFTED_KEYSYM_TO_NAME.get(keysym) or keysym.lower()
     return name if name in KEY_NAMES_SET else None
 
 
@@ -212,9 +269,83 @@ hotkey_toggle_mouse_to_joystick = f7
 hotkey_reload_inputs = f8
 '''
 
+# A keyboard and mouse layout like Dark Souls III's (after Ryan Sousa's keyboard and mouse
+# fork): Shift is only a modifier, so Shift + click never passes through a dodge.
+DS3_LAYOUT = '''\
+# Keyboard and mouse: Dark Souls III layout (launcher, Controls page)
+axis_left_x_minus = a
+axis_left_x_plus = d
+axis_left_y_minus = w
+axis_left_y_plus = s
+leftjoystick_halfmode = lalt
+axis_right_x_minus = j
+axis_right_x_plus = l
+axis_right_y_minus = i
+axis_right_y_plus = k
+mouse_to_joystick = right
+mouse_camera = direct
+circle = space
+l3 = c
+r3 = q
+r3 = middlebutton
+r1 = leftbutton
+r2 = lshift, leftbutton
+l1 = rightbutton
+l2 = lshift, rightbutton
+l2 = lctrl
+cross = e
+cross = enter
+square = r
+triangle = f
+pad_up = up
+pad_up = mousewheelup
+pad_down = down
+pad_down = mousewheeldown
+pad_left = left
+pad_left = lshift, mousewheelup
+pad_right = right
+pad_right = lshift, mousewheeldown
+options = tab
+options = escape
+touchpad_left = g
+touchpad_right = backspace
+'''
+# Lines a layout replaces besides the keyboard and mouse bindings (commented-out ones too).
+LAYOUT_SETTINGS = ('leftjoystick_halfmode', 'rightjoystick_halfmode', 'mouse_to_joystick', 'mouse_camera')
+
+
+def apply_layout(lines, layout=DS3_LAYOUT):
+    """`lines` with every keyboard and mouse binding, and the LAYOUT_SETTINGS lines, replaced by
+    `layout`: controller lines, the other settings and comments stay."""
+    out = []
+    header = layout.splitlines()[0]
+    for raw in lines:
+        if raw.strip() == header:
+            continue  # applied before: its header comes again with the layout
+        line = ''.join(raw.split())
+        commented = line.startswith('#')
+        body = line.lstrip('#').split('#', 1)[0]
+        if '=' in body:
+            output, value = (p.split(':')[0] for p in body.split('=', 1))
+            if output in LAYOUT_SETTINGS:
+                continue
+            if not commented and output in KEYBOARD_OUTPUTS and is_bindable(output, value):
+                continue
+        out.append(raw)
+    while out and not out[-1].strip():
+        out.pop()
+    return out + [''] + layout.splitlines()
+
+
 # shadPS4/bbport defaults when mouse_movement_params is absent (spec section 4.2 / 4.3).
 MOUSE_SETTINGS_DEFAULTS = {'enabled': False, 'stick': 'right',
-                            'deadzone_offset': 0.5, 'speed': 1.0, 'speed_offset': 0.125}
+                            'deadzone_offset': 0.5, 'speed': 1.0, 'speed_offset': 0.125,
+                            'invert_x': False, 'invert_y': False, 'sensitivity_y': 1.0,
+                            'camera': 'stick', 'camera_sensitivity': 1.0}
+# The one-value mouse lines (src/runtime_input_config.c), written only when not the default.
+MOUSE_SIMPLE_LINES = {'invert_x': 'mouse_invert_x', 'invert_y': 'mouse_invert_y',
+                      'sensitivity_y': 'mouse_sensitivity_y', 'camera': 'mouse_camera',
+                      'camera_sensitivity': 'mouse_camera_sensitivity'}
 
 
 def _parse_mouse_line(output, value, settings):
@@ -224,6 +355,23 @@ def _parse_mouse_line(output, value, settings):
         settings['enabled'] = True
         settings['stick'] = value
         return True
+    if output in ('mouse_invert_x', 'mouse_invert_y') and value in ('on', 'off'):
+        settings['invert_x' if output == 'mouse_invert_x' else 'invert_y'] = value == 'on'
+        return True
+    if output == 'mouse_camera' and value in ('direct', 'stick'):
+        settings['camera'] = value
+        return True
+    for key, name, lo, hi in (('sensitivity_y', 'mouse_sensitivity_y', 0.1, 10.0),
+                              ('camera_sensitivity', 'mouse_camera_sensitivity', 0.05, 20.0)):
+        if output == name:
+            try:
+                sensitivity = float(value)
+            except ValueError:
+                return False
+            if lo <= sensitivity <= hi:
+                settings[key] = sensitivity
+                return True
+            return False
     if output == 'mouse_movement_params':
         parts = value.split(',')
         if len(parts) == 3:
@@ -287,9 +435,8 @@ def load_input_ini(path):
             reload_key = value
         elif _parse_mouse_line(output, value, mouse):
             pass
-        elif output in bindings and (value in KEY_NAMES_SET or
-                                      (output in BUTTON_OUTPUTS and value in MOUSE_BUTTON_NAMES_SET)):
-            bindings[output].append(value)
+        elif output in bindings and is_bindable(output, value):
+            bindings[output].append(format_binding(value))
     return bindings, lines, toggle_key, reload_key, mouse
 
 
@@ -317,18 +464,17 @@ def save_input_ini(path, bindings, lines):
             # or -- for a BUTTON_OUTPUTS entry -- a mouse button) is "the first binding" for this
             # output -- a controller line with the same output (e.g. "cross = cross", the button
             # name, not a key/mouse name) must never be mistaken for one and overwritten.
-            is_bindable = value in KEY_NAMES_SET or (output in BUTTON_OUTPUTS and value in MOUSE_BUTTON_NAMES_SET)
-            if output in bindings and output not in written and is_bindable:
+            if output in bindings and output not in written and is_bindable(output, value):
                 written.add(output)
                 new_key = bindings[output]
                 if new_key is None:
                     continue  # drop this line: no first binding anymore
-                out.append(f'{output} = {new_key}')
+                out.append(f'{output} = {format_binding(new_key)}')
                 continue
         out.append(raw)
     for output in KEYBOARD_OUTPUTS:
         if output not in written and bindings.get(output):
-            out.append(f'{output} = {bindings[output]}')
+            out.append(f'{output} = {format_binding(bindings[output])}')
     Path(path).write_text('\n'.join(out) + '\n', encoding='utf-8')
 
 
@@ -338,6 +484,7 @@ def save_mouse_settings(path, settings, lines):
     file never had it (an input.ini from before this feature, or one copied from shadPS4, which
     uses the same key names but never had mouse_to_joystick to begin with)."""
     written_toggle = written_params = False
+    written_simple = set()
     out = []
     for raw in lines:
         line = ''.join(raw.split())
@@ -352,6 +499,13 @@ def save_mouse_settings(path, settings, lines):
             new_line = f"mouse_to_joystick = {settings['stick']}"
             out.append(new_line if settings['enabled'] else f'# {new_line}')
             continue
+        simple = next((key for key, name in MOUSE_SIMPLE_LINES.items()
+                       if '=' in body and body.split('=', 1)[0].split(':')[0] == name), None)
+        if simple:
+            if simple not in written_simple:
+                written_simple.add(simple)
+                out.append(_mouse_simple_line(simple, settings[simple]))
+            continue
         if is_params_line and not written_params:
             written_params = True
             out.append('mouse_movement_params = {:.3g}, {:.3g}, {:.3g}'.format(
@@ -364,4 +518,15 @@ def save_mouse_settings(path, settings, lines):
     if not written_params:
         out.append('mouse_movement_params = {:.3g}, {:.3g}, {:.3g}'.format(
             settings['deadzone_offset'], settings['speed'], settings['speed_offset']))
+    for key in MOUSE_SIMPLE_LINES:
+        if key not in written_simple and settings[key] != MOUSE_SETTINGS_DEFAULTS[key]:
+            out.append(_mouse_simple_line(key, settings[key]))
     Path(path).write_text('\n'.join(out) + '\n', encoding='utf-8')
+
+
+def _mouse_simple_line(key, value):
+    if isinstance(value, bool):
+        return f"{MOUSE_SIMPLE_LINES[key]} = {'on' if value else 'off'}"
+    if isinstance(value, str):
+        return f'{MOUSE_SIMPLE_LINES[key]} = {value}'
+    return f'{MOUSE_SIMPLE_LINES[key]} = {value:.3g}'

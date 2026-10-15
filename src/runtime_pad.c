@@ -122,6 +122,10 @@ typedef struct {
     uint32_t mouse_wheel;   /* bbgpu_mouse_take's wheel: bit 0 up, 1 down, 2 left, 3 right */
     int back_combo;         /* Back drives the touchpad halves (touchpad_combo) */
     int back_down;          /* ... and is held now */
+    /* Combos (lshift + leftbutton) with every input held now: a binding whose inputs are all
+     * part of a larger held combo does not fire (binding_consumed). */
+    const InputBinding *held_combos[OUT_COUNT*INPUT_MAX_BINDINGS_PER_OUTPUT];
+    int held_combo_count;
 } HostState;
 
 /* A gamepad button as the bindings see it. With the touchpad combo, Back and (while Back is
@@ -172,7 +176,7 @@ static void touchpad_combo(const HostState *host, PadData *d) {
  * `is_button_output` tells which of the two readings the caller wants (an axis binding on a
  * button-like output, or vice versa, each have their own threshold rule, applied by the
  * caller -- see OUT-004/OUT-005). */
-static int binding_held(const HostState *host, const InputBinding *b) {
+static int input_held(const HostState *host, const InputBinding *b) {
     switch (b->kind) {
     case IN_KEY: return host->keys && host->keys[b->value];
     case IN_CBUTTON: return cbutton_held(host,b->value);
@@ -201,13 +205,60 @@ static int binding_held(const HostState *host, const InputBinding *b) {
     case IN_NONE: default: return 0;
     }
 }
+
+/* Combos (shadPS4's "output = a, b, c"): every input held, with priority for the larger one.
+ * Holding lshift + leftbutton fires "r2 = lshift, leftbutton" and not "r1 = leftbutton" or a
+ * binding on lshift alone, as in shadPS4. Only digital inputs take part (the parser rejects an
+ * analog one in a combo), so an analog binding is never consumed. */
+static int digital_input(InputKind kind) {
+    return kind==IN_KEY || kind==IN_MOUSE_BUTTON || kind==IN_MOUSE_WHEEL || kind==IN_CBUTTON;
+}
+static int combo_part_held(const HostState *host, InputKind kind, int32_t value) {
+    const InputBinding part={kind,value,0,0,{{0}}};
+    return input_held(host,&part);
+}
+static int all_inputs_held(const HostState *host, const InputBinding *b) {
+    if (!input_held(host,b)) return 0;
+    for (int i=0;i<b->extra_count;++i)
+        if (!combo_part_held(host,b->extra[i].kind,b->extra[i].value)) return 0;
+    return 1;
+}
+static int combo_has_input(const InputBinding *combo, InputKind kind, int32_t value) {
+    if (combo->kind==kind && combo->value==value) return 1;
+    for (int i=0;i<combo->extra_count;++i)
+        if (combo->extra[i].kind==kind && combo->extra[i].value==value) return 1;
+    return 0;
+}
+/* True if a held combo with more inputs than `b` contains all of `b`'s inputs. */
+static int binding_consumed(const HostState *host, const InputBinding *b) {
+    if (!digital_input(b->kind)) return 0;
+    for (int c=0;c<host->held_combo_count;++c) {
+        const InputBinding *combo=host->held_combos[c];
+        if (combo==b || combo->extra_count<=b->extra_count) continue;
+        int inside=combo_has_input(combo,b->kind,b->value);
+        for (int i=0;inside && i<b->extra_count;++i) inside=combo_has_input(combo,b->extra[i].kind,b->extra[i].value);
+        if (inside) return 1;
+    }
+    return 0;
+}
+static void find_held_combos(HostState *host, const InputConfig *cfg) {
+    host->held_combo_count=0;
+    for (int o=0;o<OUT_COUNT;++o)
+        for (int i=0;i<cfg->table.binding_count[o];++i) {
+            const InputBinding *b=&cfg->table.bindings[o][i];
+            if (b->extra_count && all_inputs_held(host,b)) host->held_combos[host->held_combo_count++]=b;
+        }
+}
+static int binding_held(const HostState *host, const InputBinding *b) {
+    return all_inputs_held(host,b) && !binding_consumed(host,b);
+}
 /* Signed axis-unit contribution (-127..127) of one binding toward the stick it is bound to;
  * 0 for anything that is not an axis-like input. A plain key/button bound to a half-axis
  * output contributes a full deflection (KBD-006), matching the previous fixed-layout behavior. */
 static int binding_axis_value(const HostState *host, const InputBinding *b, int half_sign) {
+    /* Keys and buttons (and combos of them): a full deflection while held. */
+    if (digital_input(b->kind)) return binding_held(host,b) ? 127*half_sign : 0;
     switch (b->kind) {
-    case IN_KEY: return (host->keys && host->keys[b->value]) ? 127*half_sign : 0;
-    case IN_CBUTTON: return cbutton_held(host,b->value) ? 127*half_sign : 0;
     case IN_AXIS_HALF: {
         if (!host->gamepad) return 0;
         int16_t raw=SDL_GetGamepadAxis(host->gamepad,(SDL_GamepadAxis)b->value);
@@ -216,8 +267,6 @@ static int binding_axis_value(const HostState *host, const InputBinding *b, int 
     }
     case IN_AXIS: /* a full physical axis bound to another full axis output (axis_left_x=axis_right_x) */
         return host->gamepad ? (SDL_GetGamepadAxis(host->gamepad,(SDL_GamepadAxis)b->value)>>8) : 0;
-    case IN_MOUSE_BUTTON: return (host->mouse_buttons & SDL_BUTTON_MASK(b->value)) ? 127*half_sign : 0;
-    case IN_MOUSE_WHEEL: return (host->mouse_wheel & (1u<<b->value)) ? 127*half_sign : 0;
     default: return 0; /* IN_NONE */
     }
 }
@@ -421,8 +470,9 @@ static void ensure_config_loaded(void) {
     bbgpu_input_configure(loaded_config ? loaded_config->mouse.stick!=0 : 0,
                           loaded_config ? loaded_config->toggle_scancode : default_config.toggle_scancode,
                           loaded_config ? loaded_config->reload_scancode : default_config.reload_scancode);
-    bbgpu_mouse_camera_configure(loaded_config ? loaded_config->mouse.camera_direct : 0,
-                                 loaded_config ? loaded_config->mouse.camera_sensitivity : 1.0f);
+    const MouseParams *mouse=loaded_config ? &loaded_config->mouse : &default_config.mouse;
+    bbgpu_mouse_camera_configure(loaded_config ? mouse->camera_direct : 0,mouse->camera_sensitivity,
+                                 input_mouse_scale_x(mouse),input_mouse_scale_y(mouse),mouse->camera_sync);
 }
 /* CFG-008: called once per sample() (under `lock`), reloads if the window thread set the F8
  * flag. The read of the new file (input_config_load, I/O) happens before the critical section
@@ -441,7 +491,9 @@ static void reload_config_if_requested(void) {
         if (fresh->warnings) printf("Input config: %s reloaded, %u line(s) ignored (see above)\n",path,fresh->warnings);
         else printf("Input config: %s reloaded\n",path);
         bbgpu_input_configure(loaded_config->mouse.stick!=0,loaded_config->toggle_scancode,loaded_config->reload_scancode);
-        bbgpu_mouse_camera_configure(loaded_config->mouse.camera_direct,loaded_config->mouse.camera_sensitivity);
+        const MouseParams *mouse=&loaded_config->mouse;
+        bbgpu_mouse_camera_configure(mouse->camera_direct,mouse->camera_sensitivity,
+                                     input_mouse_scale_x(mouse),input_mouse_scale_y(mouse),mouse->camera_sync);
     } else {
         free(fresh);
     }
@@ -464,10 +516,12 @@ static void sample_host(PadData *d) {
     if (bbgpu_overlay_captures_input()) return; /* settings menu open: neutral input */
     const InputConfig *cfg=active_config();
     BbMouseInput mouse; bbgpu_mouse_take(&mouse); /* MOU-008: drains dx/dy; buttons/wheel persist */
-    HostState host={SDL_WasInit(SDL_INIT_VIDEO) ? SDL_GetKeyboardState(NULL) : NULL, g,
-        mouse.captured ? mouse.buttons : 0, mouse.captured ? mouse.wheel : 0, 0, 0};
+    static HostState host; /* ~1 KB with the held-combo list: kept off the game thread's stack */
+    host=(HostState){SDL_WasInit(SDL_INIT_VIDEO) ? SDL_GetKeyboardState(NULL) : NULL, g,
+        mouse.captured ? mouse.buttons : 0, mouse.captured ? mouse.wheel : 0, 0, 0, {0}, 0};
     host.back_combo=back_combo_wanted(g,cfg);
     host.back_down=host.back_combo && SDL_GetGamepadButton(g,SDL_GAMEPAD_BUTTON_BACK);
+    find_held_combos(&host,cfg);
 
     /* MIX-001/002: keyboard, controller (and, from T5, mouse) are read together, buttons ORed.
      * OUT_L2/OUT_R2 are skipped here (button_bit returns 0 for them anyway) and handled below,
@@ -534,7 +588,8 @@ static void sample_host(PadData *d) {
         if (dt_ms>100.0) dt_ms=100.0;
         last_mouse_sample_us=now;
         int mx=0, my=0;
-        mouse_to_axis(mouse.dx,mouse.dy,dt_ms,&cfg->mouse,&mx,&my);
+        mouse_to_axis(mouse.dx*input_mouse_scale_x(&cfg->mouse),mouse.dy*input_mouse_scale_y(&cfg->mouse),
+                      dt_ms,&cfg->mouse,&mx,&my);
         int *tx=cfg->mouse.stick==1 ? &lx : &rx, *ty=cfg->mouse.stick==1 ? &ly : &ry;
         *tx+=mx; *ty+=my;
         *tx=*tx<-127?-127:*tx>127?127:*tx; *ty=*ty<-127?-127:*ty>127?127:*ty;

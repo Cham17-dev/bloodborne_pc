@@ -60,6 +60,108 @@ class InputDefaultsTests(unittest.TestCase):
         for name in config.MOUSE_WHEEL_NAMES:
             self.assertIn(f'"{name}"', source)
 
+    def test_combos_round_trip(self):
+        self.assertTrue(config.is_bindable('r2', 'lshift,leftbutton'))
+        self.assertTrue(config.is_bindable('axis_left_y_minus', 'lalt, w'))
+        self.assertFalse(config.is_bindable('axis_left_y_minus', 'lshift, leftbutton'))  # sticks: keys only
+        self.assertFalse(config.is_bindable('cross', 'a, b, c, d'))
+        self.assertFalse(config.is_bindable('cross', 'e, e'))
+        self.assertFalse(config.is_bindable('cross', 'cross'))  # a controller line
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'input.ini'
+            bindings, lines, *_rest = config.load_input_ini(path)
+            first = {key: (values[0] if values else None) for key, values in bindings.items()}
+            first['r2'] = 'lshift, leftbutton'
+            config.save_input_ini(path, first, lines)
+            text = path.read_text(encoding='utf-8')
+            again, lines, *_rest = config.load_input_ini(path)
+            # Saving again with the combo as the first slot replaces it in place.
+            first = {key: (values[0] if values else None) for key, values in again.items()}
+            first['r2'] = 'lctrl, lshift, leftbutton'
+            config.save_input_ini(path, first, lines)
+            third = path.read_text(encoding='utf-8')
+        self.assertIn('r2 = lshift, leftbutton\n', text)
+        self.assertNotIn('r2 = f\n', text)
+        self.assertEqual(again['r2'][0], 'lshift, leftbutton')
+        self.assertIn('r2 = lctrl, lshift, leftbutton\n', third)
+        self.assertNotIn('r2 = lshift, leftbutton\n', third)
+        self.assertIn('r2 = r2\n', third)  # the controller line is untouched
+
+    def test_conflicts(self):
+        conflicts = config.binding_conflicts({
+            'r1': 'leftbutton', 'r2': 'lshift, leftbutton', 'circle': 'lshift',
+            'cross': 'space', 'square': 'space', 'l1': 'lctrl, e', 'triangle': 'e, lctrl', 'l2': None})
+        self.assertEqual(conflicts['circle'], ['r2'])       # Shift alone and inside Shift + click
+        self.assertEqual(conflicts['r2'], ['circle'])
+        self.assertNotIn('r1', conflicts)                   # a click inside a combo is fine
+        self.assertEqual(conflicts['cross'], ['square'])    # the same key twice
+        self.assertEqual(conflicts['l1'], ['triangle'])     # the same combo in another order
+        self.assertNotIn('l2', conflicts)
+
+    def test_mouse_invert_and_vertical_sensitivity(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'input.ini'
+            _b, lines, _t, _r, mouse = config.load_input_ini(path)
+            config.save_mouse_settings(path, mouse, lines)
+            untouched = path.read_text(encoding='utf-8')
+            mouse.update(invert_y=True, sensitivity_y=0.6)
+            config.save_mouse_settings(path, mouse, config.load_input_ini(path)[1])
+            changed = config.load_input_ini(path)[4]
+            changed['invert_y'] = False
+            config.save_mouse_settings(path, changed, config.load_input_ini(path)[1])
+            text = path.read_text(encoding='utf-8')
+        self.assertNotIn('mouse_invert', untouched)  # defaults add no lines
+        self.assertTrue(changed is not None)
+        self.assertEqual(text.count('mouse_invert_y'), 1)  # rewritten in place, not added again
+        self.assertIn('mouse_invert_y = off\n', text)
+        self.assertIn('mouse_sensitivity_y = 0.6\n', text)
+        self.assertNotIn('mouse_invert_x', text)
+
+    def test_camera_mode_and_direct_sensitivity(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'input.ini'
+            path.write_text('\n'.join(config.apply_layout(config.DEFAULT_INPUT_INI.splitlines())) + '\n',
+                            encoding='utf-8')
+            _b, lines, _t, _r, mouse = config.load_input_ini(path)
+            self.assertEqual(mouse['camera'], 'direct')  # the DS3 layout's
+            mouse['camera_sensitivity'] = 1.75
+            config.save_mouse_settings(path, mouse, lines)
+            again = config.load_input_ini(path)[4]
+            again['camera'] = 'stick'
+            config.save_mouse_settings(path, again, config.load_input_ini(path)[1])
+            text = path.read_text(encoding='utf-8')
+        self.assertEqual(again['camera_sensitivity'], 1.75)
+        self.assertIn('mouse_camera_sensitivity = 1.75\n', text)
+        self.assertEqual(text.count('\nmouse_camera = '), 1)  # switched in place
+        self.assertIn('mouse_camera = stick\n', text)
+
+    def test_ds3_layout(self):
+        text = '\n'.join(config.apply_layout(config.DEFAULT_INPUT_INI.splitlines())) + '\n'
+        for kept in ('cross = cross', 'axis_left_x = axis_left_x', 'hotkey_reload_inputs = f8',
+                     'mouse_movement_params = 0.5, 1, 0.125'):
+            self.assertIn(kept + '\n', text)
+        for gone in ('cross = space', 'circle = lshift', 'r1 = 3', 'circle = sidebuttonback',
+                     '# mouse_to_joystick = right', '# leftjoystick_halfmode = lalt'):
+            self.assertNotIn(gone + '\n', text)
+        self.assertIn('r2 = lshift, leftbutton\n', text)
+        # Esc opens the game menu like Tab; it is not Circle (a dodge outside the menus).
+        self.assertIn('options = escape\n', text)
+        self.assertNotIn('circle = escape\n', text)
+        self.assertEqual(text.count('\nmouse_to_joystick = '), 1)
+        self.assertNotIn('# mouse_to_joystick =', text)
+        # Applying it twice gives the same file, and the layout has no clashes of its own.
+        self.assertEqual(config.apply_layout(text.splitlines()), text.splitlines())
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'input.ini'
+            path.write_text(text, encoding='utf-8')
+            bindings = config.load_input_ini(path)[0]
+        self.assertEqual(config.binding_conflicts({o: v[0] if v else None for o, v in bindings.items()}), {})
+
+    def test_shifted_keysyms(self):
+        self.assertEqual(config.keysym_to_name('exclam'), '1')
+        self.assertEqual(config.keysym_to_name('E'), 'e')
+        self.assertEqual(config.keysym_to_name('Shift_L'), 'lshift')
+
 
 if __name__ == '__main__':
     unittest.main()

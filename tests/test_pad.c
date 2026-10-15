@@ -23,8 +23,8 @@ void bbgpu_mouse_take(BbMouseInput *out) {
 void bbgpu_input_configure(int mouse_mode_available, int32_t toggle_scancode, int32_t reload_scancode) {
     (void)mouse_mode_available; (void)toggle_scancode; (void)reload_scancode;
 }
-void bbgpu_mouse_camera_configure(int direct, float sensitivity) {
-    (void)direct; (void)sensitivity;
+void bbgpu_mouse_camera_configure(int direct, float sensitivity, float scale_x, float scale_y, int sync) {
+    (void)direct; (void)sensitivity; (void)scale_x; (void)scale_y; (void)sync;
 }
 /* T6: controlled by the tests via stub_reload_requested, draining to 0 on read like the real
  * one (bbgpu_input_reload_requested's own doc comment: "1 once ... then clears back to 0"). */
@@ -59,7 +59,7 @@ static void test_binding_evaluation(void) {
     assert(cfg.warnings==0);
 
     bool keys[SDL_SCANCODE_COUNT]={0};
-    HostState host={keys,NULL,0,0,0,0};
+    HostState host={keys,NULL,0,0,0,0,{0},0};
 
     /* MIX-002: cross has two bindings (j, a); holding either fires it, holding neither doesn't. */
     assert(!button_output_held(&host,&cfg,OUT_CROSS));
@@ -95,6 +95,46 @@ static void test_binding_evaluation(void) {
     assert(!button_output_held(&host,&cfg,OUT_LEFTJOYSTICK_HALFMODE));
 
     puts("PASS: binding evaluation (remap OR, deadzone ramp and saturation, halfmode binding)");
+}
+
+/* Combos: all inputs held, and a held combo takes its inputs from the bindings on fewer of
+ * them (shadPS4): Shift + left click is r2 only, not also r1 (left click) or circle (Shift). */
+static void test_combos(void) {
+    InputConfig cfg;
+    input_config_parse(&cfg,
+        "r1 = leftbutton\n"
+        "r2 = lshift, leftbutton\n"
+        "circle = lshift\n"
+        "triangle = lctrl, lshift, leftbutton\n"
+        "axis_left_y_minus = w\n"
+        "pad_up = lalt, w\n");
+    assert(cfg.warnings==0);
+    bool keys[SDL_SCANCODE_COUNT]={0};
+    HostState host={keys,NULL,0,0,0,0,{0},0};
+#define HELD(out) (find_held_combos(&host,&cfg), button_output_held(&host,&cfg,(out)))
+#define STICK_Y() (find_held_combos(&host,&cfg), axis_output_value(&host,&cfg,OUT_AXIS_LEFT_Y_MINUS,-1))
+
+    host.mouse_buttons=SDL_BUTTON_MASK(SDL_BUTTON_LEFT);
+    assert(HELD(OUT_R1) && !HELD(OUT_R2) && !HELD(OUT_CIRCLE));
+    keys[SDL_SCANCODE_LSHIFT]=true;
+    assert(HELD(OUT_R2) && !HELD(OUT_R1) && !HELD(OUT_CIRCLE));
+    host.mouse_buttons=0;
+    assert(HELD(OUT_CIRCLE) && !HELD(OUT_R2) && !HELD(OUT_R1));
+    /* Three inputs beat two: Ctrl + Shift + left click is triangle only. */
+    keys[SDL_SCANCODE_LCTRL]=true; host.mouse_buttons=SDL_BUTTON_MASK(SDL_BUTTON_LEFT);
+    assert(HELD(OUT_TRIANGLE) && !HELD(OUT_R2) && !HELD(OUT_R1) && !HELD(OUT_CIRCLE));
+    keys[SDL_SCANCODE_LCTRL]=keys[SDL_SCANCODE_LSHIFT]=false; host.mouse_buttons=0;
+
+    /* A key bound to a stick is taken by a combo too: Alt + W is d-pad up, not forward. */
+    keys[SDL_SCANCODE_W]=true;
+    assert(STICK_Y()==-127 && !HELD(OUT_PAD_UP));
+    keys[SDL_SCANCODE_LALT]=true;
+    assert(STICK_Y()==0 && HELD(OUT_PAD_UP));
+    keys[SDL_SCANCODE_W]=false;
+    assert(!HELD(OUT_PAD_UP)); /* Alt alone is nothing */
+#undef HELD
+#undef STICK_Y
+    puts("PASS: combos (all inputs held, larger combo takes priority, stick keys too)");
 }
 
 /* stick_socd and stick_release_delay_ms, with explicit timestamps (microseconds). The A -> D
@@ -298,7 +338,7 @@ static void test_mouse_buttons_and_wheel(void) {
         "pad_up = mousewheelup\n");
     assert(cfg.warnings==0);
 
-    HostState host={NULL,NULL,0,0,0,0};
+    HostState host={NULL,NULL,0,0,0,0,{0},0};
     assert(!button_output_held(&host,&cfg,OUT_R1));
 
     /* IN_MOUSE_BUTTON stores the SDL_BUTTON_* index (1=left); host.mouse_buttons must be
@@ -430,6 +470,7 @@ static void test_reload_on_f8(void) {
 
 int main(void) {
     test_binding_evaluation();
+    test_combos();
     test_socd_and_release_delay();
     test_digital_stick_shape();
     test_mouse_to_axis();
