@@ -43,16 +43,48 @@ Passe `#…` à 2 dessins, cible `R8G8B8A8Unorm 1920x1080` (la cible de l'interf
 - Après : copie `f7229091` vers `0x10508e0000`, AA du jeu `da1faca9` vers la cible UI, copie `57f3b8c2`, puis
   l'interface ; au début de l'image suivante, copie de la cible UI vers le tampon d'affichage (RGBA8 sRGB).
 
-## Plan de l'étape 3
+## Plan de l'étape 3b (rédigé le 15/10 au soir)
 
-1. ~~Remplacement du shader `5c02eaf8`~~ : fait (étape 3a).
-2. **Courbe** : garder le rendu SDR d'origine (`T`, écran, matrice) comme référence et étendre les hautes lumières
-   avec `rd_upgrade_tonemap` / Neutwo (pic = luminosité max ÷ paper white), réglable.
-3. **Garder le HDR jusqu'à l'affichage** : la cible UI, les copies, l'AA et le tampon d'affichage sont en 8 bits.
-   Soit les passer en RGBA16F (comme les « resource upgrades » de RenoDX), soit encoder le HDR dans le 8 bits avec
-   une courbe réversible décodée par le post-process final. À trancher en lisant le cache de textures et la
-   composition de l'UI de bbport.
-4. Upscalers en mode mis à l'échelle (ils lisent l'image après tonemap).
+### Le problème
+
+Après le tonemap, l'image passe par 4 étapes en 8 bits (copie, AA du jeu, copie, interface) puis par le tampon
+d'affichage (RGBA8 sRGB) : tout ce qui dépasse le blanc y serait écrêté.
+
+### Option écartée : passer ces images en 16 bits
+
+Il faudrait un système de substitution comme les proxys de `SceneTargets` (`vk_scene_resolution.*`, environ
+500 lignes), mais pour le format au lieu de la taille. Or les pipelines du jeu sont créés pour des attachements
+RGBA8 : dessiner l'interface ou l'AA dans une image RGBA16F demande d'autres pipelines, et une vue RGBA8 d'une image
+RGBA16F n'est pas permise (classes de taille différentes). Les copies avec inversion BGR, l'AA, l'interface, le
+tampon d'affichage et les relectures CPU seraient tous concernés : trop invasif et fragile.
+
+### Option retenue : un « canal HDR » à côté de la chaîne SDR
+
+On ne touche pas à la chaîne 8 bits du jeu : elle continue de produire l'image SDR, interface comprise.
+
+1. **Dessin fantôme** : juste après le dessin du tonemap (ps `5c02eaf8`), le rasterizer rejoue ce même dessin
+   (mêmes descripteurs, mêmes constantes, même vertex shader, mêmes 3 sommets) avec un second pipeline : même
+   layout, fragment shader `hdr/bb_tonemap_hdr.frag`, attachement RGBA16F appartenant à bbport, de la taille de la
+   cible du tonemap. Ce shader calcule, avec les formules de `bb_tonemap.frag` :
+   - la sortie SDR d'origine (référence, encodée comme celle du jeu), en alpha ou dans un canal dédié ;
+   - la couleur HDR : même étalonnage dans les tons moyens, hautes lumières prolongées (Neutwo /
+     `rd_upgrade_tonemap` de `hdr/renodx.glsl`), en linéaire, relative au paper white.
+2. **Recomposition à l'affichage** : le post-process final (`post_process.frag`, chemin HDR de l'étape 1) lit
+   l'image SDR finale **et** l'image du canal HDR. Là où le pixel final correspond encore à la sortie SDR de
+   référence (à une tolérance près, pour l'AA), c'est la scène : on affiche la version HDR. Ailleurs, c'est
+   l'interface (ou un mélange) : on garde le SDR. Les menus et le texte restent donc au paper white.
+3. Vérifier que l'image du canal HDR est lue avant d'être réécrite par l'image suivante (copie ou double tampon
+   si besoin), et gérer la taille (cible du tonemap : 1920×1080 ou plus en sortie 4K ; FSR mis à l'échelle).
+
+Points à vérifier en codant :
+- rejouer un dessin avec un pipeline maison dans `Rasterizer::DrawRecord` / `PostDraw` (`vk_rasterizer.cpp`) :
+  descripteurs et push constants déjà liés, rendu dynamique ;
+- le rôle du dessin 2 de la passe (LUT `ed4c7668`) : le test du 15/10 (teinte visible, image identique) montre
+  qu'il ne recouvre pas le dessin 1 ;
+- la tolérance de détection de l'interface face à l'AA du jeu (`da1faca9`) et au grain.
+
+Réglages prévus : luminosité max (nits, défaut selon l'écran), paper white (existe déjà), intensité des hautes
+lumières.
 
 ## Fiche de test
 
