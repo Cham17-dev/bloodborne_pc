@@ -456,6 +456,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         attribute.attrib.pixel_format == Libraries::VideoOut::PixelFormat::A2R10G10B10Srgb;
     pp_settings.hdr_paper_white = static_cast<float>(EmulatorSettings.GetHdrPaperWhite());
     pp_settings.hdr_gamma22 = EmulatorSettings.IsHdrGamma22() ? 1 : 0;
+    pp_settings.hdr_test_pattern = EmulatorSettings.IsHdrTestPattern() ? 1 : 0;
     pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings);
     if (frame_dump) {
         // The presented image as the swapchain blit reads it (General after the pass).

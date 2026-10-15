@@ -14,6 +14,7 @@ layout (push_constant) uniform settings {
     bool srgb_input;
     float hdr_paper_white; // bbport: nits of SDR white in HDR10 output
     bool hdr_gamma22;      // bbport: decode SDR with a 2.2 power instead of the sRGB curve
+    bool hdr_test_pattern; // bbport: HDR10 test pattern instead of the game
 } pp;
 
 const float cutoff = 0.0031308, a = 1.055, b = 0.055, d = 12.92;
@@ -49,16 +50,55 @@ vec3 pq_encode(vec3 nits) {
     return pow((c1 + c2 * y) / (1.0 + c3 * y), vec3(m2));
 }
 
+// An SDR signal (sRGB-encoded, 0..1) as an SDR display shows it, in Rec.2020 nits.
+vec3 sdr_to_nits(vec3 signal) {
+    vec3 lin = pp.hdr_gamma22 ? pow(signal, vec3(2.2)) : degamma(signal);
+    return max(bt709_to_bt2020(lin), 0.0) * pp.hdr_paper_white;
+}
+
+// bbport HDR test pattern, four rows from the top:
+//  1. SDR grey ramp, 32 steps from black to white, through the same path as the game;
+//  2. grey patches at 0.1, 1, 10, 50, 100 nits, paper white, 300, 400, 600, 800 nits;
+//  3. grey patches at 1000, 1200, 1500, 2000, 2500, 3000, 4000, 6000, 8000, 10000 nits
+//     (patches that look the same are above what the display can show);
+//  4. SDR color bars: white, yellow, cyan, green, magenta, red, blue, black.
+vec3 test_pattern_nits(vec2 p) {
+    int row = int(min(floor(p.y * 4.0), 3.0));
+    float fy = fract(p.y * 4.0);
+    if (fy < 0.03 || fy > 0.97) {
+        return vec3(0.0);
+    }
+    if (row == 0) {
+        return sdr_to_nits(vec3(min(floor(p.x * 32.0), 31.0) / 31.0));
+    }
+    if (row == 3) {
+        const vec3 bars[8] = vec3[](vec3(1.0), vec3(1.0, 1.0, 0.0), vec3(0.0, 1.0, 1.0),
+                                    vec3(0.0, 1.0, 0.0), vec3(1.0, 0.0, 1.0), vec3(1.0, 0.0, 0.0),
+                                    vec3(0.0, 0.0, 1.0), vec3(0.0));
+        return sdr_to_nits(bars[int(min(floor(p.x * 8.0), 7.0))]);
+    }
+    const float low[10] = float[](0.1, 1.0, 10.0, 50.0, 100.0, -1.0, 300.0, 400.0, 600.0, 800.0);
+    const float high[10] = float[](1000.0, 1200.0, 1500.0, 2000.0, 2500.0, 3000.0, 4000.0,
+                                   6000.0, 8000.0, 10000.0);
+    int i = int(min(floor(p.x * 10.0), 9.0));
+    float fx = fract(p.x * 10.0);
+    if (fx < 0.04 || fx > 0.96) {
+        return vec3(0.0);
+    }
+    float nits = row == 1 ? (low[i] < 0.0 ? pp.hdr_paper_white : low[i]) : high[i];
+    return vec3(nits);
+}
+
 void main() {
     vec4 color_linear = texture(texSampler, uv);
-    if (pp.hdr) {
+    if (pp.hdr && pp.hdr_test_pattern) {
+        color = vec4(pq_encode(test_pattern_nits(uv)), 1.0);
+    } else if (pp.hdr) {
         // The game's frame is SDR: rebuild the SDR signal (with the user's gamma), decode it
         // as an SDR display would, place its white at paper white and encode it in HDR10.
         if (pp.srgb_input) color_linear.rgb = degamma(color_linear.rgb);
         vec3 signal = clamp(gamma(clamp(color_linear.rgb, 0.0, 1.0)), 0.0, 1.0);
-        vec3 lin = pp.hdr_gamma22 ? pow(signal, vec3(2.2)) : degamma(signal);
-        vec3 nits = max(bt709_to_bt2020(lin), 0.0) * pp.hdr_paper_white;
-        color = vec4(pq_encode(nits), 1.0);
+        color = vec4(pq_encode(sdr_to_nits(signal)), 1.0);
     } else {
         if (pp.srgb_input) color_linear.rgb = degamma(color_linear.rgb);
         color = vec4(gamma(color_linear.rgb), color_linear.a);

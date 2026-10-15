@@ -1,0 +1,34 @@
+# Quick check (about a minute): compiles every host shader listed in gpu/CMakeLists.txt with the
+# same glslang options as the build, so a shader error shows up before the full Windows build.
+name: Shader check
+
+on:
+  push:
+    branches: [windows, 'hdr*']
+    paths: ['gpu/shadps4/video_core/host_shaders/**', 'gpu/CMakeLists.txt', '.github/workflows/shader-check.yml']
+  workflow_dispatch:
+
+jobs:
+  glslang:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install glslang
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq glslang-tools
+      - name: Compile the host shaders
+        run: |
+          src=gpu/shadps4/video_core/host_shaders
+          out=$(mktemp -d)
+          fail=0
+          # add_host_shader(<file> <name> [DEFINE=VALUE ...])
+          grep -E '^add_host_shader\(' gpu/CMakeLists.txt | sed -E 's/^add_host_shader\((.*)\)$/\1/' |
+          while read -r file name defines; do
+            args=()
+            for d in $defines; do args+=("-D$d"); done
+            if glslangValidator --target-env vulkan1.3 -o "$out/$name.h" --vn "${name^^}" "${args[@]}" "$src/$file" > "$out/log.txt" 2>&1; then
+              echo "ok      $file ($name)"
+            else
+              echo "FAILED  $file ($name)"; cat "$out/log.txt"; echo 1 > "$out/failed"
+            fi
+          done
+          [[ ! -f "$out/failed" ]]

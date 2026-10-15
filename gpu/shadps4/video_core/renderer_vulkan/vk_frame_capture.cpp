@@ -2,6 +2,7 @@
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
@@ -85,6 +86,10 @@ void AddShader(Entry& entry, u64 hash) {
 
 void Write(VAddr presented) {
     const char* dir = std::getenv("BB_CAPTURE_DIR");
+    if (dir) {
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+    }
     const std::string path =
         std::format("{}/frame_{}.txt", dir ? dir : ".", static_cast<long long>(std::time(nullptr)));
     FILE* f = std::fopen(path.c_str(), "w");
@@ -137,6 +142,28 @@ void FrameCapture::OnFlip(VAddr presented_address) {
         std::filesystem::remove(trigger, ec);
         state.store(Armed, std::memory_order_release);
         std::printf("Frame capture: armed\n");
+    }
+    // bbport: BB_CAPTURE_AUTO=<seconds> records a frame that often, at most BB_CAPTURE_AUTO_MAX
+    // times (8 by default): the HDR diagnostic of the launcher, without a trigger file.
+    static const long auto_seconds = [] {
+        const char* v = std::getenv("BB_CAPTURE_AUTO");
+        return v ? std::strtol(v, nullptr, 10) : 0L;
+    }();
+    if (auto_seconds > 0) {
+        static const long auto_max = [] {
+            const char* v = std::getenv("BB_CAPTURE_AUTO_MAX");
+            return v ? std::strtol(v, nullptr, 10) : 8L;
+        }();
+        static long auto_count = 0;
+        static auto next = std::chrono::steady_clock::now() + std::chrono::seconds(auto_seconds);
+        const auto now = std::chrono::steady_clock::now();
+        if (auto_count < auto_max && now >= next &&
+            state.load(std::memory_order_relaxed) == Idle) {
+            next = now + std::chrono::seconds(auto_seconds);
+            ++auto_count;
+            state.store(Armed, std::memory_order_release);
+            std::printf("Frame capture: armed (automatic %ld/%ld)\n", auto_count, auto_max);
+        }
     }
 }
 

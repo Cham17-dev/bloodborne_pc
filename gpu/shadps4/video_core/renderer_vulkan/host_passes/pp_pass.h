@@ -21,6 +21,7 @@ public:
         // bbport HDR: luminance of SDR white in nits, and 2.2 power decode of the SDR frame.
         float hdr_paper_white = 203.0f;
         u32 hdr_gamma22 = 1;
+        u32 hdr_test_pattern = 0;
     };
 
     void Create(vk::Device device, vk::Format surface_format);

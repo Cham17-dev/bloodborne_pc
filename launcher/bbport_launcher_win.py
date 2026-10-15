@@ -200,7 +200,7 @@ INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': 
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'), 'user_dir': '', 'dlc_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
                 'voice_language': 'auto',
-                'player_name': '', 'fullscreen': False, 'hdr': False, 'hdr_paper_white': '', 'present_mode': 'Mailbox',
+                'player_name': '', 'fullscreen': False, 'hdr': False, 'hdr_paper_white': '', 'hdr_test_pattern': False, 'hdr_probe': False, 'present_mode': 'Mailbox',
                 'fps_mode': 'uncap', 'frame_cap': '', 'draw_pipe': '', 'readbacks': '',
                 'frames_ahead': '', 'frame_stats': False, 'gpu_profile': False,
                 'vk_validation': False, 'extra_env': '', 'close_on_play': False,
@@ -462,6 +462,15 @@ def game_environment(s):
         env['BB_HDR'] = '1'
         if s.get('hdr_paper_white', ''):
             env['BB_HDR_PAPER_WHITE'] = s['hdr_paper_white']
+        if s.get('hdr_test_pattern'):
+            env['BB_HDR_TEST_PATTERN'] = '1'
+    if s.get('hdr_probe'):
+        # HDR diagnostic: the game's shaders and a few analysed frames, in <saves>/shader/dumps.
+        user = Path(s['user_dir'] or DATA_DIR / 'user')
+        user = user if user.is_absolute() else PORT_DIR / user
+        env['BB_DUMP_SHADERS'] = '1'
+        env['BB_CAPTURE_AUTO'] = '20'
+        env['BB_CAPTURE_DIR'] = str(user / 'shader' / 'dumps' / 'frames')
     env['BB_FPS'] = s['fps_mode']
     if s.get('frame_cap', ''):
         env['BB_FPS_LIMIT'] = s['frame_cap']
@@ -999,6 +1008,14 @@ class Launcher:
                  self.choice(f, 'hdr_paper_white', 'app', HDR_PAPER_WHITE),
                  _('How bright the game\'s white is in HDR. Raise it if the game looks dim.',
                    'Яркость белого цвета игры в HDR. Увеличьте, если игра выглядит тусклой.'))
+        self.check(f, 'hdr_test_pattern', 'app', _('HDR test pattern', 'Тестовая таблица HDR'),
+                   _('Shows a test pattern instead of the game, to check the HDR output.',
+                     'Показывает тестовую таблицу вместо игры для проверки вывода HDR.'))
+        self.check(f, 'hdr_probe', 'app', _('HDR diagnostic (collect shaders)', 'Диагностика HDR (сбор шейдеров)'),
+                   _('Saves the game\'s shaders and analyses a frame every 20 s, in the saves folder '
+                     'under shader/dumps. Slower: turn it off afterwards.',
+                     'Сохраняет шейдеры игры и анализирует кадр каждые 20 с (папка сохранений, '
+                     'shader/dumps). Медленнее: потом выключите.'))
 
     def build_game(self):
         f = self.scrolled_page('game', _('Game & effects', 'Игра и эффекты'),

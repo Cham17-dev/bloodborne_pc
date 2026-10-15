@@ -66,6 +66,8 @@ public:
     }
     // Decode the SDR frame with a pure 2.2 power (as SDR displays show it) instead of sRGB.
     bool IsHdrGamma22() { static const auto value = Flag("BB_HDR_GAMMA22", true); return value; }
+    // Shows an HDR10 test pattern instead of the game (HDR output only).
+    bool IsHdrTestPattern() { static const auto value = Flag("BB_HDR_TEST_PATTERN", false); return value; }
     bool IsNullGPU() { static const auto value = Flag("BB_NULL_GPU", false); return value; }
     bool IsPatchShaders() { return false; }
     bool IsPipelineCacheArchived() { return false; }
