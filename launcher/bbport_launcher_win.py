@@ -40,7 +40,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # This build; GitHub release tags are windows-v<VERSION>.
-VERSION = '1.7.5'
+VERSION = '1.7.8'
 # Co-op: the community server that answers the game's own server requests.
 COMMUNITY_SERVER = 'https://thehuntersdream.com'
 RELEASES_API = 'https://api.github.com/repos/Supermedo/bloodborne_pc/releases/latest'
@@ -381,9 +381,12 @@ def server_check(server, webapi, community):
 # The Hunter's Dream co-op pool (with bbhost players): bbbridge (bbbridge/, by MaskZeus), which
 # run.py starts with the game. Its account (Discord sign-in) stays in <saves>/bbbridge.
 BRIDGE_PAGE = 'https://github.com/MaskZeus/bbbridge-bbport-online-tool'
-# The SuperMedo Server co-op pool: a shadNet server reached over Tailscale; accounts are made at
+# The Hunter's Dream pool through bbbridge is off until it no longer troubles their server
+# (bad shadNet calls through the bridge); its code stays for when it is fixed with them.
+HUNTERS_DREAM_POOL = False
+# The SuperMedo Server co-op pool: a public shadNet server. Accounts are made at
 # SUPERMEDO_SIGNUP. The launcher shows the pool's name, not its address.
-SUPERMEDO_SERVER = '100.65.30.50:31313'
+SUPERMEDO_SERVER = 'www.supermedo.com:31313'
 SUPERMEDO_SIGNUP = 'https://www.supermedo.com'
 
 
@@ -485,8 +488,7 @@ def game_environment(s):
             env['BB_POOL_NAME'] = 'SuperMedo Server'
             env['BB_SHADNET_NPID'] = str(s.get('supermedo_user', '')).strip()
             env['BB_SHADNET_PASSWORD'] = str(s.get('supermedo_password', ''))
-            env['BB_UPNP'] = '0'  # over Tailscale
-        if s.get('online_pool') == 'huntersdream':
+        if s.get('online_pool') == 'huntersdream' and HUNTERS_DREAM_POOL:
             # run.py starts bbbridge and signs the game in with the Hunter's Dream id.
             env['BB_BRIDGE'] = '1'
             env['BB_BRIDGE_LIVE_MAP'] = '1' if s.get('bridge_live_map') else '0'
@@ -1053,12 +1055,14 @@ class Launcher:
         ttk.Radiobutton(pools, text=_('shadNet server'), variable=pool, value='shadnet').pack(side='left')
         ttk.Radiobutton(pools, text=_('SuperMedo Server'), variable=pool,
                         value='supermedo').pack(side='left', padx=(16, 0))
-        ttk.Radiobutton(pools, text=_("The Hunter's Dream (with bbhost players)"), variable=pool,
-                        value='huntersdream').pack(side='left', padx=(16, 0))
+        if HUNTERS_DREAM_POOL:
+            ttk.Radiobutton(pools, text=_("The Hunter's Dream (with bbhost players)"), variable=pool,
+                            value='huntersdream').pack(side='left', padx=(16, 0))
+        elif pool.get() == 'huntersdream':
+            pool.set('shadnet')
         self.row(f, _('Play with'), pools,
-                 _("shadNet: a shadNet server and its account. SuperMedo Server: an account from "
-                   "supermedo.com, with Tailscale connected. The Hunter's Dream: the players of bbhost, "
-                   "the PC port by The Hunter's Dream's team, with a Discord sign-in."))
+                 _("shadNet: a shadNet server and its account. SuperMedo Server uses an account from "
+                   "supermedo.com."))
         # Each pool shows only its own settings (show_pool below).
         groups = {}
         before = set(f.grid_slaves())
@@ -1073,7 +1077,7 @@ class Launcher:
         self.row(f, '', ttk.Button(f, text=_('Sign up for SuperMedo Server'),
                                    command=lambda: webbrowser.open(SUPERMEDO_SIGNUP)))
         self.row(f, _('Username'), ttk.Entry(f, textvariable=self.var('supermedo_user', 'app'), width=40),
-                 _('The account you made at supermedo.com. Tailscale must be connected.'))
+                 _('The account you made at supermedo.com.'))
         self.row(f, _('Password'), ttk.Entry(f, textvariable=self.var('supermedo_password', 'app'), width=40,
                                              show='•'),
                  _('Saved on this PC with the other launcher settings.'))
@@ -1204,7 +1208,7 @@ class Launcher:
                     text = text.replace(SUPERMEDO_SERVER, 'SuperMedo Server')
                     text = text.replace(SUPERMEDO_SERVER.split(':')[0], 'SuperMedo Server')
                     if 'SuperMedo Server: not reachable' in text:
-                        text += '\n' + _('SuperMedo Server needs Tailscale connected to its network.')
+                        text += '\n' + _('SuperMedo Server could not be reached. Check your internet connection and try again.')
                 else:
                     text = server_check(address, webapi, game)
                 if pool_name == 'shadnet' and values['online_webapi'].strip() and values['online_webapi'].strip() != webapi:
@@ -1218,10 +1222,13 @@ class Launcher:
         self.note(f, _('Everyone in a session needs the same game version (1.09) and the same server. '
                        'Cheats change the game for the other players too: turn them off when you play together.'))
         show_code()  # hidden until a sign-in shows one; its row stays reserved (rows are counted above)
-        shown = {'shadnet': {'shadnet', 'upnp'}, 'supermedo': {'supermedo'},
+        shown = {'shadnet': {'shadnet', 'upnp'}, 'supermedo': {'supermedo', 'upnp'},
                  'huntersdream': {'huntersdream', 'upnp'}}
 
         def show_pool(*_args):
+            if pool.get() == 'huntersdream' and not HUNTERS_DREAM_POOL:
+                pool.set('shadnet')  # runs show_pool again
+                return
             want = shown.get(pool.get(), shown['shadnet'])
             for name, widgets in groups.items():
                 for widget in widgets:

@@ -66,8 +66,9 @@ else
     echo "DLSS bridge not built (packaging/windows/build_dlss.sh): no DLSS in this package" >&2
 fi
 # The Hunter's Dream co-op pool: bbbridge by MaskZeus (GPL-3.0-or-later, source in bbbridge/),
-# built with MSVC by packaging/windows/build_bbbridge.sh.
-if [[ -f out/bbbridge-cli.exe ]]; then
+# built with MSVC by packaging/windows/build_bbbridge.sh. Not shipped while the pool is off
+# (HUNTERS_DREAM_POOL in the launcher); BB_SHIP_BBBRIDGE=1 ships it.
+if [[ ${BB_SHIP_BBBRIDGE:-0} == 1 && -f out/bbbridge-cli.exe ]]; then
     cp out/bbbridge-cli.exe "$dest/bin/"
     mkdir -p "$dest/licenses"
     cp bbbridge/LICENSE "$dest/licenses/bbbridge-LICENSE.txt"

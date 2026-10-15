@@ -51,10 +51,9 @@ Online play (beta)
 - Messages, bloodstains and ghosts come from The Hunter's Dream (https://thehuntersdream.com);
   bells and summons go through the shadNet server. Everyone needs game version 1.09 and the
   same co-op server. Summoning between players is not confirmed yet.
-- To play with bbhost players (The Hunter's Dream's own PC port), choose "The Hunter's Dream"
-  under "Co-op pool" and press "Sign in with Discord" (no shadNet account needed). The game goes
-  online through bbbridge by MaskZeus, started with the game. Never share
-  user\bbbridge\bbbridge_state.json: it holds your account.
+- Playing with bbhost players on The Hunter's Dream's co-op pool is off in this port until it
+  works properly with their server. Please don't ask The Hunter's Dream for help with bbport:
+  use our Discord server (https://discord.gg/yTMG8c4Bqm) instead.
 
 Cheats
 - The "Cheats" page has cheats (never die, enemies do not see or hear you, Rally never fades,
