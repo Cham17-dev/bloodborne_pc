@@ -94,12 +94,9 @@ Everyone you want to play with needs game version 1.09 and the same co-op server
 shadNet server (from the [shadp2p](https://github.com/Wozzardman/shadp2p) project) works too:
 put its address in **Server address**.
 
-To play with the players of bbhost (The Hunter's Dream's own PC port) instead, choose
-**The Hunter's Dream** under **Co-op pool** and press **Sign in with Discord**: no shadNet
-account is needed. The game then goes online through
-[bbbridge](https://github.com/MaskZeus/bbbridge-bbport-online-tool) by MaskZeus, which the
-launcher starts with the game. Its account file is `user\bbbridge\bbbridge_state.json`: never
-share it.
+Playing with bbhost players on The Hunter's Dream's co-op pool is off in this port until it
+works properly with their server. Please don't ask The Hunter's Dream for help with bbport: use
+our [Discord server](https://discord.gg/yTMG8c4Bqm) instead.
 
 ## Known issues
 
