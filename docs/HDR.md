@@ -11,6 +11,7 @@
 | 3a | Remplacer le shader de tonemap (`hdr/bb_tonemap.frag`, `GameShaderCode()`, option *HDR tonemap (test)*, `BB_HDR_TONEMAP=0/1/2`) | **Validé** (15/10) : mode 2 teinte la partie gauche (environ un quart de l'écran : la cible fait plus de 1920 px de large en sortie 4K, à prendre en compte), mode 1 donne une image identique au jeu. Le cache de pipelines est contourné (remplacement aussi au chargement depuis le cache). |
 | 3b | Canal HDR : dessin fantôme du tonemap dans une image RGBA16F (gain HDR par pixel) + application du gain dans le post-process final là où l'image est encore la scène | **Fonctionne** (15/10, build hdr-15) : fenêtre de la clinique jusqu'à 916 nits, pas de plantage, interface normale. **En cours** : détection de l'interface (barreaux de fenêtre encore pris pour l'interface à cause de l'AA → correctif 3×3, build hdr-16, à tester) |
 | 3c | Couvrir toutes les variantes du composite final (300 dans `eboot.bin`, voir « Variantes du tonemap ») | **Relevé fait** (16/10). Build hdr-18 : journal des variantes utilisées en jeu. Remplacement des autres variantes : selon ce que le journal montre |
+| — | PsychoV30 (tonemapper perceptif de RenoDX) porté en GLSL : `hdr/psychov30.glsl` | **Porté et vérifié hors jeu** (16/10) : identique à l'original HLSL à 1,5e-4 près. À brancher avec la passe générique (option à côté de Neutwo) |
 | 4 | Upscalers (FSR/DLSS en mode mis à l'échelle travaillent sur l'image déjà tonemappée) | À faire |
 
 Options (launcher → Fenêtre, ou variables d'environnement) :
@@ -128,6 +129,26 @@ ingérable. À la place, **une passe à nous** au moment d'un dessin de la famil
 Avantages : indépendant du layout de chaque variante, une seule implémentation par courbe. À vérifier : que la
 scène et le bloom se reconnaissent bien par leur format dans toutes les variantes (journal), et l'UV (le jeu
 interpole des attributs ; plein écran = `gl_FragCoord / taille`, à confirmer par la comparaison au SDR).
+
+## PsychoV30 (porté le 16/10)
+
+Tonemapper perceptif de RenoDX (Carlos Lopez, MIT), `src/shaders/tonemap/psychov/test30.hlsl` au commit
+`0ede35a` : réponse des cônes (LMS Stockman/CVRL), courbe finie par cône ancrée (gris moyen, pente), direction
+« Mean-A2 », projection exacte dans le cube RGB de l'écran (BT.709 ou BT.2020). Garde teinte et saturation des
+hautes lumières là où un gain de luminance les laisse délavées.
+
+- Port : `gpu/shadps4/video_core/host_shaders/hdr/psychov30.glsl`, fonctions `rd_psychov30(...)` (tous les
+  réglages) et `rd_psychov30(couleur, pic)` (défauts RenoDX : ancres 0,18, cube BT.2020, h = 1). Entrée et sortie
+  en BT.709 linéaire, 1 = paper white ; `pic` = pic ÷ paper white (1000/203 = 4,93).
+- Constantes dérivées calculées en double par `docs/hdr-tools/psychov30_consts.py`.
+- Vérification : `docs/hdr-tools/psychov30_check/run.sh` compile l'original HLSL et le port avec glslang, les
+  traduit en C++ (SPIRV-Cross) et compare 768 couleurs × 7 réglages : écart max 1,5e-4 (1,3e-3 pour une couleur
+  très hors gamut en source AP1, mode non utilisé). Compilation aussi vérifiée en CI (`psychov30_check.frag`).
+- Points de repère (défauts, pic 4,93) : gris 0,215 → 0,215 ; 1,67 → 1,36 ; 10 → 3,5 ; 1000 → 4,91 ;
+  rouge pur 7,4 → (5,41 0,15 0,07) ; rouge pur 1000 → (5,16 4,55 4,44), il tend vers le blanc.
+- Branchement : dans la passe générique (étape 3c), sur la couleur de la scène, avant l'étalonnage du jeu.
+  Ancrage sur la courbe du jeu : sortie au gris moyen et pente calculées avec les formules exactes des 4
+  courbes (méthode RenoDX `anchor-output-midgray` + `slope-analytic`).
 
 ## Plan de l'étape 3b (rédigé le 15/10 au soir)
 
