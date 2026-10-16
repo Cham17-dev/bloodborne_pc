@@ -99,6 +99,29 @@ layout, after Ryan Sousa's keyboard and mouse fork:
 Shift is only a modifier in it, so Shift + click never passes through a dodge (see
 *Combinations*).
 
+## Button prompts
+
+```ini
+button_prompts = auto   # bbport.ini: auto (default) | playstation | keyboard
+```
+
+The game's button icons (its key guides in menus, the buttons in messages, and the prompts in the
+world such as "Pick Up Item" or "Open Door") follow the device
+you use: a key, a click, the wheel or moving the mouse shows keyboard and mouse icons, a controller
+button or stick shows the controller's, mid-game. Without any input yet they are the controller's
+when one is connected. The keyboard icons are drawn from `input.ini` (a binding's first keyboard
+or mouse input, the last input of a combination with its modifier above it, the mouse for the
+stick it drives), so they follow your bindings and change with F8. Set in the launcher's
+Controls page or the in-game menu.
+
+How: the menus' icons are the game's `KG_*` textures in `menu/common.tpf.dcx` (32x32 BC7, in the
+PS4's tiled layout); the prompts in the world draw their own Circle, Cross and L3 from the HUD
+atlas `MENU_Common_00091` (1024x512, each a 26x26 sprite in a block-aligned area). The texture
+cache recognises both by hash when the game uploads them (`gpu/shim/bbport_prompts.cpp`), and the
+window thread writes the other set of pixels into guest memory when the device changes
+(`gpu/shim/bbport_prompt_icons.cpp` draws and encodes them). `BB_PROMPT_TRACE=1` logs every
+small texture the game uploads and saves its bytes, to find button pictures in other textures.
+
 ## Mouse look
 
 ```ini

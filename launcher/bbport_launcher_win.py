@@ -197,6 +197,7 @@ INI_FLAGS = {'sharpen', 'object_motion', 'show_fps', 'mute_unfocused', *(k for k
 INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': '0.50',
                 'object_motion': '1', 'show_fps': '1', 'output_res': '1920x1080', 'model_lod': '0',
                 'live_resolution': 'auto', 'hud_position': '100', 'fov': '43', 'mute_unfocused': '0',
+                'button_prompts': 'auto',
                 **{key: '1' if on else '0' for key, _t, on in EFFECTS + EXTRAS + CHEATS + TWEAKS}}
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'), 'user_dir': '', 'dlc_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
@@ -233,6 +234,10 @@ def fov_options(current):
     if current in (v for v, _t in FOVS) or not str(current).isdigit() or not 30 <= int(current) <= 90:
         return FOVS
     return sorted([*FOVS, (current, (f'{current}°',))], key=lambda o: int(o[0]))
+# The game's button icons (gpu/shim/bbport_prompts.cpp): with the device in use, or always one kind.
+PROMPT_MODES = [('auto', ('Follow the device in use', 'По используемому устройству')),
+                ('playstation', ('PlayStation', 'PlayStation')),
+                ('keyboard', ('Keyboard and mouse', 'Клавиатура и мышь'))]
 HUD_POSITIONS = [('100', ('Screen edges', 'У краёв экрана')), ('75', ('75%',)), ('50', ('Halfway', 'Посередине')),
                  ('25', ('25%',)), ('0', ('Centred (16:9)', 'По центру (16:9)'))]
 LIVE = [('auto', ('Auto (by graphics card)', 'Авто (по видеокарте)')), ('0', ('Off (faster)', 'Выключена (быстрее)')),
@@ -1486,6 +1491,11 @@ class Launcher:
             self.remap_rows[output] = key_label
             self.refresh_remap_row(output)
 
+        self.row(f, _('Button prompts', 'Подсказки кнопок'), self.choice(f, 'button_prompts', 'ini', PROMPT_MODES),
+                 _("The game's button icons: your keyboard and mouse keys while you play with them, "
+                   "the controller's while you use it.",
+                   'Значки кнопок в игре: ваши клавиши и мышь, пока вы играете ими, и кнопки '
+                   'геймпада, пока вы используете его.'))
         preset = ttk.Frame(f)
         ttk.Button(preset, text=_('Use the Dark Souls III layout', 'Раскладка Dark Souls III'),
                    command=self.apply_layout_preset).pack(side='left')

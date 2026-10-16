@@ -161,6 +161,35 @@ const char *input_output_name(InputOutput out) {
     return "?";
 }
 
+/* The input.ini name of one keyboard or mouse input, or NULL for anything else. */
+static const char *KeyboardInputName(InputKind kind, int32_t value) {
+    if (kind == IN_KEY) {
+        for (size_t i = 0; i < sizeof(kKeyNames)/sizeof(*kKeyNames); ++i)
+            if ((int32_t)SDL_GetScancodeFromKey((SDL_Keycode)kKeyNames[i].value, NULL) == value) return kKeyNames[i].name;
+        return NULL;
+    }
+    const NameValue *table = kind == IN_MOUSE_BUTTON ? kMouseButtonNames : kind == IN_MOUSE_WHEEL ? kMouseWheelNames : NULL;
+    size_t count = kind == IN_MOUSE_BUTTON ? sizeof(kMouseButtonNames)/sizeof(*kMouseButtonNames)
+                                           : sizeof(kMouseWheelNames)/sizeof(*kMouseWheelNames);
+    for (size_t i = 0; table && i < count; ++i)
+        if (table[i].value == value) return table[i].name;
+    return NULL;
+}
+
+int input_binding_keyboard_text(const InputBinding *b, char *out, size_t size) {
+    const char *names[INPUT_MAX_COMBO];
+    if (!(names[0] = KeyboardInputName(b->kind, b->value))) return 0;
+    for (uint8_t i = 0; i < b->extra_count; ++i)
+        if (!(names[i + 1] = KeyboardInputName(b->extra[i].kind, b->extra[i].value))) return 0;
+    size_t used = 0;
+    for (int i = 0; i <= b->extra_count; ++i) {
+        int n = snprintf(out + used, size - used, "%s%s", i ? "+" : "", names[i]);
+        if (n < 0 || (size_t)n >= size - used) return 0;
+        used += (size_t)n;
+    }
+    return 1;
+}
+
 /* ---- Binding resolution for one input token ------------------------------------------ */
 
 static int ResolveInput(const char *token, InputBinding *out) {

@@ -453,6 +453,45 @@ static void mouse_to_axis(float dx, float dy, double dt_ms, const MouseParams *m
 static InputConfig default_config;
 static InputConfig *loaded_config; /* NULL until pad_open's first load; falls back to defaults */
 static int config_initialized;
+
+/* Button prompts (gpu/shim/bbport_prompts.cpp): the actions each of the game's key-guide icons
+ * stands for, in bbport_prompt_icons.h's order. Each icon is named after its role and shows a
+ * button (KG_OK shows Circle): the keyboard icon is that button's key. */
+#define PROMPT_ICONS 20
+static const InputOutput prompt_outputs[PROMPT_ICONS][4]={
+    {OUT_CROSS}, {OUT_L1}, {OUT_L2}, {OUT_L3},
+    {OUT_AXIS_LEFT_Y_MINUS,OUT_AXIS_LEFT_X_MINUS,OUT_AXIS_LEFT_Y_PLUS,OUT_AXIS_LEFT_X_PLUS}, /* LS: WASD */
+    {OUT_PAD_DOWN}, {OUT_PAD_LEFT,OUT_PAD_RIGHT}, {OUT_PAD_UP}, {OUT_PAD_UP,OUT_PAD_DOWN},
+    {OUT_PAD_UP,OUT_PAD_DOWN,OUT_PAD_LEFT,OUT_PAD_RIGHT},
+    {OUT_CIRCLE}, {OUT_R1}, {OUT_R2}, {OUT_R3},
+    {OUT_AXIS_RIGHT_Y_MINUS,OUT_AXIS_RIGHT_X_MINUS,OUT_AXIS_RIGHT_Y_PLUS,OUT_AXIS_RIGHT_X_PLUS}, /* RS */
+    {OUT_SQUARE}, {OUT_TRIANGLE}, {OUT_OPTIONS}, {OUT_TOUCHPAD_LEFT}, {OUT_TOUCHPAD_RIGHT},
+};
+static const int prompt_output_count[PROMPT_ICONS]={1,1,1,1,4,1,2,1,2,4,1,1,1,1,4,1,1,1,1,1};
+/* What the icons show on keyboard and mouse: each action's first keyboard or mouse binding, and
+ * "mouse" for a stick the mouse drives. */
+static void configure_prompts(const InputConfig *cfg) {
+    static char text[PROMPT_ICONS][128];
+    const char *list[PROMPT_ICONS];
+    for (int icon=0;icon<PROMPT_ICONS;++icon) {
+        size_t used=0;
+        text[icon][0]=0;
+        const int stick=icon==4 ? 1 : icon==14 ? 2 : 0;
+        if (stick && cfg->mouse.stick==stick) snprintf(text[icon],sizeof(text[icon]),"mouse");
+        else for (int k=0;k<prompt_output_count[icon];++k) {
+            const InputOutput out=prompt_outputs[icon][k];
+            for (int i=0;i<cfg->table.binding_count[out];++i) {
+                char one[64];
+                if (!input_binding_keyboard_text(&cfg->table.bindings[out][i],one,sizeof(one))) continue;
+                int n=snprintf(text[icon]+used,sizeof(text[icon])-used,"%s%s",used ? " " : "",one);
+                if (n>0 && (size_t)n<sizeof(text[icon])-used) used+=(size_t)n;
+                break;
+            }
+        }
+        list[icon]=text[icon];
+    }
+    bbgpu_prompts_configure(list,PROMPT_ICONS);
+}
 static void ensure_config_loaded(void) {
     if (config_initialized) return;
     config_initialized=1;
@@ -471,6 +510,7 @@ static void ensure_config_loaded(void) {
                           loaded_config ? loaded_config->toggle_scancode : default_config.toggle_scancode,
                           loaded_config ? loaded_config->reload_scancode : default_config.reload_scancode);
     const MouseParams *mouse=loaded_config ? &loaded_config->mouse : &default_config.mouse;
+    configure_prompts(loaded_config ? loaded_config : &default_config);
     bbgpu_mouse_camera_configure(loaded_config ? mouse->camera_direct : 0,mouse->camera_sensitivity,
                                  input_mouse_scale_x(mouse),input_mouse_scale_y(mouse),mouse->camera_sync);
 }
@@ -492,6 +532,7 @@ static void reload_config_if_requested(void) {
         else printf("Input config: %s reloaded\n",path);
         bbgpu_input_configure(loaded_config->mouse.stick!=0,loaded_config->toggle_scancode,loaded_config->reload_scancode);
         const MouseParams *mouse=&loaded_config->mouse;
+        configure_prompts(loaded_config);
         bbgpu_mouse_camera_configure(mouse->camera_direct,mouse->camera_sensitivity,
                                      input_mouse_scale_x(mouse),input_mouse_scale_y(mouse),mouse->camera_sync);
     } else {

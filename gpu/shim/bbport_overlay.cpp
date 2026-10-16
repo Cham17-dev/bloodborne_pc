@@ -378,6 +378,15 @@ void Menu() {
     ImGui::SeparatorText("Other");
     Checkbox("Show FPS counter", s.show_fps);
     Checkbox("Mute when the game is in the background", s.mute_unfocused);
+    static const char* prompt_modes[] = {"Follow the device in use", "PlayStation", "Keyboard and mouse"};
+    int prompts = s.button_prompts;
+    if (ImGui::BeginCombo("Button prompts", prompt_modes[prompts])) {
+        for (int i = 0; i < BbSettings::PromptsCount; ++i) {
+            if (ImGui::Selectable(prompt_modes[i], i == prompts)) Store(s.button_prompts, i, true);
+        }
+        ImGui::EndCombo();
+    }
+    Hint("The game's button icons: keyboard and mouse keys from input.ini while you play with them, the controller's while you use it.");
 
     ImGui::Spacing();
     if (ImGui::Button("Close")) {

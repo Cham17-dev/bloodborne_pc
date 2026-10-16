@@ -1,4 +1,5 @@
 // bbport: SDL3 window for the Vulkan swapchain (X11 or Wayland).
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <array>
@@ -8,6 +9,7 @@
 #include "sdl_window.h"
 #include "bbport_mouse.h"
 #include "bbport_overlay.h"
+#include "bbport_prompts.h"
 #include "bloodborne_cam.h"
 
 namespace Frontend {
@@ -109,6 +111,31 @@ bool WindowSDL::PollEvents() {
     }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        // Button prompts follow the device that was used last: a key, a click, the wheel or a
+        // real mouse movement, or a controller button or a stick or trigger pushed past half.
+        switch (event.type) {
+        case SDL_EVENT_KEY_DOWN:
+            if (!event.key.repeat) BbPrompts::OnInput(true);
+            break;
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EVENT_MOUSE_WHEEL:
+            BbPrompts::OnInput(true);
+            break;
+        case SDL_EVENT_MOUSE_MOTION:
+            if (std::abs(event.motion.xrel) + std::abs(event.motion.yrel) >= 3.0f) BbPrompts::OnInput(true);
+            break;
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+            BbPrompts::OnInput(false);
+            break;
+        case SDL_EVENT_GAMEPAD_ADDED:
+            BbPrompts::OnControllerConnected(); // the game starts with its prompts
+            break;
+        case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+            if (std::abs(int(event.gaxis.value)) > 16000) BbPrompts::OnInput(false);
+            break;
+        default:
+            break;
+        }
         // HOT-003: the toggle/reload hotkeys work regardless of the menu or text dialog (F8
         // must reload input.ini even with the menu open), so they are handled before anything
         // else gets a chance to consume the key event. Held-down repeats are ignored the same
@@ -211,6 +238,7 @@ bool WindowSDL::PollEvents() {
     // because the menu can also close from the render thread (bbport_overlay.cpp's "Close"
     // button sets menu_open there, not through an SDL event here).
     UpdateMouseCapture();
+    BbPrompts::Apply();
     UpdateMouseCamera();
     return is_open;
 }

@@ -61,6 +61,9 @@ inline bool Ultrawide(int output) {
     return OutputWidths[output] * 9 > OutputHeights[output] * 16;
 }
 
+/// Button prompts (bbport_prompts.cpp): the game's icons switch with the device in use, or stay.
+enum Prompts : int { PromptsAuto = 0, PromptsPlayStation = 1, PromptsKeyboard = 2, PromptsCount };
+
 /// Field of view (fov.py): the game's camera has 43 degrees.
 inline constexpr int FovDefault = 43, FovMin = 30, FovMax = 90;
 
@@ -79,6 +82,8 @@ struct Values {
     std::atomic<bool> show_fps{false};
     /// Silence the game while its window does not have focus (bbgpu_audio_muted).
     std::atomic<bool> mute_unfocused{false};
+    /// Keyboard and mouse button prompts: with the device in use (auto), or always one kind.
+    std::atomic<int> button_prompts{PromptsAuto};
     // FSR 4 checks (menu): the provider's auto exposure, the jitter sign it is given.
     std::atomic<bool> fsr4_auto_exposure{true};
     std::atomic<bool> fsr4_invert_jitter{false};

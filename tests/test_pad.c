@@ -23,6 +23,10 @@ void bbgpu_mouse_take(BbMouseInput *out) {
 void bbgpu_input_configure(int mouse_mode_available, int32_t toggle_scancode, int32_t reload_scancode) {
     (void)mouse_mode_available; (void)toggle_scancode; (void)reload_scancode;
 }
+static char stub_prompts[20][128];
+void bbgpu_prompts_configure(const char *const *inputs, int count) {
+    for (int i=0;i<count && i<20;++i) snprintf(stub_prompts[i],sizeof(stub_prompts[i]),"%s",inputs[i]);
+}
 void bbgpu_mouse_camera_configure(int direct, float sensitivity, float scale_x, float scale_y, int sync) {
     (void)direct; (void)sensitivity; (void)scale_x; (void)scale_y; (void)sync;
 }
@@ -135,6 +139,27 @@ static void test_combos(void) {
 #undef HELD
 #undef STICK_Y
     puts("PASS: combos (all inputs held, larger combo takes priority, stick keys too)");
+}
+
+/* Button prompts: each key-guide icon gets its button's first keyboard or mouse binding. */
+static void test_prompt_texts(void) {
+    InputConfig cfg;
+    input_config_parse(&cfg,
+        "cross = cross\ncross = e\ncircle = space\nr2 = lshift, leftbutton\nl1 = rightbutton\n"
+        "pad_down = mousewheeldown\npad_up = up\n"
+        "axis_left_y_minus = w\naxis_left_x_minus = a\naxis_left_y_plus = s\naxis_left_x_plus = d\n"
+        "mouse_to_joystick = right\n");
+    assert(cfg.warnings==0);
+    configure_prompts(&cfg);
+    assert(!strcmp(stub_prompts[0],"e"));                  /* KG_Cancel: Cross, skipping the controller line */
+    assert(!strcmp(stub_prompts[10],"space"));             /* KG_OK: Circle */
+    assert(!strcmp(stub_prompts[12],"lshift+leftbutton")); /* KG_R2 */
+    assert(!strcmp(stub_prompts[1],"rightbutton"));        /* KG_L1 */
+    assert(!strcmp(stub_prompts[4],"w a s d"));            /* KG_LS */
+    assert(!strcmp(stub_prompts[14],"mouse"));             /* KG_RS: the mouse drives the camera */
+    assert(!strcmp(stub_prompts[8],"up mousewheeldown"));  /* KG_L_UD */
+    assert(!strcmp(stub_prompts[15],""));                  /* KG_R_L: Square has no keyboard key */
+    puts("PASS: button prompt texts (first keyboard or mouse binding per icon, sticks, combinations)");
 }
 
 /* stick_socd and stick_release_delay_ms, with explicit timestamps (microseconds). The A -> D
@@ -471,6 +496,7 @@ static void test_reload_on_f8(void) {
 int main(void) {
     test_binding_evaluation();
     test_combos();
+    test_prompt_texts();
     test_socd_and_release_delay();
     test_digital_stick_shape();
     test_mouse_to_axis();
