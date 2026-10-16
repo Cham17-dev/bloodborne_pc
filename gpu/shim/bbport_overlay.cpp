@@ -388,20 +388,6 @@ void Menu() {
         ImGui::EndCombo();
     }
     Hint("The game's button icons: keyboard and mouse keys from input.ini while you play with them, the controller's (PlayStation, Xbox or Switch) while you use it.");
-    static const int haptic_levels[] = {0, 50, 100, 150};
-    static const char* haptic_names[] = {"Off (rumble)", "Light", "Normal", "Strong"};
-    const int haptics = s.dualsense_haptics;
-    int shown = 2;
-    for (int i = 0; i < 4; ++i) {
-        if (haptic_levels[i] == haptics) shown = i;
-    }
-    if (ImGui::BeginCombo("DualSense haptics", haptic_names[shown])) {
-        for (int i = 0; i < 4; ++i) {
-            if (ImGui::Selectable(haptic_names[i], i == shown)) Store(s.dualsense_haptics, haptic_levels[i], true);
-        }
-        ImGui::EndCombo();
-    }
-    Hint("A DualSense on a USB cable feels the game's sounds: steps, rolls, hits and landings. Off, or over Bluetooth, it rumbles like other controllers.");
 
     ImGui::Spacing();
     if (ImGui::Button("Close")) {

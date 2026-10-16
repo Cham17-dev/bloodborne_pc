@@ -236,14 +236,6 @@ static int32_t output_port(int32_t handle, const void *data, int pace) {
                 else { int16_t v; memcpy(&v,(const char *)data+from*2,2); v=(int16_t)((float)v*gain); memcpy(converted+to*2,&v,2); }
             }
         }
-        if (p==&ports[0] && p->channels==8) {
-            /* The main port's centre channel (the player's own sounds) drives the DualSense's
-             * haptics; the same index in both 8-channel layouts. */
-            static float centre[2048];
-            const float gain=(float)p->volume[2]/VOLUME_0DB*gain_all;
-            for (size_t f=0;f<(size_t)p->frames;++f) centre[f]=take(data,p->is_float,f*8+2,gain);
-            runtime_haptics_feed(centre,p->frames);
-        }
         if (p->dump) fwrite(converted,1,out_bytes,p->dump);
         if (p->stats) {
             uint64_t now=now_ns();

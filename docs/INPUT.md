@@ -103,24 +103,6 @@ layout, after Ryan Sousa's keyboard and mouse fork:
 Shift is only a modifier in it, so Shift + click never passes through a dodge (see
 *Combinations*).
 
-## Vibration and DualSense haptics
-
-```ini
-dualsense_haptics = 100   # bbport.ini: strength in percent (0 off, 50, 100, 150)
-```
-
-Controllers rumble when the game asks for it (getting hit, for example). A DualSense on a USB
-cable goes further, as PS5 games do: its actuators play the game's sound effects, so steps,
-rolls, swings and hits are felt. The signal is the centre channel of the game's main audio port:
-the game plays the player's own sounds there and the world's (wind, rain, fire, enemies) in the
-other channels, so only what the player does is felt. It is low-passed to the actuators' range
-below ~180 Hz, with a soft gate under the player's quiet sounds (breath, cloth); the game's own
-vibration (getting hit) is mixed in as a low hum. The filter runs on a thread of its own, not the
-game's audio thread. It plays on the controller's sound device ("Speakers (DualSense Wireless
-Controller)", channels 3 and 4), so it needs the cable: over Bluetooth Windows has no such
-device and the controller rumbles instead, as it does with the setting at 0. Set in the
-launcher's Controls page or the in-game menu (Insert); `src/runtime_haptics.c`.
-
 ## Button prompts
 
 ```ini
