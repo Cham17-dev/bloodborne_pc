@@ -16,6 +16,7 @@
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
+#include "video_core/host_shaders/bb_color_grading_frag.h"
 #include "video_core/host_shaders/bb_composite_hdr_frag.h"
 #include "video_core/host_shaders/bb_display_copy_frag.h"
 #include "video_core/host_shaders/bb_glow_source_frag.h"
@@ -368,6 +369,10 @@ std::vector<u32> HdrChannel::ChainReplacement(u64 pgm_hash, std::span<const u32>
         spv.assign(std::begin(BB_GLOW_SOURCE_FRAG), std::end(BB_GLOW_SOURCE_FRAG));
         bindings = {"fs_img0", "fs_samp0"};
         locations = {"fs_in_attr0_p", "frag_color0"};
+    } else if (pgm_hash == ColorGradingHash) {
+        spv.assign(std::begin(BB_COLOR_GRADING_FRAG), std::end(BB_COLOR_GRADING_FRAG));
+        bindings = {"fs_img0", "fs_img1", "fs_samp0", "fs_samp1"};
+        locations = {"fs_in_attr0_p", "frag_color0"};
     } else if (pgm_hash == 0x38d65b32) {
         spv.assign(std::begin(BB_DISPLAY_COPY_FRAG), std::end(BB_DISPLAY_COPY_FRAG));
         bindings = {"fs_img0", "fs_img1", "fs_samp0"};
@@ -392,7 +397,9 @@ std::vector<u32> HdrChannel::ChainReplacement(u64 pgm_hash, std::span<const u32>
         return {};
     }
     LOG_INFO(Render_Vulkan, "HDR 16-bit: shader {:08x} replaced ({})", pgm_hash,
-             pgm_hash == 0x57f3b8c2 ? "glow source clamped" : "display copy above white");
+             pgm_hash == 0x57f3b8c2       ? "glow source clamped"
+             : pgm_hash == ColorGradingHash ? "color table kept above white"
+                                            : "display copy above white");
     return spv;
 }
 

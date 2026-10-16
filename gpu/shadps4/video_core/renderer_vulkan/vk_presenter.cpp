@@ -37,6 +37,7 @@
 #include <span>
 #include <sstream>
 #include <system_error>
+#include <utility>
 #include <vector>
 #include <vk_mem_alloc.h>
 #ifdef MemoryBarrier
@@ -489,9 +490,10 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     pp_settings.hdr_native16 = native16_display && frame->is_hdr ? (native16_encoded ? 2u : 1u) : 0u;
     BbSettings::Get().hdr_native16_live = native16_display;
     {
-        static vk::Format logged{};
-        if (native16_display && logged != display_attachment) {
-            logged = display_attachment;
+        static std::array<bool, 4> logged{}; // per attachment format kind (sRGB, BGRA)
+        const u32 kind = (is_srgb(display_attachment) ? 1u : 0u) |
+                         (is_bgra(display_attachment) ? 2u : 0u);
+        if (native16_display && !std::exchange(logged[kind], true)) {
             LOG_INFO(Render_Vulkan,
                      "HDR 16-bit: display buffer {}, written as {}, read as {} (swap {}, sRGB {})",
                      vk::to_string(display.guest_format), vk::to_string(display_attachment),

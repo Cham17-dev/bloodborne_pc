@@ -88,7 +88,8 @@ std::span<const u32> GameShaderCode(u64 pgm_hash, std::span<const u32> original)
         // Generic HDR pass: the game's shaders stay as they are; the composite variants get
         // their HDR shader built from this SPIR-V (vk_hdr_channel.h).
         HdrChannel::NoteGameShader(pgm_hash, original);
-        if (mode == 5 && (pgm_hash == 0x57f3b8c2 || pgm_hash == 0x38d65b32)) {
+        if (mode == 5 && (pgm_hash == 0x57f3b8c2 || pgm_hash == 0x38d65b32 ||
+                          pgm_hash == HdrChannel::ColorGradingHash)) {
             // The 16-bit chain: bbport's version of the glow source and the display copy. Kept
             // per hash and per game SPIR-V (permutations), never freed (spans returned).
             static std::mutex mutex;

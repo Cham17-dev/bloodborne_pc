@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <xxhash.h>
+#include <algorithm>
+#include <bit>
 #include <mutex>
 #include <set>
 #include "video_core/renderer_vulkan/vk_hdr_channel.h"
@@ -1103,6 +1105,16 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                 .first_instance = first_instance,
                 .vertices = range,
             });
+        }
+    }
+    // bbport HDR, mode 5: the strength of the game's color table (Scene grading), for bbport's
+    // version of its pass (hdr/bb_color_grading.frag): the float's bits plus one.
+    if (HdrChannel::Native16()) {
+        if (const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+            ps && ps->pgm_hash == HdrChannel::ColorGradingHash) {
+            const float strength =
+                std::clamp(BbSettings::Get().hdr_scene_grading.load(), 0.0f, 100.0f) / 100.0f;
+            push_data.ud_regs[15] = std::bit_cast<u32>(strength) + 1u;
         }
     }
     pipeline->BindResources(set_writes, push_data);

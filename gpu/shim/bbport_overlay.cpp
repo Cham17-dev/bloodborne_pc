@@ -344,6 +344,10 @@ void HdrSection(BbSettings::Values& s) {
     Hint("Game: bbport's default (strength 1, no boost). Balanced: 1.2 and 0.35. Vivid: 1.5 and 0.7. SDR look: no HDR highlights, with the menu's paper white (Compare shows the same without changing these).");
 
     if (ImGui::TreeNodeEx("Color grading (scene only)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::BeginDisabled(s.hdr_mode != 5);
+        SliderReset("Scene grading", s.hdr_scene_grading, 0.0f, 100.0f, 100.0f, "%.0f %%",
+                    "Strength of the game's own color grading (its color table): 100 is the game's look, 0 the image before it. As RenoDX's Scene Grading. HDR 16-bit mode only.");
+        ImGui::EndDisabled();
         SliderReset("Exposure", s.hdr_exposure, 0.0f, 2.0f, 1.0f, "%.2f",
                     "Brightness of the whole scene before the rest (1 = the game's).");
         const auto percent = [](const char* label, std::atomic<float>& value, float reset,
@@ -364,6 +368,7 @@ void HdrSection(BbSettings::Values& s) {
             Store(s.hdr_saturation, 50.0f, true);
             Store(s.hdr_highlight_saturation, 50.0f, true);
             Store(s.hdr_blowout, 0.0f, true);
+            Store(s.hdr_scene_grading, 100.0f, true);
         }
         ImGui::TreePop();
     }

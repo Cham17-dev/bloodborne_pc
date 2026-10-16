@@ -59,6 +59,9 @@ public:
     /// copy's output is linear (encoded by the attachment), UNORM when it is already encoded.
     static vk::Format DisplayAttachmentFormat();
     static constexpr vk::Format Native16Format = vk::Format::eR16G16B16A16Sfloat;
+    /// The game's ColorGrading pass (a color table), replaced in mode 5; its strength (in-game
+    /// menu, Scene grading) goes to the shader in ud_regs3.w (hdr/bb_color_grading.frag).
+    static constexpr u64 ColorGradingHash = 0xed4c7668;
     /// Mode 5: bbport's version of a game shader of the chain (glow source, display copy) with
     /// the game shader's bindings and locations, or empty to keep the game's.
     static std::vector<u32> ChainReplacement(u64 pgm_hash, std::span<const u32> game);

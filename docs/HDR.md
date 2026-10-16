@@ -137,6 +137,12 @@ HDR** (`BB_OUTPUT_DELTA`, spec 25 : HDR étalonné − SDR écrêté, dans le do
 luminosité du jeu sous 1, prolongée en puissance 2,2 au-dessus). La passe finale (`native16_nits`) lit l'image
 linéaire : force (luminance au-dessus de 1 à la puissance), boost, étalonnage, tonemapper. Sans masque d'interface :
 HUD brightness et Effets du jeu ne s'appliquent pas, l'étalonnage touche aussi le HUD. Repli : mode 4 (hdr-32).
+Corrections (16-17/10) : cibles reconnues avec leur hauteur alignée sur les tuiles (1088) ; ordre des canaux et
+encodage sRGB de la copie écran refaits au présentateur (« 16-bit decoding », Auto = signal sRGB) ; **ColorGrading
+`ed4c7668` remplacé** (`hdr/bb_color_grading.frag`) : sa table 16³ s'arrêtait à 1 et écrêtait la part HDR ; la
+table s'applique à la part SDR, chaque canal au-dessus du blanc garde sa couleur à 1 multipliée par son dépassement.
+Sa force (« Scene grading », `hdr_scene_grading` 0–100, comme RenoDX) passe au shader dans `ud_regs3.w` (bits du
+flottant + 1), écrit par le rasterizer pour ce draw seulement.
 
 **Chantier 16 bits : la chaîne après le composite (diagnostic du 16/10 au soir, hdr-32, 4K sans upscaler).**
 Relevé (`user/shader/dumps/frames`, adresses invitées, cibles 1920x1080 côté jeu, proxys 4K côté bbport) :
