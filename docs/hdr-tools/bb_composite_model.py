@@ -72,7 +72,7 @@ def composite(scene, mult, bloom, grain, uv, cb, o):
     a = [m * cb[744] + cb[745] for m in mult]
     mean = sum(a) / 3.0
     mb = [clamp01(mean + cb[748] * (c - mean)) * cb[746] + cb[747] for c in a]
-    gain = cb[616]
+    gain = cb[616] if o.get('gain', 1) else 1.0
     if o['cos4']:
         gain *= vignette_cos4(uv)
     if o['vig888']:
@@ -87,11 +87,19 @@ def composite(scene, mult, bloom, grain, uv, cb, o):
     elif o['pre']:
         sc = [pre_exposure(c, cb, o['pre']) for c in sc]
     x = [sc[i] * gain * ms[i] for i in range(3)]
+    if o.get('scene_mat'):  # 3x4 matrix on the exposed scene, words 856..867
+        x = [sum(cb[856 + 4 * r + j] * x[j] for j in range(3)) + cb[859 + 4 * r] for r in range(3)]
+    g = [mb[i] + bloom[i] * ms[i] for i in range(3)]
+    if o.get('glow_mat'):  # 3x4 matrix on the glow, words 872..883, then max 0
+        g = [max(sum(cb[872 + 4 * r + j] * g[j] for j in range(3)) + cb[875 + 4 * r], 0.0)
+             for r in range(3)]
+    else:
+        g = [cb[617] * v for v in g]
     if o['additive']:  # no curve, no clamp: bloom added (HDR output)
-        s = [x[i] + cb[617] * (mb[i] + bloom[i] * ms[i]) for i in range(3)]
+        s = [x[i] + g[i] for i in range(3)]
     else:
         t = curve(x, o['curve'], o['luminance'], cb)
-        u = [clamp01(cb[617] * (mb[i] + bloom[i] * ms[i])) for i in range(3)]
+        u = [clamp01(v) for v in g]
         s = [t[i] + u[i] - t[i] * u[i] for i in range(3)]
     out = [sum(cb[840 + 4 * r + j] * s[j] for j in range(3)) + cb[843 + 4 * r] for r in range(3)]
     if o['gamma']:
@@ -136,6 +144,10 @@ def random_case(rng):
                834: u(0.0, 2.0), 888: u(-2, 2), 889: u(0, 1), 890: u(0, 2), 891: u(0.5, 1.5),
                892: u(0.5, 3), 8: u(0.2, 3), 11: u(0.2, 2), 12: u(0.5, 2), 14: u(0, 2), 16: u(0, 2),
                19: u(0.5, 2)})
+    for base in (856, 872):
+        for r in range(3):
+            for c in range(4):
+                cb[base + 4 * r + c] = ((1.0 if r == c else 0.0) + u(-0.15, 0.15)) * (1.0 if base == 872 else u(0.5, 2.0)) if c < 3 else u(-0.03, 0.03)
     for r in range(3):
         for c in range(4):
             cb[840 + 4 * r + c] = (1.0 if r == c else 0.0) + u(-0.15, 0.15) if c < 3 else u(-0.05, 0.05)
@@ -184,9 +196,13 @@ def options_from_code(code, roles):
     pre = 1 if 19 in imm else 2 if 11 in imm else 3 if 14 in imm else 0
     import gcn_disasm
     text = '\n'.join(gcn_disasm.Disasm().run(code))
+    glow_mat = int(872 in words)
+    clamped = (re.search(r'v_max_f32_e64 v\d+, v\d+, 0 clamp', text) if glow_mat else
+               re.search(r'cb\[617\], v\d+ clamp', text))
     return dict(curve=curve, pre=pre, vig888=int(888 in words), cos4=int(0xc0000000 in lits),
                 gamma=int(808 in words), grain=int('grain' in roles.values()),
-                additive=int(re.search(r'cb\[617\], v\d+ clamp', text) is None),
+                gain=int(616 in words), scene_mat=int(856 in words), glow_mat=glow_mat,
+                additive=int(clamped is None),
                 alpha_clamp=int(re.search(r'cb\[620\], v\d+ clamp', text) is not None))
 
 
@@ -292,7 +308,7 @@ def main():
     import bb_shader_scan, gcn_emu
     shaders = bb_shader_scan.read_export(sys.argv[1])
     family = [h for h, s in sorted(shaders.items()) if s['type'] == 0 and
-              {616, 840} <= bb_shader_scan.literal_words(s['code'])]
+              {840, 851} <= bb_shader_scan.literal_words(s['code'])]
     rng = random.Random(1)
     results, skipped, worst_all = {}, [], 0.0
     roles_of = {}
