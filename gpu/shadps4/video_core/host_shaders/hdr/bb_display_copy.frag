@@ -46,4 +46,9 @@ void main() {
     vec2 scale = vec2(1920.0 / float(w == 0u ? 1920u : w), 1080.0 / float(h == 0u ? 1080u : h));
     vec4 v = texelFetch(fs_img0, ivec2(floor(gl_FragCoord.xy * scale)), 0);
     frag_color0 = vec4(brightness(v.z, 2.0), brightness(v.y, 1.0), brightness(v.x, 0.0), v.w);
+    // Chain probe (in-game menu, test; ud_regs3.z): 2 magenta where the finished image is above
+    // the game's white.
+    if (push_data.ud_regs3.z == 2u && max(max(v.x, v.y), v.z) > 1.001) {
+        frag_color0 = vec4(1.0, 0.0, 1.0, v.w);
+    }
 }

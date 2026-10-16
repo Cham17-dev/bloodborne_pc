@@ -143,6 +143,12 @@ encodage sRGB de la copie écran refaits au présentateur (« 16-bit decoding »
 table s'applique à la part SDR, chaque canal au-dessus du blanc garde sa couleur à 1 multipliée par son dépassement.
 Sa force (« Scene grading », `hdr_scene_grading` 0–100, comme RenoDX) passe au shader dans `ud_regs3.w` (bits du
 flottant + 1), écrit par le rasterizer pour ce draw seulement.
+17/10 (nuit) : sans upscaler, la caméra ne suit pas la profondeur de scène, et la composition de l'interface
+(`RunUiOnly`) copiait alors l'image **invitée 8 bits** de `ebf8000` (le proxy 16 bits y était résolu, donc écrêté à
+1) : c'est pourquoi rien ne dépassait le blanc à l'écran. Une cible de la chaîne 16 bits est maintenant toujours lue
+depuis son proxy RGBA16F. Sonde de test dans le menu (« 16-bit probe ») : 1 composite (part HDR ajoutée), 2 image
+finale au-dessus du blanc (copie écran), 3 entrée de ColorGrading au-dessus du blanc, 4 zone dessinée par ColorGrading
+(valeur dans `ud_regs3.z`, poussée par bbport pour ces draws ; les VS concernés ne lisent pas les registres).
 
 **Chantier 16 bits : la chaîne après le composite (diagnostic du 16/10 au soir, hdr-32, 4K sans upscaler).**
 Relevé (`user/shader/dumps/frames`, adresses invitées, cibles 1920x1080 côté jeu, proxys 4K côté bbport) :

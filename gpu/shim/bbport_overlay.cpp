@@ -406,6 +406,19 @@ void HdrSection(BbSettings::Values& s) {
             ImGui::EndCombo();
         }
         Hint("Test of the 16-bit chain: how the final pass reads the game's last image. If the picture looks grey and washed out, or too dark, try the other choice. Not saved.");
+        static const char* probes[] = {"Off", "1. Composite: HDR part", "2. Final image above white",
+                                       "3. Color grading input above white",
+                                       "4. Color grading area"};
+        int probe = std::clamp(s.hdr_native16_probe.load(), 0, 4);
+        if (ImGui::BeginCombo("16-bit probe (test)", probes[probe])) {
+            for (int i = 0; i < 5; ++i) {
+                if (ImGui::Selectable(probes[i], i == probe)) {
+                    s.hdr_native16_probe = i;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        Hint("Test of the 16-bit chain, shown in color: 1, magenta where the game's composite gets light above white from bbport; 2, magenta where the image that reaches the screen is still above white; 3, magenta where the game's color grading reads light above white; 4, green where the color grading draws. Not saved.");
     }
     bool pattern = s.hdr_test_pattern;
     if (ImGui::Checkbox("Test pattern", &pattern)) {

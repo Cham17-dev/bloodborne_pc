@@ -55,4 +55,10 @@ void main() {
     vec3 o = graded * above;
     // The game's channel order: its target holds them swapped.
     frag_color0 = vec4(o.zyx, max(c.w, 0.0));
+    // Chain probe (in-game menu, test; ud_regs3.z): 3 magenta where the input is above white,
+    // 4 green where this pass draws.
+    uint probe = push_data.ud_regs3.z;
+    if ((probe == 3u && max(max(v.x, v.y), v.z) > 1.001) || probe == 4u) {
+        frag_color0 = probe == 4u ? vec4(0.0, 1.0, 0.0, 1.0) : vec4(1.0, 0.0, 1.0, 1.0);
+    }
 }

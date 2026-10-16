@@ -4,6 +4,7 @@
 #include <xxhash.h>
 #include <algorithm>
 #include <bit>
+#include <cstddef>
 #include <mutex>
 #include <set>
 #include "video_core/renderer_vulkan/vk_hdr_channel.h"
@@ -1116,6 +1117,11 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                 std::clamp(BbSettings::Get().hdr_scene_grading.load(), 0.0f, 100.0f) / 100.0f;
             push_data.ud_regs[15] = std::bit_cast<u32>(strength) + 1u;
         }
+        // The chain probe (in-game menu, test): which stage shows itself in color.
+        if (const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+            ps && (ps->pgm_hash == HdrChannel::ColorGradingHash || ps->pgm_hash == 0x38d65b32)) {
+            push_data.ud_regs[14] = u32(std::clamp(BbSettings::Get().hdr_native16_probe.load(), 0, 4));
+        }
     }
     pipeline->BindResources(set_writes, push_data);
     // bbport: jitter geometry drawn with the scene depth, not full-screen passes (a shifted
@@ -1161,7 +1167,13 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     if (hdr_handle && HdrChannel::Native16()) {
         const bool dynamic_masks = instance.IsDynamicColorWriteMaskSupported();
         const ColorWriteMasks game_masks = scheduler.GetDynamicState().color_write_masks;
+        // The chain probe (test): ud_regs3.z for this draw only (bbport's shader alone reads it).
+        const u32 probe = u32(std::clamp(BbSettings::Get().hdr_native16_probe.load(), 0, 4));
+        const u32 game_reg = push_data.ud_regs[14];
+        const vk::PipelineLayout layout = pipeline->GetLayout();
+        constexpr u32 reg_offset = u32(offsetof(Shader::PushData, ud_regs)) + 14u * 4u;
         scheduler.Record([=](vk::CommandBuffer cmdbuf) {
+            cmdbuf.pushConstants(layout, AllGraphicsStageBits, reg_offset, 4u, &probe);
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, hdr_handle);
             if (dynamic_masks) {
                 const std::array rgb{vk::ColorComponentFlags{vk::ColorComponentFlagBits::eR |
@@ -1179,6 +1191,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             if (dynamic_masks) {
                 cmdbuf.setColorWriteMaskEXT(0, game_masks);
             }
+            cmdbuf.pushConstants(layout, AllGraphicsStageBits, reg_offset, 4u, &game_reg);
         });
     }
     if (hdr_slot) {

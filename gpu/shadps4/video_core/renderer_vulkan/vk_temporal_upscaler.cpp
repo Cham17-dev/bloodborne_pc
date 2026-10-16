@@ -1501,10 +1501,16 @@ void TemporalUpscaler::RunUiOnly(VideoCore::ImageId color_id, VideoCore::ImageId
     vk::Image source = color.GetImage();
     auto source_layout = vk::ImageLayout::eTransferSrcOptimal;
     u32 source_width = color.info.size.width, source_height = color.info.size.height;
-    if (!scaled_session && camera_motion.Depth() && scene_targets.Reduced() &&
+    // bbport HDR, mode 5: a target of the 16-bit chain is always read from its RGBA16F proxy
+    // (its guest image is 8-bit: reading it resolved the proxy into it, clipping the HDR part at
+    // white). Without an upscaler the camera's depth is not tracked, so this is the only way
+    // the 16-bit image reaches the UI image at a native-resolution output above 1080p.
+    const bool native16 = HdrChannel::Upgraded(color.info.guest_address, color.info.size.width,
+                                               color.info.size.height, color.info.pixel_format);
+    if (!scaled_session && (camera_motion.Depth() || native16) && scene_targets.Reduced() &&
         scene_targets.EligibleScene(color)) {
         VideoCore::ImageViewInfo view;
-        view.format = color.info.pixel_format;
+        view.format = native16 ? HdrChannel::Native16Format : color.info.pixel_format;
         const auto proxy = scene_targets.Read(color_id, view,
                                               vk::PipelineStageFlagBits2::eTransfer,
                                               vk::AccessFlagBits2::eTransferRead);
