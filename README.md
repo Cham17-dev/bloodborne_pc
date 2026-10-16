@@ -44,7 +44,7 @@ https://nativeretro.com/
   desktop shortcut).
 - **Controller and keyboard**, an in-game settings menu (Insert or L3+R3), name entry on
   screen, a desktop shortcut, and a button to clear the shader cache.
-- **Keyboard and mouse:** remap keys and buttons on the Controls page, key combinations such as
+- **Keyboard and mouse:** remap keys and buttons on the Controls page (up to three per action), key combinations such as
   Shift + left click, a Dark Souls III layout, mouse look, and a direct 1:1 mouse camera
   ([docs/INPUT.md](docs/INPUT.md)).
 - **Text and voice language** chosen separately, Brazilian Portuguese text included.

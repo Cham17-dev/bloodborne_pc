@@ -76,6 +76,10 @@ layout does with Shift), or use another modifier. The launcher's Controls page m
 overlaps with ⚠, and records a combination when you hold Shift, Ctrl or Alt while pressing the
 key or mouse button.
 
+The Controls page shows three slots per action (the controller's line is the fourth binding):
+click a slot and press a key, click a mouse button or turn the wheel; right-click a slot to
+clear it. Walk (`leftjoystick_halfmode`, the left stick at half) has a row too.
+
 ## Dark Souls III layout
 
 The launcher's Controls page has **Use the Dark Souls III layout**: it replaces the keyboard and

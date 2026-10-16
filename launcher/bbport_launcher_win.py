@@ -126,10 +126,11 @@ def run_command():
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bbport_lang  # noqa: E402
 import bbport_trophies as trophies  # noqa: E402
-from bbport_input_config import (KEYBOARD_OUTPUTS, BUTTON_OUTPUTS, STICK_OUTPUTS, OUTPUT_LABELS, keysym_to_name,
+from bbport_input_config import (STICK_OUTPUTS, OUTPUT_LABELS, ACTION_GROUPS, SLOTS, keysym_to_name,
                                   button_num_to_name, input_ini_path, load_input_ini, reserved_keys,
                                   save_input_ini, save_mouse_settings, wheel_to_name, MAX_COMBO,
-                                  MODIFIER_NAMES, apply_layout, binding_conflicts, binding_parts)  # noqa: E402
+                                  MODIFIER_NAMES, apply_layout, slot_conflicts, binding_parts,
+                                  display_name)  # noqa: E402
 
 LANG = 'en'
 
@@ -554,7 +555,7 @@ class Launcher:
         self.remap_ini_path = input_ini_path(ini_path())
         self.remap_bindings, self.remap_lines, self.remap_toggle_key, self.remap_reload_key, \
             self.mouse_settings = load_input_ini(self.remap_ini_path)
-        # {output: first-binding key name, or None once cleared}, edited by the remap page and
+        # {output: [binding or None per slot]}, edited by the remap page and
         # applied on top of self.remap_bindings in collect(); separate from it so re-opening the
         # Controls page after a cancelled edit shows what is actually on disk, not a half-edit.
         self.remap_edits = {}
@@ -662,6 +663,11 @@ class Launcher:
         s.configure('TSpinbox', foreground=TEXT, arrowcolor=GOLD, insertcolor=TEXT, padding=4)
         s.configure('TButton', background=CARD, foreground=TEXT, padding=(12, 6), borderwidth=1)
         s.map('TButton', background=[('active', LINE), ('disabled', PANEL)], foreground=[('disabled', MUTED)])
+        # The Controls page's binding slots; they stay as they are while another slot listens.
+        s.configure('Slot.TButton', background=CARD, foreground=TEXT, padding=(6, 5), font=('Segoe UI', 9))
+        s.map('Slot.TButton', background=[('active', LINE), ('disabled', CARD)], foreground=[('disabled', TEXT)])
+        s.configure('Listen.TButton', background=LINE, foreground=GOLD, padding=(6, 5), font=('Segoe UI', 9))
+        s.map('Listen.TButton', background=[('disabled', LINE)], foreground=[('disabled', GOLD)])
         s.configure('Play.TButton', background=BLOOD, foreground='#f4ece0', font=('Georgia', 15, 'bold'),
                     padding=(36, 10), borderwidth=0)
         s.map('Play.TButton', background=[('active', BLOOD_HI), ('disabled', '#3a2420')],
@@ -1456,40 +1462,26 @@ class Launcher:
             self.toasts.pop(0)
             self.show_toast()
         self.root.after(5500, done)
-    def current_binding(self, output):
-        """The key name currently bound to `output`'s first slot: a pending edit (even "cleared
-        to None"), else whatever input.ini already had, else None."""
+    def current_slots(self, output):
+        """`output`'s bindings, one per slot (None for an empty one): pending edits, else what
+        input.ini has. A file with more than SLOTS keeps the extra ones at the end."""
         if output in self.remap_edits:
             return self.remap_edits[output]
-        values = self.remap_bindings.get(output) or []
-        return values[0] if values else None
+        values = list(self.remap_bindings.get(output) or [])
+        return values + [None] * (SLOTS - len(values))
 
     def build_controls(self):
         ttk, tk = self.ttk, self.tk
         f = self.scrolled_page('controls', _('Controls', 'Управление'),
-                               _('Keyboard and mouse-button bindings. The controller keeps '
-                                 'working side by side; edit its lines in input.ini directly — '
-                                 'see docs/INPUT.md.',
-                                 'Раскладка клавиатуры и кнопок мыши. Геймпад продолжает '
-                                 'работать одновременно; его строки можно настроить только в '
-                                 'input.ini — см. docs/INPUT.md.'))
-        self.remap_rows = {}
+                               _('Keyboard and mouse bindings, up to three per action. The '
+                                 'controller keeps working side by side; edit its lines in '
+                                 'input.ini directly — see docs/INPUT.md.',
+                                 'Раскладка клавиатуры и мыши, до трёх привязок на действие. '
+                                 'Геймпад продолжает работать одновременно; его строки можно '
+                                 'настроить только в input.ini — см. docs/INPUT.md.'))
+        self.remap_rows = {}  # output -> ([slot buttons], conflict label)
+        self.remap_listening = False
         self.mouse_vars = {}  # mouse_settings key -> its widget's variable (apply_layout_preset)
-
-        def add_row(parent, output):
-            r = self.next_row(parent)
-            label, _ru = OUTPUT_LABELS[output]
-            ttk.Label(parent, text=_(label, _ru)).grid(row=r, column=0, sticky='w', padx=(0, 18), pady=4)
-            key_label = ttk.Label(parent, width=40, style='Muted.TLabel')
-            key_label.grid(row=r, column=1, sticky='w', pady=4)
-            set_btn = ttk.Button(parent, text=_('Set…', 'Назначить…'),
-                                 command=lambda o=output: self.start_remap_capture(o, key_label, set_btn))
-            set_btn.grid(row=r, column=2, sticky='w', padx=(10, 4), pady=4)
-            ttk.Button(parent, text=_('Clear', 'Сбросить'),
-                      command=lambda o=output: self.clear_remap(o, key_label)).grid(
-                row=r, column=3, sticky='w', pady=4)
-            self.remap_rows[output] = key_label
-            self.refresh_remap_row(output)
 
         self.row(f, _('Button prompts', 'Подсказки кнопок'), self.choice(f, 'button_prompts', 'ini', PROMPT_MODES),
                  _("The game's button icons: your keyboard and mouse keys while you play with them, "
@@ -1508,18 +1500,34 @@ class Launcher:
                    'Shift + правый клик (или Ctrl) — левая рука, E — действие, R — предмет, F — флакон, '
                    'Q — захват цели, Tab или Esc — меню и камера мыши 1:1. Заменяет привязки клавиатуры и '
                    'мыши; у геймпада остаются свои.'))
-        self.section(f, _('Buttons', 'Кнопки'), top=4)
-        for output in BUTTON_OUTPUTS:
-            add_row(f, output)
-        self.section(f, _('Sticks', 'Стики'))
-        for output in STICK_OUTPUTS:
-            add_row(f, output)
-        self.note(f, _('Click "Set…" on a button row to bind a mouse button instead of a key — '
-                       'left, middle, right, or the side buttons (back/forward), if the mouse '
-                       'has them. Stick directions stay keyboard-only.',
-                       'Нажмите «Назначить…» в строке кнопки, чтобы привязать кнопку мыши '
-                       'вместо клавиши — левую, среднюю, правую или боковые (вперёд/назад), '
-                       'если они есть. Направления стиков можно привязать только к клавише.'))
+        self.note(f, _('Click a slot, then press a key, click a mouse button or turn the wheel; '
+                       'Esc cancels. Right-click a slot to clear it. Movement and camera '
+                       'directions take keys only.',
+                       'Щёлкните ячейку и нажмите клавишу, кнопку мыши или прокрутите колесо; '
+                       'Esc отменяет. Правый клик по ячейке очищает её. Направления движения и '
+                       'камеры принимают только клавиши.'), top=10)
+        # One grid for every group, so the slot columns line up down the page.
+        table = ttk.Frame(f)
+        table.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w')
+        for c in range(1, SLOTS + 1):
+            table.columnconfigure(c, uniform='slot', minsize=self.px(150))
+        for (group, group_ru), actions in ACTION_GROUPS:
+            ttk.Label(table, text=_(group, group_ru), style='Section.TLabel').grid(
+                row=table.grid_size()[1], column=0, columnspan=SLOTS + 2, sticky='w', pady=(14, 4))
+            for output, (label, label_ru) in actions:
+                r = table.grid_size()[1]
+                ttk.Label(table, text=_(label, label_ru)).grid(row=r, column=0, sticky='w', padx=(0, 18), pady=2)
+                buttons = []
+                for slot in range(SLOTS):
+                    btn = ttk.Button(table, style='Slot.TButton',
+                                     command=lambda o=output, i=slot: self.start_remap_capture(o, i))
+                    btn.grid(row=r, column=slot + 1, sticky='ew', padx=2, pady=2)
+                    btn.bind('<Button-3>', lambda _e, o=output, i=slot: self.clear_remap(o, i))
+                    buttons.append(btn)
+                warn = ttk.Label(table, style='Muted.TLabel')
+                warn.grid(row=r, column=SLOTS + 1, sticky='w', padx=(8, 0))
+                self.remap_rows[output] = (buttons, warn)
+        self.refresh_remap_row(None)
         self.note(f, _('Combinations: hold Shift, Ctrl or Alt while pressing the key or mouse '
                        'button (up to three inputs, such as Shift + left click). A held '
                        'combination wins over the bindings on its parts, so left click and Shift + '
@@ -1621,11 +1629,11 @@ class Launcher:
         self.note(f, _('Vertical sensitivity and inverting apply to both camera modes.',
                        'Вертикальная чувствительность и инверсия действуют в обоих режимах камеры.'), top=2)
 
-        self.note(f, _('Mouse buttons and the scroll wheel are bound in the Buttons section above: '
-                       'press Set… and click or turn the wheel. They work while the mouse is captured '
+        self.note(f, _('Mouse buttons and the scroll wheel are bound in the slots above: click a '
+                       'slot, then click or turn the wheel. They work while the mouse is captured '
                        '(mouse look on).',
-                       'Кнопки мыши и колесо назначаются в разделе «Кнопки» выше: нажмите «Назначить…» '
-                       'и щёлкните или прокрутите колесо. Они работают, пока мышь захвачена '
+                       'Кнопки мыши и колесо назначаются в ячейках выше: щёлкните ячейку, затем '
+                       'щёлкните или прокрутите колесо. Они работают, пока мышь захвачена '
                        '(обзор мышью включён).'), top=10)
         self.note(f, _('Changes apply the next time the game starts, or press F8 in-game to '
                        'reload input.ini without restarting.',
@@ -1659,54 +1667,77 @@ class Launcher:
 
     def refresh_remap_row(self, output):
         """Every row, since a change to one binding can add or clear another's conflict mark."""
-        conflicts = binding_conflicts({o: self.current_binding(o) for o in self.remap_rows})
-        for o, label in self.remap_rows.items():
-            key = self.current_binding(o)
-            text = ' + '.join(binding_parts(key)) if key else _('(none)', '(нет)')
-            if o in conflicts:
-                others = ', '.join(_(*OUTPUT_LABELS[c]) for c in conflicts[o])
-                text += '  ⚠ ' + _('also {}', 'также {}').format(others)
-            label.configure(text=text)
+        conflicts = slot_conflicts({o: self.current_slots(o) for o in self.remap_rows})
+        russian = LANG == 'ru'
+        for o, (buttons, warn) in self.remap_rows.items():
+            values = self.current_slots(o)
+            marked = conflicts.get(o, {})
+            for i, btn in enumerate(buttons):
+                key = values[i] if i < len(values) else None
+                text = ' + '.join(display_name(p, russian) for p in binding_parts(key)) if key else '—'
+                btn.configure(text=text + ('  ⚠' if i in marked else ''), style='Slot.TButton')
+            others = sorted({b for slot in marked.values() for b in slot})
+            warn.configure(text='⚠ ' + _('also {}', 'также {}').format(
+                ', '.join(_(*OUTPUT_LABELS[c]) for c in others)) if others else '')
 
-    def clear_remap(self, output, key_label):
-        self.remap_edits[output] = None
-        self.refresh_remap_row(output)
+    def set_slot(self, output, slot, value):
+        values = list(self.current_slots(output))
+        values[slot] = value
+        self.remap_edits[output] = values
 
-    def start_remap_capture(self, output, key_label, set_btn):
-        """Grabs the next keypress or mouse click and binds it to `output`'s first slot. Esc
+    def clear_remap(self, output, slot):
+        if not self.remap_listening:
+            self.set_slot(output, slot, None)
+            self.refresh_remap_row(output)
+
+    def start_remap_capture(self, output, slot):
+        """Grabs the next keypress or mouse click and binds it to `output`'s slot. Esc
         cancels; a key/button already reserved (HOT-001/HOT-002), or a mouse click on a
         STICK_OUTPUTS row (an axis has no use for a press), is rejected in place, leaving the
         previous binding untouched. bind_all (not root.bind) plus grab_set makes sure the event
         reaches this handler even if some other widget currently has focus, and that no other
-        widget (e.g. the player-name Entry on another page) reacts to the same keypress.
+        widget (e.g. the player-name Entry on another page) reacts to the same keypress. Every
+        slot is disabled meanwhile, so a click on another slot binds the click instead of
+        starting over there.
 
         The <ButtonPress> bind is installed via after_idle rather than immediately: this call
-        itself runs from the "Set…" button's own click handler, so the left-button-release that
+        itself runs from the slot's own click handler, so the left-button-release that
         follows (Tk doesn't fire <ButtonPress> again for that click, but belt-and-suspenders
         against any platform quirk) would otherwise risk being seen as "the user chose
         leftbutton" the instant capture starts."""
+        if self.remap_listening:
+            return
+        self.remap_listening = True
         is_stick = output in STICK_OUTPUTS
-        original_text = set_btn['text']
-        prompt = (_('Press a key, a mouse button or turn the wheel (hold Shift, Ctrl or Alt for a '
-                    'combination)…', 'Нажмите клавишу, кнопку мыши или прокрутите колесо (удерживайте '
-                    'Shift, Ctrl или Alt для сочетания)…')
-                  if not is_stick else _('Press a key (hold Shift, Ctrl or Alt for a combination)…',
-                                         'Нажмите клавишу (удерживайте Shift, Ctrl или Alt для сочетания)…'))
-        key_label.configure(text=prompt)
-        set_btn.configure(state='disabled')
+        key_label = self.remap_rows[output][0][slot]
+        for buttons, _warn in self.remap_rows.values():
+            for btn in buttons:
+                btn.state(['disabled'])
+        key_label.configure(text=_('Press…', 'Нажмите…'), style='Listen.TButton')
         self.root.grab_set()
         # Shift, Ctrl and Alt held so far, in press order: the next input makes a combination
         # with them, and releasing one with nothing else pressed binds the modifiers alone.
         modifiers = []
 
+        # Tk on Windows sends Alt, Alt + key and F10 to the menu bar (tk::WinMenuKey, which
+        # waits in the system menu's loop), not to <KeyPress>: they are taken over meanwhile.
+        menu_keys = {seq: self.root.bind_all(seq) for seq in (
+            '<Key-Alt_L>', '<Key-Alt_R>', '<Alt-Key>', '<Key-F10>',
+            '<KeyRelease-Alt_L>', '<KeyRelease-Alt_R>', '<Alt-KeyRelease>', '<KeyRelease-F10>')}
+
         def finish():
             self.root.unbind_all('<KeyPress>')
             self.root.unbind_all('<KeyRelease>')
+            for seq, script in menu_keys.items():
+                self.root.bind_all(seq, script)
             self.root.unbind_all('<ButtonPress>')
             self.root.unbind_all('<Shift-MouseWheel>')
             self.root.bind_all('<MouseWheel>', self.wheel)  # the pages scroll again
             self.root.grab_release()
-            set_btn.configure(state='normal', text=original_text)
+            for buttons, _warn in self.remap_rows.values():
+                for btn in buttons:
+                    btn.state(['!disabled'])
+            self.remap_listening = False
             self.refresh_remap_row(output)
 
         def apply(name):
@@ -1719,7 +1750,7 @@ class Launcher:
                       'game action.', '{} зарезервирована (меню, запись или горячая клавиша) и '
                       'не может быть назначена игровому действию.').format(reserved[0]))
             else:
-                self.remap_edits[output] = ', '.join(parts)
+                self.set_slot(output, slot, ', '.join(parts))
             finish()
 
         def on_key(event):
@@ -1736,7 +1767,7 @@ class Launcher:
             if name in MODIFIER_NAMES:
                 if name not in modifiers and len(modifiers) < MAX_COMBO - 1:
                     modifiers.append(name)
-                    key_label.configure(text=' + '.join(modifiers) + ' + …')
+                    key_label.configure(text=' + '.join(display_name(m, LANG == 'ru') for m in modifiers) + ' + …')
                 return  # wait: another input makes a combination, a release binds it alone
             apply(name)
 
@@ -1764,6 +1795,8 @@ class Launcher:
 
         self.root.bind_all('<KeyPress>', on_key)
         self.root.bind_all('<KeyRelease>', on_key_release)
+        for seq in menu_keys:
+            self.root.bind_all(seq, on_key_release if 'Release' in seq else on_key)
         if not is_stick:
             self.root.after_idle(lambda: self.root.bind_all('<ButtonPress>', on_click))
             # While waiting, the wheel binds instead of scrolling the page.
@@ -2021,13 +2054,13 @@ class Launcher:
         save_ini({key: self.ini[key] for key in INI_DEFAULTS}, self.ini_lines)
         self.ini, self.ini_lines = load_ini()
         if self.remap_edits:
-            first_bindings = {key: (self.remap_edits[key] if key in self.remap_edits else
-                                    (vals[0] if vals else None))
-                              for key, vals in self.remap_bindings.items()}
-            save_input_ini(self.remap_ini_path, first_bindings, self.remap_lines)
+            save_input_ini(self.remap_ini_path, {key: [v for v in values if v]
+                                                 for key, values in self.remap_edits.items()}, self.remap_lines)
             self.remap_bindings, self.remap_lines, self.remap_toggle_key, self.remap_reload_key, \
                 self.mouse_settings = load_input_ini(self.remap_ini_path)
             self.remap_edits = {}
+            if getattr(self, 'remap_rows', None):
+                self.refresh_remap_row(None)  # emptied slots close up, as the file has them
         if self.mouse_edited:
             save_mouse_settings(self.remap_ini_path, self.mouse_settings, self.remap_lines)
             self.remap_bindings, self.remap_lines, self.remap_toggle_key, self.remap_reload_key, \

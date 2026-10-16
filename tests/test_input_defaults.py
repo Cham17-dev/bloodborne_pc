@@ -156,6 +156,57 @@ class InputDefaultsTests(unittest.TestCase):
             path.write_text(text, encoding='utf-8')
             bindings = config.load_input_ini(path)[0]
         self.assertEqual(config.binding_conflicts({o: v[0] if v else None for o, v in bindings.items()}), {})
+        self.assertEqual(config.slot_conflicts(bindings), {})
+        self.assertEqual(bindings['l2'], ['lshift, rightbutton', 'lctrl'])  # two slots
+        self.assertEqual(bindings['leftjoystick_halfmode'], ['lalt'])
+
+    def test_several_bindings_per_action(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'input.ini'
+            bindings, lines, *_rest = config.load_input_ini(path)
+            self.assertEqual(bindings['circle'], ['lshift', 'sidebuttonback'])
+            # All of an action's keyboard and mouse bindings, as the Controls page edits them.
+            config.save_input_ini(path, {'circle': ['space', 'lshift, leftbutton', 'mousewheeldown'],
+                                         'r3': [], 'leftjoystick_halfmode': ['lalt', 'middlebutton']}, lines)
+            text = path.read_text(encoding='utf-8')
+            again = config.load_input_ini(path)[0]
+        self.assertEqual(again['circle'], ['space', 'lshift, leftbutton', 'mousewheeldown'])
+        self.assertEqual(again['r3'], [])
+        self.assertEqual(again['leftjoystick_halfmode'], ['lalt', 'middlebutton'])
+        self.assertEqual(again['cross'], ['space'])  # not edited: kept
+        for kept in ('circle = circle', 'r3 = r3', 'cross = cross', '# leftjoystick_halfmode = lalt'):
+            self.assertIn(kept + '\n', text)
+        for gone in ('circle = lshift', 'circle = sidebuttonback', 'r3 = q', 'r3 = c'):
+            self.assertNotIn(gone + '\n', text)
+        # Written where the first one was: the keyboard section, before the controller's line.
+        self.assertLess(text.index('circle = mousewheeldown'), text.index('circle = circle'))
+        self.assertLess(text.index('circle = space'), text.index('square = e'))
+
+    def test_slot_conflicts(self):
+        conflicts = config.slot_conflicts({
+            'circle': ['space', 'lshift'], 'r2': [None, 'lshift, leftbutton'], 'cross': ['e', 'space'],
+            'square': ['g', 'g']})
+        self.assertEqual(conflicts['circle'], {0: ['cross'], 1: ['r2']})
+        self.assertEqual(conflicts['r2'], {1: ['circle']})
+        self.assertEqual(conflicts['cross'], {1: ['circle']})
+        self.assertNotIn('square', conflicts)  # twice on one action is no clash
+
+    def test_display_names(self):
+        self.assertEqual(config.display_name('lshift'), 'Shift')
+        self.assertEqual(config.display_name('leftbutton'), 'Left click')
+        self.assertEqual(config.display_name('leftbutton', russian=True), 'Левый клик')
+        self.assertEqual(config.display_name('e'), 'E')
+        self.assertEqual(config.display_name('f5'), 'F5')
+        self.assertEqual(config.display_name('backslash'), '\\')
+        for name in config.KEY_NAMES + list(config.MOUSE_BUTTON_NAMES):
+            self.assertTrue(config.display_name(name))
+
+    def test_every_output_has_one_row(self):
+        rows = [o for _group, actions in config.ACTION_GROUPS for o, _label in actions]
+        self.assertEqual(sorted(rows), sorted(config.KEYBOARD_OUTPUTS))
+        # Three slots and the controller's line fit the game's four bindings per output.
+        header = (ROOT / 'src/runtime_input_config.h').read_text(encoding='utf-8')
+        self.assertIn(f'#define INPUT_MAX_BINDINGS_PER_OUTPUT {config.SLOTS + 1}', header)
 
     def test_shifted_keysyms(self):
         self.assertEqual(config.keysym_to_name('exclam'), '1')

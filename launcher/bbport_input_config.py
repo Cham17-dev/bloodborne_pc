@@ -4,8 +4,9 @@
 src/runtime_input_config.c, the authoritative parser this mirrors). Scope: keyboard and mouse-
 button bindings for the plain button/d-pad outputs (BUTTON_OUTPUTS) and the stick half-axes
 (STICK_OUTPUTS, keyboard only -- a mouse button is a press, not an axis), which is what the
-launcher's remap page edits. Controller bindings and the scroll wheel are preserved untouched
-(round-tripped as unknown lines by save_input_ini), not edited here.
+launcher's remap page edits, up to SLOTS per action, plus walk (leftjoystick_halfmode).
+Controller bindings are preserved untouched (round-tripped as unknown lines by save_input_ini),
+not edited here.
 """
 import os
 from pathlib import Path
@@ -16,7 +17,12 @@ BUTTON_OUTPUTS = ['cross', 'circle', 'square', 'triangle', 'l1', 'r1', 'l2', 'r2
                    'touchpad_left', 'touchpad_right']
 STICK_OUTPUTS = ['axis_left_x_minus', 'axis_left_x_plus', 'axis_left_y_minus', 'axis_left_y_plus',
                   'axis_right_x_minus', 'axis_right_x_plus', 'axis_right_y_minus', 'axis_right_y_plus']
-KEYBOARD_OUTPUTS = BUTTON_OUTPUTS + STICK_OUTPUTS
+# Held like a button, read as a modifier of the left stick (walk).
+HOLD_OUTPUTS = ['leftjoystick_halfmode']
+KEYBOARD_OUTPUTS = BUTTON_OUTPUTS + STICK_OUTPUTS + HOLD_OUTPUTS
+# Bindings the Controls page shows per action. The game keeps up to four per output
+# (INPUT_MAX_BINDINGS_PER_OUTPUT): three keyboard and mouse ones and the controller's.
+SLOTS = 3
 
 # (output, (english label, russian label)) for the remap page, in display order. Stick halves
 # are grouped by direction so the UI can show one row per direction instead of exposing the
@@ -35,7 +41,45 @@ OUTPUT_LABELS = {
     'axis_left_y_minus': ('Move forward', 'Движение вперёд'), 'axis_left_y_plus': ('Move back', 'Движение назад'),
     'axis_right_x_minus': ('Camera left', 'Камера влево'), 'axis_right_x_plus': ('Camera right', 'Камера вправо'),
     'axis_right_y_minus': ('Camera up', 'Камера вверх'), 'axis_right_y_plus': ('Camera down', 'Камера вниз'),
+    'leftjoystick_halfmode': ('Walk', 'Шаг'),
 }
+
+# The Controls page: (group title, [(output, (english, russian) action label)]), in display order.
+ACTION_GROUPS = [
+    (('Movement and camera', 'Движение и камера'), [
+        ('axis_left_y_minus', ('Move forward', 'Движение вперёд')),
+        ('axis_left_y_plus', ('Move back', 'Движение назад')),
+        ('axis_left_x_minus', ('Move left', 'Движение влево')),
+        ('axis_left_x_plus', ('Move right', 'Движение вправо')),
+        ('leftjoystick_halfmode', ('Walk (hold)', 'Шаг (удерживать)')),
+        ('circle', ('Dodge / dash (hold); back in menus (Circle)',
+                    'Уклонение / бег (удерживать); назад в меню (Круг)')),
+        ('l3', ('Jump while dashing (L3)', 'Прыжок во время бега (L3)')),
+        ('r3', ('Lock on / reset camera (R3)', 'Захват цели / сброс камеры (R3)')),
+        ('axis_right_y_minus', ('Camera up', 'Камера вверх')),
+        ('axis_right_y_plus', ('Camera down', 'Камера вниз')),
+        ('axis_right_x_minus', ('Camera left', 'Камера влево')),
+        ('axis_right_x_plus', ('Camera right', 'Камера вправо')),
+    ]),
+    (('Combat', 'Бой'), [
+        ('r1', ('Attack (R1)', 'Атака (R1)')),
+        ('r2', ('Strong attack (R2)', 'Сильная атака (R2)')),
+        ('l1', ('Transform weapon (L1)', 'Трансформация оружия (L1)')),
+        ('l2', ('Firearm (L2)', 'Огнестрельное оружие (L2)')),
+    ]),
+    (('Items and menus', 'Предметы и меню'), [
+        ('cross', ('Interact; confirm in menus (Cross)', 'Действие; подтвердить в меню (Крест)')),
+        ('square', ('Use quick item (Square)', 'Использовать предмет (Квадрат)')),
+        ('triangle', ('Blood vial (Triangle)', 'Флакон крови (Треугольник)')),
+        ('pad_up', ('D-pad up', 'Крестовина вверх')),
+        ('pad_down', ('Switch quick item (d-pad down)', 'Сменить предмет (крестовина вниз)')),
+        ('pad_left', ('Switch left hand weapon (d-pad left)', 'Сменить оружие в левой руке (крестовина влево)')),
+        ('pad_right', ('Switch right hand weapon (d-pad right)', 'Сменить оружие в правой руке (крестовина вправо)')),
+        ('options', ('Game menu (Options)', 'Меню игры (Options)')),
+        ('touchpad_left', ('Gestures (touchpad)', 'Жесты (тачпад)')),
+        ('touchpad_right', ('Right half of the touchpad (debug menu)', 'Правая половина тачпада (меню отладки)')),
+    ]),
+]
 
 # Names runtime_input_config.c's kKeyNames accepts (src/runtime_input_config.c); kept in the same
 # order/groups for an easy side-by-side diff when that table changes.
@@ -70,6 +114,38 @@ MAX_COMBO = 3
 MODIFIER_NAMES = ('lshift', 'rshift', 'lctrl', 'rctrl', 'lalt', 'ralt')
 
 
+# How a slot shows an input: (english, russian), or one text for both. Keys not listed show as
+# their name in capitals (E, F5).
+DISPLAY_NAMES = {
+    'lshift': 'Shift', 'rshift': ('Right Shift', 'Правый Shift'), 'lctrl': 'Ctrl',
+    'rctrl': ('Right Ctrl', 'Правый Ctrl'), 'lalt': ('Left Alt', 'Левый Alt'),
+    'ralt': ('Right Alt', 'Правый Alt'), 'lwin': 'Win', 'rwin': ('Right Win', 'Правый Win'),
+    'lmeta': 'Meta', 'rmeta': ('Right Meta', 'Правый Meta'),
+    'escape': 'Esc', 'backspace': 'Backspace', 'delete': 'Delete', 'insert': 'Insert', 'home': 'Home',
+    'end': 'End', 'pgup': 'Page Up', 'pgdown': 'Page Down', 'tab': 'Tab', 'capslock': 'Caps Lock',
+    'enter': 'Enter', 'space': ('Space', 'Пробел'), 'up': '↑', 'down': '↓', 'left': '←', 'right': '→',
+    'kpperiod': 'Num .', 'kpcomma': 'Num ,', 'kpslash': 'Num /', 'kpasterisk': 'Num *',
+    'kpminus': 'Num -', 'kpplus': 'Num +', 'kpequals': 'Num =', 'kpenter': 'Num Enter',
+    'grave': '`', 'minus': '-', 'equals': '=', 'lbracket': '[', 'rbracket': ']', 'backslash': '\\',
+    'semicolon': ';', 'apostrophe': "'", 'comma': ',', 'period': '.', 'slash': '/',
+    'printscreen': 'Print Screen', 'scrolllock': 'Scroll Lock', 'pausebreak': 'Pause',
+    'leftbutton': ('Left click', 'Левый клик'), 'rightbutton': ('Right click', 'Правый клик'),
+    'middlebutton': ('Wheel click', 'Нажатие колеса'), 'sidebuttonback': ('Mouse back', 'Мышь назад'),
+    'sidebuttonforward': ('Mouse forward', 'Мышь вперёд'),
+    'mousewheelup': ('Wheel up', 'Колесо вверх'), 'mousewheeldown': ('Wheel down', 'Колесо вниз'),
+    'mousewheelleft': ('Wheel left', 'Колесо влево'), 'mousewheelright': ('Wheel right', 'Колесо вправо'),
+    **{f'kp{d}': f'Num {d}' for d in range(10)},
+}
+
+
+def display_name(part, russian=False):
+    """'lshift' -> 'Shift', 'leftbutton' -> 'Left click', 'e' -> 'E'."""
+    name = DISPLAY_NAMES.get(part, part.upper())
+    if isinstance(name, tuple):
+        return name[1] if russian else name[0]
+    return name
+
+
 def binding_parts(value):
     """The inputs of a binding value: ['lshift', 'leftbutton'] for 'lshift, leftbutton'."""
     return [p.strip() for p in value.split(',')]
@@ -82,7 +158,7 @@ def is_bindable(output, value):
     parts = binding_parts(value)
     if not 1 <= len(parts) <= MAX_COMBO or len(set(parts)) != len(parts):
         return False
-    allowed = KEY_NAMES_SET | (MOUSE_BUTTON_NAMES_SET if output in BUTTON_OUTPUTS else set())
+    allowed = KEY_NAMES_SET | (MOUSE_BUTTON_NAMES_SET if output not in STICK_OUTPUTS else set())
     return all(p in allowed for p in parts)
 
 
@@ -91,23 +167,36 @@ def format_binding(value):
     return ', '.join(binding_parts(value))
 
 
+def _clash(pa, pb):
+    same = pa == pb or set(pa) == set(pb)
+    inside = (len(pa) == 1 and pa[0] in MODIFIER_NAMES and pa[0] in pb) or \
+             (len(pb) == 1 and pb[0] in MODIFIER_NAMES and pb[0] in pa)
+    return same or inside
+
+
+def slot_conflicts(bindings):
+    """{output: {slot index: sorted other outputs}} for every binding that clashes with another
+    output's, from {output: [value or None, ...]}. Two equal bindings fire both actions. A
+    modifier (Shift, Ctrl, Alt) that is a binding of its own and also starts a combo is pressed
+    on its way into the combo (Shift bound to Circle, the dodge, and Shift + left click to R2),
+    which the game sees. A plain key or button inside a combo is not a clash: the combo takes it
+    while held. Bindings of the same output never clash with each other."""
+    conflicts = {}
+    items = [(o, i, binding_parts(v)) for o, values in bindings.items()
+             for i, v in enumerate(values or []) if v]
+    for n, (a, ia, pa) in enumerate(items):
+        for b, ib, pb in items[n + 1:]:
+            if a != b and _clash(pa, pb):
+                conflicts.setdefault(a, {}).setdefault(ia, set()).add(b)
+                conflicts.setdefault(b, {}).setdefault(ib, set()).add(a)
+    return {o: {i: sorted(others) for i, others in slots.items()} for o, slots in conflicts.items()}
+
+
 def binding_conflicts(bindings):
     """{output: sorted other outputs} for every output whose binding clashes with another's,
-    from {output: value or None}. Two equal bindings fire both actions. A modifier (Shift, Ctrl,
-    Alt) that is a binding of its own and also starts a combo is pressed on its way into the
-    combo (Shift bound to Circle, the dodge, and Shift + left click to R2), which the game sees.
-    A plain key or button inside a combo is not a clash: the combo takes it while held."""
-    conflicts = {}
-    items = [(o, binding_parts(v)) for o, v in bindings.items() if v]
-    for i, (a, pa) in enumerate(items):
-        for b, pb in items[i + 1:]:
-            same = pa == pb or set(pa) == set(pb)
-            inside = (len(pa) == 1 and pa[0] in MODIFIER_NAMES and pa[0] in pb) or \
-                     (len(pb) == 1 and pb[0] in MODIFIER_NAMES and pb[0] in pa)
-            if same or inside:
-                conflicts.setdefault(a, set()).add(b)
-                conflicts.setdefault(b, set()).add(a)
-    return {o: sorted(others) for o, others in conflicts.items()}
+    from {output: value or None} (one binding each; slot_conflicts takes several)."""
+    conflicts = slot_conflicts({o: [v] for o, v in bindings.items()})
+    return {o: sorted({b for others in slots.values() for b in others}) for o, slots in conflicts.items()}
 
 
 # Reserved regardless of the file (HOT-001/HOT-002): the menu (Insert), BB_PAD_RECORD, and
@@ -389,15 +478,11 @@ def load_input_ini(path):
     """Keyboard and mouse-button bindings for KEYBOARD_OUTPUTS: {output: [name, ...]} (in file
     order, so the first binding shown matches what a fresh install's default.ini documents), the
     mouse settings dict (MOUSE_SETTINGS_DEFAULTS' keys), plus the raw lines for save_input_ini to
-    round-trip. An output can have more than one binding -- the shipped default actually does
-    this for circle/square (a keyboard key as the first/listed slot, a mouse button as a later
-    one); the UI below only edits the first slot and leaves any further ones alone, same spirit
-    as the C parser's "extra bindings are kept, not silently dropped" rule, so rebinding Circle's
-    key never touches its separate mouse-button slot (or vice versa -- a user who wants to
-    retarget that second slot has to edit input.ini by hand, same as for a stick axis's second
-    binding). A mouse button name is only accepted for a BUTTON_OUTPUTS entry -- a stick
-    half-axis stays keyboard-only, since a button press has no notion of the sustained pull an
-    axis slot expects.
+    round-trip. An output can have more than one binding -- the shipped default does this for
+    circle/square (a keyboard key, then a mouse button); the Controls page shows them in SLOTS
+    slots. A mouse button name is not accepted for a STICK_OUTPUTS entry -- a stick half-axis
+    stays keyboard-only, since a button press has no notion of the sustained pull an axis slot
+    expects.
 
     mouse_to_joystick is read whether or not its line is commented out (the default file ships
     it commented, "mouse off"), since the launcher needs to show/restore that line's state, not
@@ -445,8 +530,12 @@ def reserved_keys(toggle_key, reload_key):
 
 
 def save_input_ini(path, bindings, lines):
-    """Rewrites the first keyboard- or mouse-button-binding line of each KEYBOARD_OUTPUTS key in
-    place (same "preserve everything else" contract as the game's own BbSettings::Save for
+    """`bindings[output]` is a list: the output's keyboard and mouse bindings, all of them. They
+    are written where its first one was (or at the end of the file), and its other keyboard and
+    mouse lines are dropped; controller lines are never touched. An empty list unbinds it.
+
+    A single value (or None) instead rewrites only the first keyboard- or mouse-button-binding
+    line of the output in place (same "preserve everything else" contract as the game's own BbSettings::Save for
     bbport.ini): comments, controller lines and other outputs are kept byte for byte. A second+
     existing binding on the same output (e.g. the default's "r3 = q" / "r3 = c" pair) is left
     untouched; only the first occurrence is replaced, since that is the only slot this editor
@@ -464,6 +553,11 @@ def save_input_ini(path, bindings, lines):
             # or -- for a BUTTON_OUTPUTS entry -- a mouse button) is "the first binding" for this
             # output -- a controller line with the same output (e.g. "cross = cross", the button
             # name, not a key/mouse name) must never be mistaken for one and overwritten.
+            if output in bindings and isinstance(bindings[output], list) and is_bindable(output, value):
+                if output not in written:
+                    written.add(output)
+                    out.extend(f'{output} = {format_binding(v)}' for v in bindings[output])
+                continue  # a later binding: written with the first one above, or gone
             if output in bindings and output not in written and is_bindable(output, value):
                 written.add(output)
                 new_key = bindings[output]
@@ -474,7 +568,8 @@ def save_input_ini(path, bindings, lines):
         out.append(raw)
     for output in KEYBOARD_OUTPUTS:
         if output not in written and bindings.get(output):
-            out.append(f'{output} = {format_binding(bindings[output])}')
+            values = bindings[output]
+            out.extend(f'{output} = {format_binding(v)}' for v in (values if isinstance(values, list) else [values]))
     Path(path).write_text('\n'.join(out) + '\n', encoding='utf-8')
 
 
