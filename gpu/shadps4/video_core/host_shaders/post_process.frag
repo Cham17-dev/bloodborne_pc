@@ -44,7 +44,7 @@ layout (push_constant) uniform settings {
     uint hdr_per_channel;  // bbport: Neutwo per channel (else on luminance, hue kept)
     float hdr_bloom;       // bbport: the game's bloom, 0 none .. 1 the game's .. 2 double
     float hdr_vignette;    // bbport: the game's vignettes, 0 none .. 1 the game's .. 2 double
-    bool hdr_native16;     // bbport: the frame is the 16-bit chain's (linear, above 1 = HDR)
+    uint hdr_native16;     // bbport: the 16-bit chain's frame: 1 linear, 2 sRGB encoded (HDR > 1)
 } pp;
 
 const vec3 LUMA709 = vec3(0.2126390059, 0.7151686788, 0.0721923154);
@@ -182,14 +182,15 @@ vec3 test_pattern_nits(vec2 p) {
 vec3 native16_nits(vec3 v) {
     v = max(v, 0.0);
     vec3 sdr = min(v, 1.0);
-    vec3 signal = clamp(gamma(sdr), 0.0, 1.0);
+    // Encoded (2): the values are the SDR signal itself; linear (1): encoded like the game's.
+    vec3 signal = pp.hdr_native16 == 2u ? sdr : clamp(gamma(sdr), 0.0, 1.0);
     bool sdr_side = pp.hdr_compare == 1u || (pp.hdr_compare == 2u && uv.x < 0.5);
     if (sdr_side) {
         return sdr_to_nits(signal, vec3(1.0));
     }
     vec3 lin_sdr = pp.hdr_gamma22 ? pow(signal, vec3(2.2)) : degamma(signal);
-    // Above white, each channel keeps its ratio to its SDR value.
-    vec3 lin = lin_sdr * mix(vec3(1.0), v / max(sdr, 1e-6), greaterThan(v, vec3(1.0)));
+    // Above white the chain's values are gamma encoded (the composite's output, a 2.2 power).
+    vec3 lin = lin_sdr * mix(vec3(1.0), pow(v, vec3(2.2)), greaterThan(v, vec3(1.0)));
     float peak = max(pp.hdr_peak_nits / pp.hdr_paper_white, 1.0);
     float l = dot(lin, LUMA709), l_sdr = dot(lin_sdr, LUMA709);
     // Strength: the luminance above white raised to this power.
@@ -213,7 +214,7 @@ void main() {
     vec4 color_linear = texture(texSampler, uv);
     if (pp.hdr && pp.hdr_test_pattern) {
         color = vec4(pq_encode(test_pattern_nits(uv)), 1.0);
-    } else if (pp.hdr && pp.hdr_native16) {
+    } else if (pp.hdr && pp.hdr_native16 != 0u) {
         vec3 nits = native16_nits(color_linear.rgb);
         if (pp.hdr_compare == 2u && abs(uv.x - 0.5) * float(textureSize(texSampler, 0).x) < 1.5) {
             nits = vec3(pp.hdr_paper_white); // split line

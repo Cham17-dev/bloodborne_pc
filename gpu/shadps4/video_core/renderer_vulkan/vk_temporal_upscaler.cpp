@@ -1862,6 +1862,7 @@ bool TemporalUpscaler::RedirectColor(VideoCore::ImageId color,
     const vk::Format display_format =
         HdrChannel::DisplayUpgraded(address, image.info.pixel_format) ? HdrChannel::Native16Format
                                                                       : image.info.pixel_format;
+    display.guest_format = image.info.pixel_format;
     if (!display.image || display.format != display_format ||
         display.width != ui_width || display.height != ui_height) {
         const auto device = instance.GetDevice();
@@ -1954,7 +1955,8 @@ bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display) {
     if (it == displays.end() || !it->second.valid) {
         return false;
     }
-    display = {vk::Image(it->second.image), it->second.format, it->second.width, it->second.height};
+    display = {vk::Image(it->second.image), it->second.format, it->second.width, it->second.height,
+               it->second.guest_format};
     // Diagnostic capture of the actual completed display buffer, including native UI.
     // BB_PRESENT_DUMP_COUNT=N: the trigger dumps N consecutive frames (temporal stability).
     static const char* dump = std::getenv("BB_PRESENT_DUMP_TRIGGER");

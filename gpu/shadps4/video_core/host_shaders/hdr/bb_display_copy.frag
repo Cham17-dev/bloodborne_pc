@@ -3,9 +3,9 @@
 //
 // bbport HDR, mode 5 (the 16-bit chain, docs/HDR.md): replaces the game's display copy
 // (38d65b32), which copies its finished image into the display buffer through its brightness
-// curve (a 1D table per channel, gamma-encoded in, linear out: the display buffer is sRGB). The
-// table covers 0..1; above the game's white the light continues as the encoding's power (2.2)
-// times the table's value at white. The names are the recompiled shader's: vk_hdr_channel.cpp
+// curve (a 1D table per channel). The table covers 0..1; above the game's white the value goes on
+// as the table's value at white times the input (still in the chain's gamma encoding: the final
+// pass decodes it, post_process.frag native16_nits). The names are the recompiled shader's: vk_hdr_channel.cpp
 // copies its bindings and locations onto these.
 
 #version 450
@@ -37,7 +37,7 @@ float brightness(float v, float row) {
     if (v <= 1.0) {
         return texture(sampler1DArray(fs_img1, fs_samp0), vec2(v, row)).x;
     }
-    return texture(sampler1DArray(fs_img1, fs_samp0), vec2(1.0, row)).x * pow(v, 2.2);
+    return texture(sampler1DArray(fs_img1, fs_samp0), vec2(1.0, row)).x * v;
 }
 
 void main() {

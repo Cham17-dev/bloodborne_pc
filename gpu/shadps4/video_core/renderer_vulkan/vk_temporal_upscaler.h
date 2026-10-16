@@ -119,6 +119,7 @@ public:
         vk::Image image;
         vk::Format format;
         u32 width, height;
+        vk::Format guest_format{}; ///< the guest buffer's format (the game's attachment)
     };
     bool DisplayOverride(VAddr address, Display& display);
 
@@ -242,6 +243,7 @@ private:
         VideoCore::UniqueImage image;
         std::vector<MirrorView> views;
         vk::Format format{};
+        vk::Format guest_format{};
         u32 width = 0, height = 0;
         bool valid = false;
     };
