@@ -794,6 +794,21 @@ static void replay_sample(PadData *d) {
 /* After the menu or the text dialog closes, buttons still held (the Cross that accepted a
  * name) stay hidden until released: the game would take them as a new press. */
 static int hold_after_capture;
+/* Touches as the DualShock 4 reports them: every finger that goes down gets a new id (1..127, kept
+ * while it stays down) and the time since the first one went down. With id 0 and no hold time
+ * the game ignores touchpad presses: no gesture menu from the touchpad, Back or a key. */
+static void touch_ids(PadData *d) {
+    static uint8_t next_id=1, ids[2]; static int down[2]; static uint64_t since;
+    for (int i=0;i<2;++i) {
+        const int now=i<d->touch_count;
+        if (now && !down[i]) { ids[i]=next_id; next_id=next_id==127 ? 1 : next_id+1; }
+        down[i]=now;
+        if (now) d->touches[i].id=ids[i];
+    }
+    if (!d->touch_count) since=0;
+    else if (!since) since=d->timestamp;
+    d->touch_held_time=d->touch_count ? (uint32_t)(d->timestamp-since) : 0;
+}
 static void sample(PadData *d) {
     reload_config_if_requested();
     sample_host(d);
@@ -808,6 +823,7 @@ static void sample(PadData *d) {
     if (injected.buttons & BTN_R2) d->r2=255;
     uint8_t *axes[4]={&d->left_x,&d->left_y,&d->right_x,&d->right_y};
     for (int i=0;i<4;++i) if (injected.stick[i]>=0) *axes[i]=(uint8_t)injected.stick[i];
+    touch_ids(d);
     if (hold_after_capture) {
         if (d->buttons) d->buttons=0;
         else hold_after_capture=0;
