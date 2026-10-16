@@ -126,9 +126,12 @@ float PixelDensity(SDL_WindowID id) {
     return density > 0.0f ? density : 1.0f;
 }
 
-// Marks the settings dirty when a widget changed them.
+// Marks the settings dirty when a widget changed them. `value` is taken by reference: in
+// Store(x, v, ImGui::Slider(&v)) the slider runs before Store reads v, whatever the order in
+// which the arguments are evaluated (a copy could be the value from before the slider moved it,
+// which put paper white, peak, HUD brightness and the grading sliders back at once).
 template <typename T>
-void Store(std::atomic<T>& target, T value, bool changed) {
+void Store(std::atomic<T>& target, const T& value, bool changed) {
     if (changed) {
         target = value;
         dirty = true;
