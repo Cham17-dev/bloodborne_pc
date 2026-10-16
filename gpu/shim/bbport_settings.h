@@ -17,6 +17,8 @@ inline bool IsFsr4(int upscaler) {
 }
 enum Preset : int { NativeAA = 0, Quality, Balanced, Performance, UltraPerformance, PresetCount };
 enum DebugView : int { DebugNone = 0, DebugReactive = 1, DebugMotion = 2, DebugViewCount };
+/// Frame generation (vk_frame_generation.h): frames generated between two of the game's.
+enum FrameGen : int { FrameGenOff = 0, FrameGenFsr3 = 1, FrameGenDlss = 2, FrameGenCount };
 
 /// Game effects switched by the community patches at start (patches.py EFFECTS): ini key,
 /// menu label, default (the game's own behaviour).
@@ -94,6 +96,16 @@ struct Values {
     /// DLSS (bbport_dlss.dll, NVIDIA RTX) is ready, or why not (null before the device exists).
     std::atomic<bool> dlss_supported{false};
     std::atomic<const char*> dlss_problem{nullptr};
+    /// Frame generation and the frames per game frame (2x with FSR 3.1, up to 4x with DLSS on
+    /// RTX 50). dlssg_max_multiplier: 1 without DLSS Frame Generation.
+    std::atomic<int> frame_gen{FrameGenOff};
+    std::atomic<int> frame_gen_multiplier{2};
+    std::atomic<int> dlssg_max_multiplier{1};
+    std::atomic<const char*> frame_gen_problem{nullptr};
+    /// Generated frames per game frame the display has room for now (0: paused), and its
+    /// refresh rate (the presenter's measure, for the menu).
+    std::atomic<int> frame_gen_now{0};
+    std::atomic<int> frame_gen_display_hz{0};
 
     /// Startup settings for the explicit BB_RENDER_RES compatibility patch only.
     int startup_preset = NativeAA;
@@ -125,5 +137,6 @@ void Save();
 float PresetScale(int preset);
 const char* PresetName(int preset);
 const char* UpscalerName(int upscaler);
+const char* FrameGenName(int frame_gen);
 
 } // namespace BbSettings
