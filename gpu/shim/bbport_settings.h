@@ -100,6 +100,9 @@ struct Values {
     /// RTX 50). dlssg_max_multiplier: 1 without DLSS Frame Generation.
     std::atomic<int> frame_gen{FrameGenOff};
     std::atomic<int> frame_gen_multiplier{2};
+    /// At most the frames the display shows between two of the game's (an uncapped game then
+    /// gets fewer generated frames); off: the multiplier as chosen.
+    std::atomic<bool> frame_gen_fit_display{false};
     std::atomic<int> dlssg_max_multiplier{1};
     std::atomic<const char*> frame_gen_problem{nullptr};
     /// Generated frames per game frame the display has room for now (0: paused), and its

@@ -192,11 +192,11 @@ TWEAKS = [
     ('quit_to_desktop', ('Quit to Desktop in the title menu and in the System menu',
                          'Пункт «Выйти на рабочий стол» в главном меню и в меню «Система»'), True),
 ]
-INI_FLAGS = {'sharpen', 'object_motion', 'show_fps', *(k for k, _t, _o in EFFECTS + EXTRAS + CHEATS + TWEAKS)}
+INI_FLAGS = {'sharpen', 'object_motion', 'show_fps', 'frame_gen_fit_display', *(k for k, _t, _o in EFFECTS + EXTRAS + CHEATS + TWEAKS)}
 INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': '0.50',
                 'object_motion': '1', 'show_fps': '1', 'output_res': '1920x1080', 'model_lod': '0',
                 'live_resolution': 'auto', 'hud_position': '100',
-                'frame_gen': 'off', 'frame_gen_multiplier': '2',
+                'frame_gen': 'off', 'frame_gen_multiplier': '2', 'frame_gen_fit_display': '0',
                 **{key: '1' if on else '0' for key, _t, on in EFFECTS + EXTRAS + CHEATS + TWEAKS}}
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'), 'user_dir': '', 'dlc_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
@@ -988,6 +988,11 @@ class Launcher:
                  self.choice(f, 'frame_gen_multiplier', 'ini', FRAME_GEN_MULTIPLIERS),
                  _('FSR 3.1 makes one frame (2×); DLSS on a GeForce RTX 50 up to three (4×).',
                    'FSR 3.1 делает один кадр (2×); DLSS на GeForce RTX 50 — до трёх (4×).'))
+        self.check(f, 'frame_gen_fit_display', 'ini', _('Fit to display refresh', 'Под частоту монитора'),
+                   _('On: no more frames than the display shows (an uncapped game gets fewer generated frames, and '
+                     'the GPU does less). Off: the multiplier as chosen.',
+                     'Вкл.: не больше кадров, чем показывает монитор (при снятом ограничении FPS генерируется меньше, '
+                     'видеокарта меньше нагружена). Выкл.: множитель как выбран.'))
         self.section(f, _('FSR 4 assets', 'Ассеты FSR 4'))
         self.fsr4_label = ttk.Label(f, text='', wraplength=self.px(640), justify='left')
         self.fsr4_label.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w')

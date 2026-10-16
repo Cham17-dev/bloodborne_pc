@@ -341,15 +341,21 @@ void Menu() {
         Store(s.frame_gen_multiplier, multiplier, true);
     }
     ImGui::EndDisabled();
-    // What runs now: at most the frames the display shows between two of the game's.
+    ImGui::BeginDisabled(s.frame_gen == BbSettings::FrameGenOff);
+    Checkbox("Fit to display refresh", s.frame_gen_fit_display);
+    ImGui::EndDisabled();
+    Hint("On: no more frames than the display shows (an uncapped game gets fewer generated frames, and the GPU does less). Off: the multiplier as chosen; past the refresh rate the display shows the newest frames.");
+    // What runs now (fitted: at most the frames the display shows between two of the game's).
     if (s.frame_gen != BbSettings::FrameGenOff && s.frame_gen_display_hz > 0) {
         const int now = std::min(s.frame_gen_now.load(), multiplier - 1);
         if (now > 0) {
             ImGui::TextDisabled("Now %dx on a %d Hz display", now + 1,
                                 s.frame_gen_display_hz.load());
-        } else {
+        } else if (s.frame_gen_fit_display) {
             ImGui::TextDisabled("Paused: no room on a %d Hz display at this frame rate",
                                 s.frame_gen_display_hz.load());
+        } else {
+            ImGui::TextDisabled("Paused: presenting fell behind (V-Sync on a slower display?)");
         }
     }
     if (const char* problem = s.frame_gen_problem.load()) {

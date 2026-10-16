@@ -903,6 +903,11 @@ void Presenter::UpdateFrameGenLimit(bool wanted, double present_ms) {
             }
         }
     }
+    if (!settings.frame_gen_fit_display) {
+        // The multiplier as chosen, past the display's refresh rate with an uncapped game (the
+        // display shows the newest image at each refresh); the pause below still applies.
+        limit = FrameGenerator::MaxGenerated;
+    }
     // The share of the game's frame interval spent presenting its images: paced, about
     // count / (count + 1). Near one the presentation holds the game back (FIFO on a display
     // slower than measured, a GPU too slow for generation): off for a while, longer each time.
@@ -921,7 +926,7 @@ void Presenter::UpdateFrameGenLimit(bool wanted, double present_ms) {
     if (now < frame_gen_hold_until) {
         limit = 0;
     }
-    if (limit != before) {
+    if (limit != before && settings.frame_gen_fit_display) {
         std::printf("Frame generation: %u generated per game frame (display %u Hz, game %.0f "
                     "FPS)\n",
                     limit, hz, 1000.0 / interval);
