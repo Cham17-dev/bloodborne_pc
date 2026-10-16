@@ -124,6 +124,17 @@ Analyse hors jeu des shaders du dump 1.09 (outils dans `docs/hdr-tools/`) :
 
 ### Passe HDR générique (étape 3c, codée le 16/10)
 
+**Élargie encore (build hdr-26) : 1 380 variantes.** Le journal de hdr-24 (`HDR scan:`, partie lancée au Rêve
+du chasseur, carte m21) montre le composite du Rêve : `5e67d866`, dessiné avec le même vertex shader `1ea5a07e`,
+**sans matrice de couleurs** (mots 840–851 absents : la sortie est le mélange écran lui-même). Nouveau critère :
+les teintes (mots 744 et 752) en plus des précédents ; les shaders trouvés par les teintes seules ne sont gardés
+que s'ils sont reproduits (d'autres passes, comme le flou de mouvement `e0305cef`, lisent aussi ces mots).
+Relevé : **1 380 reproduites** (écart max 0,019), 38 laissées en SDR dans la table (16 distorsions, 4 triviales,
+18 à matrice et pré-exposition). GLSL contre modèle : 3,7e-5 sur 353 280 pixels, 0 violation de la courbe HDR ;
+PsychoV30 : 1 cas sur 245 696 où, au pic, la luminance moyenne baisse de 0,3 % quand la saturation est comprimée
+(comportement de PsychoV30). La version du launcher affiche maintenant le build (`v1.7.8 · build hdr-N`, aussi en
+première ligne de `last_run.log`).
+
 **Élargie le 16/10 au soir (build hdr-24) : 715 variantes au lieu de 280.** Le premier relevé exigeait le mot
 616 (gain de la scène) ; le jeu a deux autres familles, reconnues par les mots 840–851 : sans gain (gain 1), et
 avec une **matrice 3×4 sur la scène teintée** (mots 856–867, vignettages appliqués après) et **une sur le halo**

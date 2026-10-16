@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
 // bbport HDR, generic pass (BB_HDR_TONEMAP=4, docs/HDR.md step 3c): the HDR side channel for any
-// of the 715 standard variants of Bloodborne's final composite (bb_tonemap_variants.h). The game
+// of the 1380 standard variants of Bloodborne's final composite (bb_tonemap_variants.h). The game
 // draws its composite unchanged; this shader replays the same draw into bbport's RGBA16F channel
 // image. Its interface is the game shader's: when bbport recompiles a composite variant,
 // HdrChannel copies that variant's descriptor bindings, input locations and constant-buffer slot
@@ -35,6 +35,7 @@ layout(constant_id = 20) const bool BB_GAIN = true;
 layout(constant_id = 21) const bool BB_FLOOR_ON = true;
 layout(constant_id = 22) const bool BB_SCENE_MAT = false;
 layout(constant_id = 23) const bool BB_GLOW_MAT = false;
+layout(constant_id = 24) const bool BB_GRADE = true;
 
 // The game shader's constant buffer (decorations copied from the variant).
 layout(set = 0, binding = 0, std430) readonly buffer bb_ssbo_block {
@@ -116,7 +117,7 @@ void main() {
 
     BbComposite o = BbComposite(BB_CURVE, BB_LUMINANCE, BB_PRE, BB_PRE_LUM, BB_COS4, BB_VIG888,
                                 BB_GAMMA, BB_ADDITIVE, BB_GAIN, BB_FLOOR_ON, BB_SCENE_MAT,
-                                BB_GLOW_MAT);
+                                BB_GLOW_MAT, BB_GRADE);
 
     vec4 scene = textureLod(sampler2D(bb_img_scene, bb_samp_scene),
                             interp(bb_in_scene[0], bb_in_scene[1], bb_in_scene[2]), 0.0);
@@ -144,8 +145,8 @@ void main() {
 
     // Export order is rows 840, 844, 848; the game's target holds them as BGR (row 848 first,
     // see hdr/bb_tonemap.frag), hence .zyx before the luminance.
-    vec3 sdr_graded = bb_grade(sdr_screen).zyx;
-    vec3 hdr_graded = bb_grade(hdr_screen).zyx;
+    vec3 sdr_graded = bb_grade(o, sdr_screen).zyx;
+    vec3 hdr_graded = bb_grade(o, hdr_screen).zyx;
     const vec3 luma_bgr = vec3(0.0721923154, 0.7151686788, 0.2126390059);
     float encode = BB_GAMMA ? bb_c(808u) : 1.0 / 2.2;
     vec3 sdr_encoded = exp2(encode * log2(clamp(sdr_graded + BB_EPS, 0.0, 1.0)));
@@ -157,8 +158,8 @@ void main() {
     float gain = (has_hdr && sdr_luma > 1e-4) ? hdr_luma / sdr_luma : 1.0;
     vec3 gains = vec3(max(gain, 1.0));
     if (BB_TONEMAPPER == 1 && has_hdr) {
-        vec3 sdr_rows = max(bb_grade(sdr_screen), 0.0);
-        vec3 hdr_rows = max(bb_grade(hdr_screen), 0.0);
+        vec3 sdr_rows = max(bb_grade(o, sdr_screen), 0.0);
+        vec3 hdr_rows = max(bb_grade(o, hdr_screen), 0.0);
         for (int i = 0; i < 3; ++i) {
             gains[i] = sdr_rows[i] > 0.02 ? hdr_rows[i] / sdr_rows[i] : gain;
         }

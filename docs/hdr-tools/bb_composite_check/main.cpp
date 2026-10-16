@@ -1,5 +1,5 @@
 // Runs hdr/bb_composite.glsl (check.comp, through SPIRV-Cross C++) on the cases of a file:
-//   in:  repeated batches { float cb[1024]; int opt[12]; vec4 data[64 * 4]; }
+//   in:  repeated batches { float cb[1024]; int opt[13]; vec4 data[64 * 4]; }
 //   out: per batch vec4 out[64 * 5]
 #define GLM_FORCE_SWIZZLE
 #include <glm/glm.hpp>
@@ -13,10 +13,10 @@ int main(int argc, char** argv) {
     FILE* in = fopen(argv[1], "rb");
     FILE* out = fopen(argv[2], "wb");
     std::vector<float> cb(1024);
-    std::vector<int> opt(12);
+    std::vector<int> opt(13);
     std::vector<glm::vec4> data(256), res(320);
     while (fread(cb.data(), 4, 1024, in) == 1024) {
-        fread(opt.data(), 4, 12, in);
+        fread(opt.data(), 4, 13, in);
         fread(data.data(), 16, 256, in);
         g_cb = cb.data(); g_opt = opt.data(); g_data = data.data(); g_out = res.data();
         auto* sh = bbc_iface()->construct();

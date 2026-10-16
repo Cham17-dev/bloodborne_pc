@@ -251,6 +251,7 @@ std::optional<std::vector<u32>> BuildComposite(const TonemapVariant& v, std::spa
     SetSpecBool(spv, 21, v.floor);
     SetSpecBool(spv, 22, v.scene_mat);
     SetSpecBool(spv, 23, v.glow_mat);
+    SetSpecBool(spv, 24, v.grade);
     return spv;
 }
 

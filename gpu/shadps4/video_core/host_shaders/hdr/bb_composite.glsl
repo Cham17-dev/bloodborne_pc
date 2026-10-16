@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 bbport
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// bbport HDR: Bloodborne's final composite (bloom + tone curve + color matrix + gamma), all 715
+// bbport HDR: Bloodborne's final composite (bloom + tone curve + color matrix + gamma), all 1380
 // standard variants of renderer_vulkan/bb_tonemap_variants.h, and its HDR version. Same math as
 // docs/hdr-tools/bb_composite_model.py, which reproduces the game's code of every variant (run by
 // docs/hdr-tools/gcn_emu.py); docs/hdr-tools/bb_composite_check compares this file with it.
@@ -16,7 +16,7 @@
 //   T    = curve(x)                                         per channel or on the mean of RGB
 //   g    = c617 * (mb + bloom * ms), or max(B (mb + bloom * ms) + b, 0)  (3x4, words 872..883)
 //   U    = clamp(g);  S = T + U - T U   (screen blend; additive variants: S = x + g, no max)
-//   out  = M S + offsets  (3x4, words 840..851), then pow(clamp(out), c808) when gamma-encoded
+//   out  = M S + offsets  (3x4, words 840..851; S itself in variants without it), then pow(clamp(out), c808) when gamma-encoded
 // tint(t; s, b, sat) = mean + sat * (t * c[s] + c[b] - mean) around the mean of the scaled RGB.
 
 #ifndef BBPORT_BB_COMPOSITE_GLSL
@@ -35,6 +35,7 @@ struct BbComposite {
     bool floor;     // curve input raised to BB_FLOOR first
     bool scene_mat; // 3x4 matrix on the tinted scene (856..867), vignettes after it
     bool glow_mat;  // 3x4 matrix on the glow (872..883) instead of c617
+    bool grade;     // color matrix 840..851 (else the screen blend is the output)
 };
 
 // A 3x4 matrix of the constant buffer (rows at base, base + 4, base + 8; offsets in column 3).
@@ -239,7 +240,10 @@ bool bb_curve_hdr(BbComposite o, vec3 x, float knee, float peak, out vec3 t) {
 }
 
 // The game's color matrix, rows 840, 844 and 848 (+ offsets 843, 847, 851), in export order.
-vec3 bb_grade(vec3 s) {
+vec3 bb_grade(BbComposite o, vec3 s) {
+    if (!o.grade) {
+        return s;
+    }
     return vec3(bb_c(840u) * s.r + bb_c(841u) * s.g + bb_c(842u) * s.b + bb_c(843u),
                 bb_c(844u) * s.r + bb_c(845u) * s.g + bb_c(846u) * s.b + bb_c(847u),
                 bb_c(848u) * s.r + bb_c(849u) * s.g + bb_c(850u) * s.b + bb_c(851u));
@@ -259,7 +263,7 @@ vec3 bb_composite_sdr(BbComposite o, vec4 scene, vec3 mult, vec3 bloom, vec2 vig
         vec3 u = clamp(g, 0.0, 1.0);
         s = t + u - t * u;
     }
-    vec3 out_color = bb_grade(s);
+    vec3 out_color = bb_grade(o, s);
     if (o.gamma) {
         out_color = exp2(bb_c(808u) * log2(clamp(out_color + BB_EPS, 0.0, 1.0)));
     }
