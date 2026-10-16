@@ -420,13 +420,12 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     const bool native16_display = upscaled && display.format == HdrChannel::Native16Format;
     const bool native16_swap =
         native16_display && is_bgra(view_info.format) != is_bgra(display.guest_format);
-    // The bytes the frame's format decodes are what the game's attachment stored: encoded by
-    // it (sRGB attachment: the copy's output is linear) or as written (UNORM: already encoded).
+    // The game's display copy writes an sRGB signal (tested in hdr-36: whatever its attachment's
+    // format), which the frame's sRGB format decodes: the final pass decodes it (Auto).
     const vk::Format display_attachment = HdrChannel::DisplayAttachmentFormat();
     const int native16_decode = BbSettings::Get().hdr_native16_decode.load(); // menu test
     const bool native16_encoded =
-        native16_display && (native16_decode == 0 ? is_srgb(view_info.format) &&
-                                                        !is_srgb(display_attachment)
+        native16_display && (native16_decode == 0 ? is_srgb(view_info.format)
                                                   : native16_decode == 2);
     if (upscaled) {
         const auto device = instance.GetDevice();
