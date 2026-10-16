@@ -94,18 +94,37 @@ Analyse hors jeu des shaders du dump 1.09 (outils dans `docs/hdr-tools/`) :
 - Le tonemap `5c02eaf8`, son vs `1ea5a07e` et la copie d'affichage `38d65b32` sont **dans `eboot.bin`**
   (5 469 shaders embarqués ; hash = `shader_hash` du pied `OrbShdr`, celui de shadPS4).
 - `bb_shader_scan.py` trouve le composite final par ses constantes (mots 616 et 840–851) : **300 variantes**,
-  générées dans `gpu/shadps4/video_core/renderer_vulkan/bb_tonemap_variants.h` :
-  - 40 « courbe exp » (k, c aux mots 832–833, la courbe de `5c02eaf8`) ;
-  - 160 « autre courbe » (réglages aux mots 833–834 ; 0, 1 ou 3 exp/log de plus : sans doute Reinhard /
-    Divide / Filmic, à confirmer en désassemblant une variante utilisée) ;
-  - 100 sans courbe (écrêtage).
-  Le reste varie par options : bloom (2 ou 3 textures, jusqu'à 7), gamma 2,2 en sortie (mot 808) ou non, grain.
+  générées dans `gpu/shadps4/video_core/renderer_vulkan/bb_tonemap_variants.h`. Désassemblage
+  (`gcn_disasm.py`), avec `x` = scène × gain (mot 616) × réglages 744–756, plancher 6,1e-5 :
+  - **0 exp** (40, dont `5c02eaf8`) : `y = 1 − exp(−k·x)`, `T = y·(c·(y−1)+1)²` (k = mot 832, c = 833) ;
+  - **1 Reinhard étendu** (80) : `u = a·x`, `T = u·(1 + b·u)/(1 + u)` (a = mot 833, b = 834 ; point blanc) ;
+  - **2 log** (80) : `T = a·ln(1 + b·x)` (b = mot 834, a = 833) ;
+  - **3 aucune** (100) : écrêtage.
+  Chaque courbe existe par canal ou **sur la luminance** (couleur mise à l'échelle), avec ou sans
+  **vignettage** (mots 890–892 : `pow(1/(1+(k·r)²), p)`), avec ou sans gamma 2,2 (mot 808), grain (809–811),
+  et 2 à 7 textures (bloom, etc.). Les briques Filmic / Tabled de `gxposteffect` ne sont pas dans le composite.
+  Exemples : exp `0b30a83f`, Reinhard `02fe4979`, log par canal `40ed231a`, log sur luminance `093fc8fa`.
 - Les dumps du 15/10 (clinique, rues, rêve du chasseur) n'ont vu que `5c02eaf8`. Build hdr-17 :
   `HdrChannel::NoteDraw` écrit `HDR tonemap variant <hash> in use … replaced by bbport / NOT replaced` à la
   première utilisation de chaque variante.
-- Suite selon le journal : pour une variante « courbe exp », même remplacement que `5c02eaf8` (même
-  interface, à vérifier par variante) ; pour une « autre courbe », désassembler la variante et adapter
-  `bb_tonemap_hdr.frag`.
+### Plan pour couvrir les 300 variantes (étape 3c)
+
+Le dessin fantôme actuel réutilise le layout de `5c02eaf8` : un shader maison par layout de variante serait
+ingérable. À la place, **une passe à nous** au moment d'un dessin de la famille (après le dessin du jeu) :
+
+1. Dans `DrawRecord`, si le ps est dans `TonemapVariants` : retrouver parmi les ressources liées l'image de la
+   scène (RGBA16F), le bloom (B10G11R11, s'il y en a un) et le tampon de constantes du composite (celui que le
+   shader lit aux mots 616…892).
+2. Dessiner un triangle plein écran avec un pipeline et un jeu de descripteurs à bbport (scène, bloom,
+   constantes) dans l'image du canal HDR. Le shader reçoit en push constants la courbe, `luminance`,
+   `vignette`, `gamma` de la variante, recalcule exactement la sortie SDR du jeu (courbe + bloom en écran +
+   matrice + gamma ; grain ignoré, couvert par la tolérance) et la version HDR (courbe du jeu jusqu'au genou,
+   épaule Neutwo au-dessus), puis écrit gain + luminance de référence comme aujourd'hui.
+3. Le post-process final reste identique.
+
+Avantages : indépendant du layout de chaque variante, une seule implémentation par courbe. À vérifier : que la
+scène et le bloom se reconnaissent bien par leur format dans toutes les variantes (journal), et l'UV (le jeu
+interpole des attributs ; plein écran = `gl_FragCoord / taille`, à confirmer par la comparaison au SDR).
 
 ## Plan de l'étape 3b (rédigé le 15/10 au soir)
 

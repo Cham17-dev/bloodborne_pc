@@ -17,9 +17,8 @@ matrix + grain + gamma) in eboot.bin and regenerate bb_tonemap_variants.h.
 2. python -I bb_shader_scan.py eboot_shaders.bin [out.h]
 
 A shader belongs to the family when it loads the composite's constants by literal offset: words
-616 (scene gain) and 840..851 (color matrix). Curve: words 832-833 (k, knee: the exp curve
-1 - exp(-k v) of shader 5c02eaf8), else words 833-834 (another curve), else none. Results on
-1.09 (16/10/2026): 5469 shaders, 300 variants (40 exp curve, 160 other curve, 100 none).
+616 (scene gain) and 840..851 (color matrix). Curves: see classify(). Results on 1.09
+(16/10/2026): 5469 shaders, 300 variants (40 exp, 80 extended Reinhard, 80 log, 100 none).
 The other .shaderbnd.dcx archives (dvdroot_ps4/shader, see bnd_extract.py) hold the named post
 effects (ColorGrading = ed4c7668, DLAA = da1faca9, ToneMap_* building blocks) but not the
 composite.
@@ -53,6 +52,23 @@ def literal_words(code):
     return words
 
 
+def classify(code, lits, ops):
+    """(curve, per_luminance, vignette). Curves: 0 exp 1 - exp(-k x) shaped by c (words 832-833),
+    1 extended Reinhard u (1 + b u) / (1 + u), u = a x (words 833-834), 2 log a ln(1 + b x)
+    (words 833-834), 3 none (clamp). per_luminance: the curve runs on luminance and the color is
+    scaled, not per channel. vignette: words 890-892."""
+    vignette = any(890 <= w <= 892 for w in lits)
+    ln2 = sum(1 for e, o, w in gcn.split(code) if len(w) > 1 and w[1] == 0x3f317218)
+    rcps = ops['v_rcp_f32'] + ops['v_rcp_f32_e64'] - int(vignette)
+    if 832 in lits:
+        return 0, 0, int(vignette)
+    if 834 in lits and ln2:
+        return 2, int(ln2 == 1), int(vignette)
+    if 834 in lits:
+        return 1, int(rcps < 3), int(vignette)
+    return 3, 0, int(vignette)
+
+
 def main():
     shaders = read_export(sys.argv[1])
     rows = []
@@ -66,13 +82,13 @@ def main():
         exps = ops['v_exp_f32'] + ops['v_exp_f32_e64']
         logs = ops['v_log_f32'] + ops['v_log_f32_e64']
         tex = sum(v for k, v in ops.items() if k.startswith(('image', 'mimg')))
-        curve = 0 if 832 in lits else 1 if 834 in lits else 2
-        rows.append((h, curve, int(808 in lits), int(809 in lits), tex, exps, logs))
+        rows.append((h, *classify(s['code'], lits, ops), int(808 in lits), int(809 in lits), tex,
+                     exps, logs))
     print(len(shaders), 'shaders,', len(rows), 'composite variants:',
-          dict(collections.Counter(r[1] for r in rows)), '(0 exp, 1 other, 2 none)')
+          dict(sorted(collections.Counter(r[1] for r in rows).items())),
+          '(0 exp, 1 Reinhard, 2 log, 3 none)')
     if len(sys.argv) > 2:
-        body = '\n'.join(f'    {{0x{r[0]:08x}, {r[1]}, {r[2]}, {r[3]}, {r[4]}, {r[5]}, {r[6]}}},'
-                         for r in rows)
+        body = '\n'.join('    {0x%08x, %s},' % (r[0], ', '.join(map(str, r[1:]))) for r in rows)
         with open(sys.argv[2], 'w') as f:
             f.write(HEADER.format(n=len(rows), body=body))
 
@@ -95,7 +111,9 @@ namespace Vulkan {{
 
 struct TonemapVariant {{
     u32 hash;  ///< shadPS4 pgm_hash (OrbShdr shader_hash)
-    u8 curve;  ///< 0 exp curve (k, c at words 832-833), 1 other curve (words 833-834), 2 none
+    u8 curve;  ///< 0 exp (k, c at words 832-833), 1 extended Reinhard, 2 log (words 833-834), 3 none
+    u8 luminance; ///< the curve runs on luminance (color scaled), not per channel
+    u8 vignette;  ///< words 890-892
     u8 gamma;  ///< reads word 808 (1/2.2): gamma-encoded output
     u8 grain;  ///< reads words 809-811 (grain)
     u8 textures;

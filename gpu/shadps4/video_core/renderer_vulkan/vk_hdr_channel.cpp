@@ -76,13 +76,14 @@ void HdrChannel::NoteDraw(u64 ps_hash) {
     }
     flag = true;
     ++count;
-    static constexpr const char* curves[] = {"exp curve (words 832-833)",
-                                             "other curve (words 833-834)", "no curve"};
+    static constexpr const char* curves[] = {"exp curve", "extended Reinhard", "log curve",
+                                             "no curve"};
     const bool replaced = GameShaderReplaced(ps_hash);
     LOG_INFO(Render_Vulkan,
-             "HDR tonemap variant {:08x} in use ({} so far): {}, {}{}, {} textures, exp {} log {}; "
-             "{}",
-             it->hash, count, curves[it->curve < 3 ? it->curve : 2],
+             "HDR tonemap variant {:08x} in use ({} so far): {}{}{}, {}{}, {} textures, exp {} "
+             "log {}; {}",
+             it->hash, count, curves[it->curve < 4 ? it->curve : 3],
+             it->luminance ? " on luminance" : "", it->vignette ? ", vignette" : "",
              it->gamma ? "gamma 2.2" : "no gamma", it->grain ? ", grain" : "", it->textures,
              it->exps, it->logs,
              replaced ? "replaced by bbport" : "NOT replaced: no HDR highlights here");
