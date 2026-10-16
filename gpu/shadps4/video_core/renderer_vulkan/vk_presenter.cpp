@@ -420,8 +420,14 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     const bool native16_display = upscaled && display.format == HdrChannel::Native16Format;
     const bool native16_swap =
         native16_display && is_bgra(view_info.format) != is_bgra(display.guest_format);
+    // The bytes the frame's format decodes are what the game's attachment stored: encoded by
+    // it (sRGB attachment: the copy's output is linear) or as written (UNORM: already encoded).
+    const vk::Format display_attachment = HdrChannel::DisplayAttachmentFormat();
+    const int native16_decode = BbSettings::Get().hdr_native16_decode.load(); // menu test
     const bool native16_encoded =
-        native16_display && is_srgb(view_info.format) && !is_srgb(display.guest_format);
+        native16_display && (native16_decode == 0 ? is_srgb(view_info.format) &&
+                                                        !is_srgb(display_attachment)
+                                                  : native16_decode == 2);
     if (upscaled) {
         const auto device = instance.GetDevice();
         image_view = Check(device.createImageView({
@@ -485,11 +491,12 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     BbSettings::Get().hdr_native16_live = native16_display;
     {
         static vk::Format logged{};
-        if (native16_display && logged != display.guest_format) {
-            logged = display.guest_format;
-            LOG_INFO(Render_Vulkan, "HDR 16-bit: display buffer {} read as {} (swap {}, sRGB {})",
-                     vk::to_string(display.guest_format), vk::to_string(view_info.format),
-                     native16_swap, native16_encoded);
+        if (native16_display && logged != display_attachment) {
+            logged = display_attachment;
+            LOG_INFO(Render_Vulkan,
+                     "HDR 16-bit: display buffer {}, written as {}, read as {} (swap {}, sRGB {})",
+                     vk::to_string(display.guest_format), vk::to_string(display_attachment),
+                     vk::to_string(view_info.format), native16_swap, native16_encoded);
         }
     }
     // bbport HDR side channel: the gains of the last tonemap draw (vk_hdr_channel.h).

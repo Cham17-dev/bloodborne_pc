@@ -105,6 +105,7 @@ struct Values {
     std::atomic<int> hdr_compare{HdrCompareHdr}; ///< F9 cycles
     std::atomic<int> hdr_debug{0};               ///< 1 gain as colors, 2 pixels taken as UI
     std::atomic<bool> hdr_test_pattern{false};
+    std::atomic<int> hdr_native16_decode{0}; ///< mode 5 test: 0 auto, 1 linear, 2 sRGB signal
     // Set by the renderer, shown by the menu.
     std::atomic<bool> hdr_channel_live{false};   ///< this frame has HDR highlights
     std::atomic<bool> hdr_native16_live{false}; ///< this frame is the 16-bit chain's

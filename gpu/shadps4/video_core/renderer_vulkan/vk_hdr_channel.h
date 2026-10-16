@@ -55,6 +55,9 @@ public:
     /// The display buffers (the game's last copy) when the port draws them at output size.
     static void SetDisplayRedirect(bool redirect);
     static bool DisplayUpgraded(VAddr address, vk::Format format);
+    /// The format the game's display copy writes through (its 8-bit attachment): sRGB when the
+    /// copy's output is linear (encoded by the attachment), UNORM when it is already encoded.
+    static vk::Format DisplayAttachmentFormat();
     static constexpr vk::Format Native16Format = vk::Format::eR16G16B16A16Sfloat;
     /// Mode 5: bbport's version of a game shader of the chain (glow source, display copy) with
     /// the game shader's bindings and locations, or empty to keep the game's.

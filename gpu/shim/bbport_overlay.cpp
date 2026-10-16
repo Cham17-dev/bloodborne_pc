@@ -389,6 +389,19 @@ void HdrSection(BbSettings::Values& s) {
     }
     Hint("Gain as colors: grey keeps the SDR value, blue to red are raised up to the peak. UI in red: the pixels kept in SDR because they look like the HUD drawn over the scene; only the HUD should be red. Not saved.");
     ImGui::EndDisabled();
+    if (s.hdr_mode == 5) {
+        static const char* decodes[] = {"Auto", "Linear", "sRGB signal"};
+        int decode = std::clamp(s.hdr_native16_decode.load(), 0, 2);
+        if (ImGui::BeginCombo("16-bit decoding (test)", decodes[decode])) {
+            for (int i = 0; i < 3; ++i) {
+                if (ImGui::Selectable(decodes[i], i == decode)) {
+                    s.hdr_native16_decode = i;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        Hint("Test of the 16-bit chain: how the final pass reads the game's last image. If the picture looks grey and washed out, or too dark, try the other choice. Not saved.");
+    }
     bool pattern = s.hdr_test_pattern;
     if (ImGui::Checkbox("Test pattern", &pattern)) {
         s.hdr_test_pattern = pattern;

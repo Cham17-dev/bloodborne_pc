@@ -334,6 +334,7 @@ bool HdrChannel::Generic() {
 namespace {
 std::atomic<bool> native16_active{false};
 std::atomic<bool> display_redirect{false};
+std::atomic<u32> display_attachment{0}; // vk::Format of the game's display copy (pipeline key)
 std::mutex native16_mutex;
 std::unordered_set<VAddr> native16_targets;
 std::atomic<u32> native16_count{0};
@@ -435,9 +436,18 @@ void HdrChannel::SetDisplayRedirect(bool redirect) {
 
 bool HdrChannel::DisplayUpgraded(VAddr address, vk::Format format) {
     (void)address;
-    return Native16Active() && display_redirect.load(std::memory_order_relaxed) &&
-           (format == vk::Format::eR8G8B8A8Srgb || format == vk::Format::eR8G8B8A8Unorm ||
-            format == vk::Format::eB8G8R8A8Srgb || format == vk::Format::eB8G8R8A8Unorm);
+    const bool upgraded =
+        Native16Active() && display_redirect.load(std::memory_order_relaxed) &&
+        (format == vk::Format::eR8G8B8A8Srgb || format == vk::Format::eR8G8B8A8Unorm ||
+         format == vk::Format::eB8G8R8A8Srgb || format == vk::Format::eB8G8R8A8Unorm);
+    if (upgraded) {
+        display_attachment.store(static_cast<u32>(format), std::memory_order_relaxed);
+    }
+    return upgraded;
+}
+
+vk::Format HdrChannel::DisplayAttachmentFormat() {
+    return static_cast<vk::Format>(display_attachment.load(std::memory_order_relaxed));
 }
 
 float HdrChannel::PeakNits() {
