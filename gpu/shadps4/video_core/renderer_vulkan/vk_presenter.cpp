@@ -869,6 +869,7 @@ void Presenter::UpdateFrameGenLimit(bool wanted, double present_ms) {
     if (!wanted) {
         frame_gen_limit = 0;
         settings.frame_gen_now = 0;
+        settings.frame_gen_flip_limit = 0;
         present_busy = 0.0;
         return;
     }
@@ -903,9 +904,11 @@ void Presenter::UpdateFrameGenLimit(bool wanted, double present_ms) {
             }
         }
     }
-    if (!settings.frame_gen_fit_display) {
+    const bool fifo = swapchain.WaitsForDisplay();
+    if (!settings.frame_gen_fit_display || fifo) {
         // The multiplier as chosen, past the display's refresh rate with an uncapped game (the
-        // display shows the newest image at each refresh); the pause below still applies.
+        // display shows the newest image at each refresh); with FIFO the game is capped below
+        // instead. The pause below still applies.
         limit = FrameGenerator::MaxGenerated;
     }
     // The share of the game's frame interval spent presenting its images: paced, about
@@ -930,6 +933,19 @@ void Presenter::UpdateFrameGenLimit(bool wanted, double present_ms) {
         std::printf("Frame generation: %u generated per game frame (display %u Hz, game %.0f "
                     "FPS)\n",
                     limit, hz, 1000.0 / interval);
+    }
+    // FIFO (V-Sync; AMD's Windows driver has no Mailbox) shows at most `hz` images a second
+    // and makes each one more wait for the display: the game is capped so that its frames and
+    // the generated ones fit, e.g. 72 FPS for 2x on 144 Hz (VideoOut applies it).
+    int flip_limit = 0;
+    if (fifo && limit) {
+        const u32 count = std::min(frame_generator->WantedCount(), limit);
+        flip_limit = count ? int(hz / (count + 1)) : 0;
+    }
+    if (flip_limit != settings.frame_gen_flip_limit.exchange(flip_limit) && flip_limit) {
+        std::printf("Frame generation: V-Sync (FIFO) at %u Hz: the game is capped at %d FPS so "
+                    "its frames and the generated ones fit\n",
+                    hz, flip_limit);
     }
     frame_gen_limit = limit;
     settings.frame_gen_now = int(limit);

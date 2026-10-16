@@ -112,6 +112,10 @@ struct Values {
     /// The game's own frame rate (presenter, game frames only), shown beside the total when
     /// frame generation adds frames.
     std::atomic<float> game_fps{0.0f};
+    /// The game's frame rate cap frame generation needs (VideoOut applies it), 0 for none: with
+    /// FIFO presentation (V-Sync; AMD has no Mailbox) at most refresh / (generated + 1), or each
+    /// extra frame waits for the display and generation pauses.
+    std::atomic<int> frame_gen_flip_limit{0};
 
     /// Startup settings for the explicit BB_RENDER_RES compatibility patch only.
     int startup_preset = NativeAA;

@@ -348,7 +348,11 @@ void Menu() {
     // What runs now (fitted: at most the frames the display shows between two of the game's).
     if (s.frame_gen != BbSettings::FrameGenOff && s.frame_gen_display_hz > 0) {
         const int now = std::min(s.frame_gen_now.load(), multiplier - 1);
-        if (now > 0) {
+        if (now > 0 && s.frame_gen_flip_limit > 0) {
+            ImGui::TextDisabled("Now %dx on a %d Hz display; V-Sync (FIFO) caps the game at %d FPS",
+                                now + 1, s.frame_gen_display_hz.load(),
+                                s.frame_gen_flip_limit.load());
+        } else if (now > 0) {
             ImGui::TextDisabled("Now %dx on a %d Hz display", now + 1,
                                 s.frame_gen_display_hz.load());
         } else if (s.frame_gen_fit_display) {
