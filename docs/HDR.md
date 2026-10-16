@@ -126,6 +126,25 @@ Analyse hors jeu des shaders du dump 1.09 (outils dans `docs/hdr-tools/`) :
 
 ### Passe HDR générique (étape 3c, codée le 16/10)
 
+**Chantier 16 bits : la chaîne après le composite (diagnostic du 16/10 au soir, hdr-32, 4K sans upscaler).**
+Relevé (`user/shader/dumps/frames`, adresses invitées, cibles 1920x1080 côté jeu, proxys 4K côté bbport) :
+
+| Passe | Shader | Cible | Rôle |
+|---|---|---|---|
+| composite | `5c02eaf8` (Yharnam), `5e67d866` (Rêve) | `ebf8000` RGBA8 | tone mapping, bloom, grain, gamma |
+| même passe, 2ᵉ draw | `ed4c7668` (ColorGrading) | `ebf8000` | lit `508e0000` RGBA8 + table 16x16 RGBA32F |
+| copie | `f7229091` (PointSampleColor1) | `508e0000` RGBA8 | copie de l'image |
+| AA | `da1faca9` (DLAA) | `ebf8000` | |
+| glow | `57f3b8c2` (EmissiveToGlowPS) → `a61e325d`/`f7229091` ×4 (960x540 RGBA8) → `8c08444c` | `ebf8000`, mélange additif | **un second bloom, après le tone mapping, sur l'image SDR** |
+| HUD | Scaleform (`81d336ce`…, `4baeaa00`, `babda34d`, `cfa96da9`, `5e4596f4`) | `ebf8000` | mélanges alpha |
+| copie écran (frame suivante) | `38d65b32` | tampon d'affichage RGBA8 **sRGB** | luminosité du jeu |
+
+À passer en RGBA16F : `ebf8000`, `508e0000`, les cibles glow 960x540, le tampon d'affichage (et leurs proxys 4K).
+Shaders à adapter (sans écrêtage à 1) : composite (sortie HDR, nos 1 380 variantes), ColorGrading (table
+appliquée à la part SDR), DLAA, EmissiveToGlow, `38d65b32`. Le glow post-tonemap explique aussi des erreurs de la
+détection d'interface actuelle (il ajoute de la lumière après le canal). Les composites rencontrés n'ont **pas de
+vignettage** (`5c02eaf8`, `5e67d866` : cos4 = 0, 888 = 0) : le curseur Vignette n'y change rien, c'est attendu.
+
 **Effets du jeu en direct (build hdr-32).** La passe du canal écrit une **deuxième cible** RGBA16F (`aux`) :
 rgb = couleur non compressée **sans le bloom** du composite (glow `c617`/matrice 872) sur la couleur (par ligne de
 la matrice), a = luminance **sans les vignettages** (cos4, 888) sur avec (≥ 1). La passe finale multiplie la scène
