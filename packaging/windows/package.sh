@@ -43,8 +43,13 @@ cp -r out/pyi-dist/Bloodborne/. "$dest/"
 llvm-strip -o "$dest/Play Bloodborne.exe" out/bb-play.exe
 cp launcher/bloodborne.ico launcher/bloodborne.png "$dest/launcher/"
 # The build's name, as the CI artifact (bbport-windows-<branch>-<run>): shown by the launcher.
+# A local build: 'local' with the commit and the time it was packaged (it replaces a CI build's
+# name when copied over one).
 if [ -n "${GITHUB_RUN_NUMBER:-}" ]; then
     printf '%s-%s\n' "${GITHUB_REF_NAME:-local}" "$GITHUB_RUN_NUMBER" > "$dest/launcher/build.txt"
+else
+    printf 'local %s %s\n' "$(git rev-parse --short HEAD 2>/dev/null || echo '?')" \
+        "$(date '+%d/%m %H:%M')" > "$dest/launcher/build.txt"
 fi
 # The executables without debug information (out/ keeps the symbols for crash reports).
 for exe in bb-probe.exe bb-gpu-capabilities.exe; do
