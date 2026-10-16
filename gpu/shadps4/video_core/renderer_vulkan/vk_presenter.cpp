@@ -460,9 +460,11 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     pp_settings.hdr_test_pattern = BbSettings::Get().hdr_test_pattern ? 1 : 0;
     // bbport HDR side channel: the gains of the last tonemap draw (vk_hdr_channel.h).
     vk::ImageView hdr_channel{};
+    vk::ImageView hdr_aux{};
     if (frame->is_hdr && HdrChannel::Enabled()) {
         if (const auto latest = HdrChannel::Get().LatestImage()) {
             hdr_channel = latest->view;
+            hdr_aux = latest->aux_view;
         }
         pp_settings.hdr_channel = 1;
         pp_settings.hdr_debug = HdrChannel::Debug();
@@ -482,13 +484,15 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         pp_settings.hdr_blowout = std::clamp(bb.hdr_blowout.load(), 0.0f, 100.0f) / 100.0f;
         pp_settings.hdr_tonemapper = HdrChannel::Tonemapper();
         pp_settings.hdr_per_channel = bb.hdr_per_channel ? 1u : 0u;
+        pp_settings.hdr_bloom = std::clamp(bb.hdr_bloom.load(), 0.0f, 100.0f) / 50.0f;
+        pp_settings.hdr_vignette = std::clamp(bb.hdr_vignette.load(), 0.0f, 100.0f) / 50.0f;
     }
     // The in-game menu shows its HDR section when the frame is sent in HDR10.
     BbSettings::Get().hdr_output = bool(frame->is_hdr);
     BbSettings::Get().hdr_highlights = frame->is_hdr && HdrChannel::Enabled();
     BbSettings::Get().hdr_channel_live = bool(hdr_channel);
     BbSettings::Get().hdr_mode = int(EmulatorSettings.GetHdrTonemapMode());
-    pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings, hdr_channel);
+    pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings, hdr_channel, hdr_aux);
     if (frame_dump) {
         // The presented image as the swapchain blit reads it (General after the pass).
         const vk::MemoryBarrier2 done{.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,

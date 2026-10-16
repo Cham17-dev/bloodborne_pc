@@ -45,13 +45,17 @@ public:
         // scaling (0 luminance, 1 per channel).
         u32 hdr_tonemapper = 0;
         u32 hdr_per_channel = 0;
+        // bbport HDR, live: the game's bloom and vignettes (1 = as drawn, 0 none, 2 double).
+        float hdr_bloom = 1.0f;
+        float hdr_vignette = 1.0f;
     };
 
     void Create(vk::Device device, vk::Format surface_format);
 
     /// `hdr_channel`: the HDR side channel's image (ShaderReadOnlyOptimal), or null.
     void Render(vk::CommandBuffer cmdbuf, vk::ImageView input, vk::Extent2D input_size,
-                Frame& output, Settings settings, vk::ImageView hdr_channel = {});
+                Frame& output, Settings settings, vk::ImageView hdr_channel = {},
+                vk::ImageView hdr_aux = {});
 
 private:
     vk::UniquePipeline pipeline{};

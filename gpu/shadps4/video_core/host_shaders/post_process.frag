@@ -12,6 +12,9 @@ layout (binding = 0) uniform sampler2D texSampler;
 // channels from the game's color to the untonemapped one (graded and tonemapped here, live),
 // g = the game's output luminance (gamma 2.2 encoded) where they were computed.
 layout (binding = 1) uniform sampler2D hdrChannel;
+// bbport: the channel's effect ratios: rgb = untonemapped color without the game's bloom over
+// with (per channel), a = without its vignettes over with.
+layout (binding = 2) uniform sampler2D hdrAux;
 
 layout (push_constant) uniform settings {
     float gamma;
@@ -39,6 +42,8 @@ layout (push_constant) uniform settings {
     float hdr_blowout;
     uint hdr_tonemapper;   // bbport: 0 Neutwo, 1 PsychoV30 (RenoDX)
     uint hdr_per_channel;  // bbport: Neutwo per channel (else on luminance, hue kept)
+    float hdr_bloom;       // bbport: the game's bloom, 0 none .. 1 the game's .. 2 double
+    float hdr_vignette;    // bbport: the game's vignettes, 0 none .. 1 the game's .. 2 double
 } pp;
 
 const vec3 LUMA709 = vec3(0.2126390059, 0.7151686788, 0.0721923154);
@@ -225,7 +230,13 @@ void main() {
             float l_sdr = dot(lin, luma709);
             float y = clamp((l_sdr - 0.45) / 0.55, 0.0, 1.0);
             float boost = 1.0 + scene * clamp(pp.hdr_boost, 0.0, 1.0) * (peak - 1.0) * y * y * y;
-            vec3 v = tonemap_scene(grade_scene(max(lin * gains * boost, 0.0), peak), peak);
+            // The game's bloom and vignettes, more or less (1 = as drawn).
+            vec4 aux = clamp(texture(hdrAux, uv), vec4(0.0), vec4(1.0, 1.0, 1.0, 16.0));
+            vec3 effects = mix(aux.rgb, vec3(1.0), max(pp.hdr_bloom, 0.0)) *
+                           mix(aux.a, 1.0, max(pp.hdr_vignette, 0.0));
+            effects = mix(vec3(1.0), max(effects, 0.0), scene);
+            vec3 v = tonemap_scene(grade_scene(max(lin * gains * boost * effects, 0.0), peak),
+                                   peak);
             nits = min(max(bt709_to_bt2020(v), 0.0) * pp.hdr_paper_white, vec3(pp.hdr_peak_nits));
             // The HUD (pixels taken as UI): the game's SDR at its own brightness.
             vec3 ui = sdr_to_nits(signal, vec3(1.0)) * (pp.hdr_ui_nits / pp.hdr_paper_white);

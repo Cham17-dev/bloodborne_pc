@@ -70,6 +70,7 @@ layout(location = 1) pervertexEXT in vec4 fs_in_attr1_p[3];
 layout(location = 3) pervertexEXT in vec4 fs_in_attr2_p[3];
 layout(location = 4) pervertexEXT in vec4 fs_in_attr3_p[3];
 layout(location = 0) out vec4 frag_color0;
+layout(location = 1) out vec4 frag_aux; // effect ratios (bb_composite_hdr.frag): none here
 
 uint buf_off;
 
@@ -165,4 +166,5 @@ void main() {
     float gain = sdr_luma > 1e-4 ? max(hdr_luma / sdr_luma, 1.0) : 1.0;
     // r, b, a: the gain of each channel (the same here), g: the reference luminance.
     frag_color0 = vec4(gain, dot(sdr_encoded, luma_bgr), gain, gain);
+    frag_aux = vec4(1.0);
 }

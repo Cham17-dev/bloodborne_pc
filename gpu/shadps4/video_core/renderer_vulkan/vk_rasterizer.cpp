@@ -1147,37 +1147,62 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     if (hdr_slot) {
         const auto slot = *hdr_slot;
         const RenderState game_state = state;
+        // The pipelines take the color write masks as dynamic state when the device can: the
+        // channel's two targets are written whole, then the game's masks are set back.
+        const bool dynamic_masks = instance.IsDynamicColorWriteMaskSupported();
+        const ColorWriteMasks game_masks = scheduler.GetDynamicState().color_write_masks;
         scheduler.Record([=](vk::CommandBuffer cmdbuf) {
             cmdbuf.endRendering();
             const vk::ImageSubresourceRange range{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
-            const vk::ImageMemoryBarrier2 to_attachment{
-                .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-                .srcAccessMask = vk::AccessFlagBits2::eShaderRead,
-                .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-                .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
-                .oldLayout = slot.layout,
-                .newLayout = vk::ImageLayout::eColorAttachmentOptimal,
-                .image = slot.image,
-                .subresourceRange = range,
-            };
-            cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1,
-                                     .pImageMemoryBarriers = &to_attachment});
-            const vk::RenderingAttachmentInfo hdr_attachment{
-                .imageView = slot.view,
-                .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-                .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = vk::AttachmentStoreOp::eStore,
-                // Gains 1 (r, b, a) where the draw writes nothing; g (reference) unused there.
-                .clearValue = vk::ClearValue{.color = vk::ClearColorValue{
-                                                 std::array{1.0f, 0.0f, 1.0f, 1.0f}}},
+            std::array<vk::ImageMemoryBarrier2, 2> to_attachment{};
+            for (u32 i = 0; i < 2; ++i) {
+                to_attachment[i] = vk::ImageMemoryBarrier2{
+                    .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                    .srcAccessMask = vk::AccessFlagBits2::eShaderRead,
+                    .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                    .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+                    .oldLayout = slot.layout,
+                    .newLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                    .image = i == 0 ? slot.image : slot.aux_image,
+                    .subresourceRange = range,
+                };
+            }
+            cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 2,
+                                     .pImageMemoryBarriers = to_attachment.data()});
+            // Gains 1 (r, b, a) where the draw writes nothing; g (reference) unused there. The
+            // effect ratios (aux) are 1 there too.
+            const std::array<vk::RenderingAttachmentInfo, 2> hdr_attachments{
+                vk::RenderingAttachmentInfo{
+                    .imageView = slot.view,
+                    .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                    .loadOp = vk::AttachmentLoadOp::eClear,
+                    .storeOp = vk::AttachmentStoreOp::eStore,
+                    .clearValue = vk::ClearValue{.color = vk::ClearColorValue{
+                                                     std::array{1.0f, 0.0f, 1.0f, 1.0f}}},
+                },
+                vk::RenderingAttachmentInfo{
+                    .imageView = slot.aux_view,
+                    .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                    .loadOp = vk::AttachmentLoadOp::eClear,
+                    .storeOp = vk::AttachmentStoreOp::eStore,
+                    .clearValue = vk::ClearValue{.color = vk::ClearColorValue{
+                                                     std::array{1.0f, 1.0f, 1.0f, 1.0f}}},
+                },
             };
             cmdbuf.beginRendering({
                 .renderArea = {{0, 0}, {game_state.width, game_state.height}},
                 .layerCount = 1,
-                .colorAttachmentCount = 1,
-                .pColorAttachments = &hdr_attachment,
+                .colorAttachmentCount = 2,
+                .pColorAttachments = hdr_attachments.data(),
             });
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, hdr_handle);
+            if (dynamic_masks) {
+                const vk::ColorComponentFlags all =
+                    vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                    vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+                const std::array hdr_masks{all, all};
+                cmdbuf.setColorWriteMaskEXT(0, hdr_masks);
+            }
             if (is_indexed) {
                 cmdbuf.drawIndexed(num_indices, num_instances, 0, s32(first_vertex),
                                    first_instance);
@@ -1185,18 +1210,21 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                 cmdbuf.draw(num_indices, num_instances, first_vertex, first_instance);
             }
             cmdbuf.endRendering();
-            const vk::ImageMemoryBarrier2 to_read{
-                .srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-                .srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
-                .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-                .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
-                .oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
-                .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-                .image = slot.image,
-                .subresourceRange = range,
-            };
-            cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1,
-                                     .pImageMemoryBarriers = &to_read});
+            std::array<vk::ImageMemoryBarrier2, 2> to_read{};
+            for (u32 i = 0; i < 2; ++i) {
+                to_read[i] = vk::ImageMemoryBarrier2{
+                    .srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                    .srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+                    .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                    .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+                    .oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                    .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+                    .image = i == 0 ? slot.image : slot.aux_image,
+                    .subresourceRange = range,
+                };
+            }
+            cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 2,
+                                     .pImageMemoryBarriers = to_read.data()});
             // The game's pass again, loading what it has drawn so far.
             std::array<vk::RenderingAttachmentInfo, 8> colors{};
             for (u32 i = 0; i < game_state.num_color_attachments; ++i) {
@@ -1223,6 +1251,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                 .pStencilAttachment = db.has_stencil ? &depth : nullptr,
             });
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, handle);
+            if (dynamic_masks) {
+                cmdbuf.setColorWriteMaskEXT(0, game_masks);
+            }
         });
         HdrChannel::Get().Published(slot.index);
         if (const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)]) {

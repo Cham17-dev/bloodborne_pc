@@ -126,6 +126,14 @@ Analyse hors jeu des shaders du dump 1.09 (outils dans `docs/hdr-tools/`) :
 
 ### Passe HDR générique (étape 3c, codée le 16/10)
 
+**Effets du jeu en direct (build hdr-32).** La passe du canal écrit une **deuxième cible** RGBA16F (`aux`) :
+rgb = couleur non compressée **sans le bloom** du composite (glow `c617`/matrice 872) sur la couleur (par ligne de
+la matrice), a = luminance **sans les vignettages** (cos4, 888) sur avec (≥ 1). La passe finale multiplie la scène
+par `mix(aux.rgb, 1, bloom) · mix(aux.a, 1, vignette)` (curseurs 0–100, 50 = le jeu, 0 = retiré, 100 = doublé ;
+`hdr_bloom`, `hdr_vignette`). Le masque d'écriture dynamique est mis à « tout » pour les deux cibles pendant la
+passe du canal, puis remis à celui du jeu. Grain : pas encore (ajouté dans l'image 8 bits du jeu). Menu : un bouton
+« Reset » à côté de chaque curseur, comme ReShade.
+
 **Même ordre que RenoDX (build hdr-31).** Le canal ne contient plus une image déjà tonemappée mais l'image
 **non compressée** : la courbe du jeu sous le genou, sa pente prolongée au-dessus (pic 10 000 nits dans le shader du
 composite), avec un **gain par canal** (lignes de la matrice de couleurs). La passe finale fait, en direct :

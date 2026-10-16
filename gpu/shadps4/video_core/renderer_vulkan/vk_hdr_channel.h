@@ -63,7 +63,11 @@ public:
         u32 index;
         vk::Image image;
         vk::ImageView view;
-        vk::ImageLayout layout; ///< layout before this write
+        vk::ImageLayout layout; ///< layout before this write (both images)
+        /// Second target: the game's effects as ratios, for the live sliders: rgb = color
+        /// without the bloom over the color (per channel), a = without the vignettes over with.
+        vk::Image aux_image;
+        vk::ImageView aux_view;
     };
     /// GPU thread: the image to write for this frame, at the tonemap target's size.
     Slot Acquire(const Instance& instance, Scheduler& scheduler, u32 width, u32 height);
@@ -72,6 +76,7 @@ public:
 
     struct Latest {
         vk::ImageView view;
+        vk::ImageView aux_view;
         u32 width;
         u32 height;
     };
@@ -82,6 +87,8 @@ private:
     struct Image {
         VideoCore::UniqueImage image;
         vk::UniqueImageView view;
+        VideoCore::UniqueImage aux;
+        vk::UniqueImageView aux_view;
         vk::ImageLayout layout = vk::ImageLayout::eUndefined;
     };
     mutable std::mutex mutex;

@@ -16,7 +16,7 @@
 namespace Vulkan::HostPasses {
 
 void PostProcessingPass::Create(vk::Device device, const vk::Format surface_format) {
-    boost::container::static_vector<vk::DescriptorSetLayoutBinding, 2> bindings{
+    boost::container::static_vector<vk::DescriptorSetLayoutBinding, 3> bindings{
         {
             .binding = 0,
             .descriptorType = vk::DescriptorType::eCombinedImageSampler,
@@ -26,6 +26,13 @@ void PostProcessingPass::Create(vk::Device device, const vk::Format surface_form
         // bbport HDR side channel (the input again when there is none).
         {
             .binding = 1,
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment,
+        },
+        // bbport HDR side channel: the effect ratios (the input again when there are none).
+        {
+            .binding = 2,
             .descriptorType = vk::DescriptorType::eCombinedImageSampler,
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eFragment,
@@ -190,7 +197,7 @@ void PostProcessingPass::Create(vk::Device device, const vk::Format surface_form
 
 void PostProcessingPass::Render(vk::CommandBuffer cmdbuf, vk::ImageView input,
                                 vk::Extent2D input_size, Frame& frame, Settings settings,
-                                vk::ImageView hdr_channel) {
+                                vk::ImageView hdr_channel, vk::ImageView hdr_aux) {
     if (EmulatorSettings.IsVkHostMarkersEnabled()) {
         cmdbuf.beginDebugUtilsLabelEXT(vk::DebugUtilsLabelEXT{
             .pLabelName = "Host/Post processing",
@@ -233,7 +240,12 @@ void PostProcessingPass::Render(vk::CommandBuffer cmdbuf, vk::ImageView input,
         .imageView = hdr_channel ? hdr_channel : input,
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
     };
-    if (!hdr_channel) {
+    vk::DescriptorImageInfo aux_info{
+        .sampler = *sampler,
+        .imageView = hdr_channel && hdr_aux ? hdr_aux : input,
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+    };
+    if (!hdr_channel || !hdr_aux) {
         settings.hdr_channel = 0;
     }
 
@@ -253,6 +265,14 @@ void PostProcessingPass::Render(vk::CommandBuffer cmdbuf, vk::ImageView input,
             .descriptorCount = 1,
             .descriptorType = vk::DescriptorType::eCombinedImageSampler,
             .pImageInfo = &hdr_info,
+        },
+        vk::WriteDescriptorSet{
+            .dstSet = VK_NULL_HANDLE,
+            .dstBinding = 2,
+            .dstArrayElement = 0,
+            .descriptorCount = 1,
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+            .pImageInfo = &aux_info,
         },
     };
 

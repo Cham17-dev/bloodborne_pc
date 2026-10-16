@@ -93,6 +93,8 @@ struct Values {
     std::atomic<float> hdr_saturation{50.0f};
     std::atomic<float> hdr_highlight_saturation{50.0f};
     std::atomic<float> hdr_blowout{0.0f};
+    std::atomic<float> hdr_bloom{50.0f};    ///< the game's bloom, 0..100, 50 as drawn
+    std::atomic<float> hdr_vignette{50.0f}; ///< the game's vignettes, 0..100, 50 as drawn
     /// Set by the presenter: the frame is sent in HDR10 (the menu shows the HDR section).
     std::atomic<bool> hdr_output{false};
     /// Set by the presenter: the all-areas HDR highlights are on (strength and boost apply).

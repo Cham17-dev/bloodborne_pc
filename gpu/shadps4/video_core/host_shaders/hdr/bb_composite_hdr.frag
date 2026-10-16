@@ -73,6 +73,10 @@ layout(location = 2) pervertexEXT in vec4 bb_in_bloom[3];
 layout(location = 3) pervertexEXT in vec4 bb_in_vig[3];
 
 layout(location = 0) out vec4 frag_color0;
+// The game's effects as ratios, for the live sliders of the final pass: rgb = the untonemapped
+// color without the bloom (glow) over the color (per row: red, green, blue), a = the luminance
+// without the vignettes over with (>= 1). 1 where there is nothing to change.
+layout(location = 1) out vec4 frag_aux;
 
 uint buf_off;
 
@@ -169,4 +173,29 @@ void main() {
     }
     // r, b, a: gains of red, green, blue; g: the reference luminance (scene / UI test).
     frag_color0 = vec4(gains.r, dot(sdr_encoded, luma_bgr), gains.g, gains.b);
+
+    // Effect ratios, on the untonemapped color (the final pass scales it before its grading).
+    vec4 aux = vec4(1.0);
+    if (has_hdr) {
+        vec3 rows = max(bb_grade(o, hdr_screen), 0.0);
+        vec3 rows_no_bloom = max(bb_grade(o, hdr_t), 0.0);
+        for (int i = 0; i < 3; ++i) {
+            aux[i] = rows[i] > 1e-4 ? clamp(rows_no_bloom[i] / rows[i], 0.0, 1.0) : 1.0;
+        }
+        if (BB_COS4 || BB_VIG888) {
+            BbComposite no_vig = o;
+            no_vig.cos4 = false;
+            no_vig.vig888 = false;
+            vec3 x_nv = bb_exposed(no_vig, scene, ms, vig_uv);
+            vec3 t_nv;
+            if (bb_curve_hdr(o, x_nv, BB_HDR_KNEE, BB_HDR_PEAK, t_nv)) {
+                vec3 screen_nv = t_nv + glow * (1.0 - min(t_nv, 1.0));
+                float l_nv = dot(max(bb_grade(o, screen_nv), 0.0), vec3(0.2126390059, 0.7151686788,
+                                                                       0.0721923154));
+                float l = dot(rows, vec3(0.2126390059, 0.7151686788, 0.0721923154));
+                aux.a = l > 1e-4 ? clamp(l_nv / l, 1.0, 16.0) : 1.0;
+            }
+        }
+    }
+    frag_aux = aux;
 }

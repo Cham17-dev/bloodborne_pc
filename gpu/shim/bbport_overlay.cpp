@@ -226,6 +226,25 @@ void HdrPreset(BbSettings::Values& s, const char* label, float strength, float b
     }
 }
 
+// A slider with a reset button after it (as in ReShade), then its hint.
+void SliderReset(const char* label, std::atomic<float>& value, float lo, float hi, float reset,
+                 const char* format, const char* hint) {
+    ImGui::PushID(label);
+    float v = value;
+    const bool changed = ImGui::SliderFloat(label, &v, lo, hi, format);
+    Store(value, v, changed);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(std::abs(value.load() - reset) < 1e-4f);
+    if (ImGui::SmallButton("Reset")) {
+        Store(value, reset, true);
+    }
+    ImGui::EndDisabled();
+    ImGui::PopID();
+    if (hint) {
+        Hint(hint);
+    }
+}
+
 void HdrSection(BbSettings::Values& s) {
     ImGui::SeparatorText("HDR (changes apply at once)");
     // What runs now: mode, curve, and whether this area has HDR highlights.
@@ -256,13 +275,10 @@ void HdrSection(BbSettings::Values& s) {
     }
     Hint("F9 switches between HDR, the game's SDR image and a split screen, also with this menu closed. SDR is the game's image at the paper white below, with no HDR highlights. Not saved: each session starts in HDR.");
 
-    float paper = s.hdr_paper_white;
-    Store(s.hdr_paper_white, paper,
-          ImGui::SliderFloat("Paper white", &paper, 80.0f, 500.0f, "%.0f nits"));
-    Hint("Brightness of the game's white. Raise it if the game looks dim, lower it in a dark room. 203 is the HDR reference.");
-    float ui = s.hdr_ui_nits;
-    Store(s.hdr_ui_nits, ui, ImGui::SliderFloat("HUD brightness", &ui, 48.0f, 500.0f, "%.0f nits"));
-    Hint("Brightness of the HUD and menus drawn over the scene (the pixels the UI debug view shows in red). Only where the HDR highlights are active; elsewhere the HUD follows paper white.");
+    SliderReset("Paper white", s.hdr_paper_white, 80.0f, 500.0f, 203.0f, "%.0f nits",
+                "Brightness of the game's white. Raise it if the game looks dim, lower it in a dark room. 203 is the HDR reference.");
+    SliderReset("HUD brightness", s.hdr_ui_nits, 48.0f, 500.0f, 203.0f, "%.0f nits",
+                "Brightness of the HUD and menus drawn over the scene (the pixels the UI debug view shows in red). Only where the HDR highlights are active; elsewhere the HUD follows paper white.");
     static const char* decodings[] = {"2.2 power (SDR displays)", "sRGB curve"};
     int decoding = s.hdr_gamma22 ? 0 : 1;
     if (ImGui::BeginCombo("SDR decoding", decodings[decoding])) {
@@ -274,10 +290,8 @@ void HdrSection(BbSettings::Values& s) {
         ImGui::EndCombo();
     }
     Hint("How the game's SDR image is turned into light, like RenoDX's Gamma Correction. 2.2: as SDR monitors show it, deeper shadows (default). sRGB: lighter near-blacks.");
-    float peak = s.hdr_peak_nits;
-    Store(s.hdr_peak_nits, peak,
-          ImGui::SliderFloat("Peak brightness", &peak, 400.0f, 4000.0f, "%.0f nits"));
-    Hint("The brightest your display can show (1000 on a QD-OLED in its HDR 1000 mode). Highlights roll off toward it instead of clipping. The test pattern below shows where your display stops.");
+    SliderReset("Peak brightness", s.hdr_peak_nits, 400.0f, 4000.0f, 1000.0f, "%.0f nits",
+                "The brightest your display can show (1000 on a QD-OLED in its HDR 1000 mode). Highlights roll off toward it instead of clipping. The test pattern below shows where your display stops.");
 
     ImGui::BeginDisabled(!s.hdr_highlights);
     static const char* tonemappers[] = {"Neutwo (the game's look)", "PsychoV30 (RenoDX)"};
@@ -304,10 +318,10 @@ void HdrSection(BbSettings::Values& s) {
     }
     Hint("Neutwo, as RenoDX's Scaling: on luminance the colors of bright lights keep their hue; per channel they saturate and go toward white sooner (a filmic look).");
     ImGui::EndDisabled();
-    Slider("Highlight strength", s.hdr_strength, 0.0f, 3.0f);
-    Hint("How much of the light the game computed above its white is shown (the moon, the clinic window, fires): 0 is the SDR look, 1 is bbport's default, more is brighter.");
-    Slider("Highlight boost", s.hdr_boost, 0.0f, 1.0f);
-    Hint("Raises the bright parts the game drew close to its white toward the peak, for scenes lit for SDR (Hunter's Dream): 0 is off, 1 takes the game's white to the peak. Midtones and the HUD do not change.");
+    SliderReset("Highlight strength", s.hdr_strength, 0.0f, 3.0f, 1.0f, "%.2f",
+                "How much of the light the game computed above its white is shown (the moon, the clinic window, fires): 0 is the SDR look, 1 is bbport's default, more is brighter.");
+    SliderReset("Highlight boost", s.hdr_boost, 0.0f, 1.0f, 0.0f, "%.2f",
+                "Raises the bright parts the game drew close to its white toward the peak, for scenes lit for SDR (Hunter's Dream): 0 is off, 1 takes the game's white to the peak. Midtones and the HUD do not change.");
     ImGui::TextUnformatted("Presets:");
     ImGui::SameLine();
     HdrPreset(s, "Game", 1.0f, 0.0f);
@@ -320,19 +334,18 @@ void HdrSection(BbSettings::Values& s) {
     Hint("Game: bbport's default (strength 1, no boost). Balanced: 1.2 and 0.35. Vivid: 1.5 and 0.7. SDR look: no HDR highlights, with the menu's paper white (Compare shows the same without changing these).");
 
     if (ImGui::TreeNodeEx("Color grading (scene only)", ImGuiTreeNodeFlags_DefaultOpen)) {
-        Slider("Exposure", s.hdr_exposure, 0.0f, 2.0f);
-        Hint("Brightness of the whole scene before the rest (1 = the game's).");
-        const auto percent = [](const char* label, std::atomic<float>& value, const char* hint) {
-            float v = value;
-            Store(value, v, ImGui::SliderFloat(label, &v, 0.0f, 100.0f, "%.0f"));
-            Hint(hint);
+        SliderReset("Exposure", s.hdr_exposure, 0.0f, 2.0f, 1.0f, "%.2f",
+                    "Brightness of the whole scene before the rest (1 = the game's).");
+        const auto percent = [](const char* label, std::atomic<float>& value, float reset,
+                                const char* hint) {
+            SliderReset(label, value, 0.0f, 100.0f, reset, "%.0f", hint);
         };
-        percent("Contrast", s.hdr_contrast, "Around mid grey: 50 is the game's, more deepens shadows and raises light.");
-        percent("Highlights", s.hdr_grade_highlights, "Brightness above mid grey: 50 is the game's.");
-        percent("Shadows", s.hdr_shadows, "Brightness below mid grey: 50 is the game's, more lifts the shadows.");
-        percent("Saturation", s.hdr_saturation, "Color intensity: 50 is the game's, 0 is black and white.");
-        percent("Highlight saturation", s.hdr_highlight_saturation, "Color in the bright parts only: 50 is the game's.");
-        percent("Blowout", s.hdr_blowout, "The brightest colors fade to white near the peak, like overexposed film: 0 is off.");
+        percent("Contrast", s.hdr_contrast, 50.0f, "Around mid grey: 50 is the game's, more deepens shadows and raises light.");
+        percent("Highlights", s.hdr_grade_highlights, 50.0f, "Brightness above mid grey: 50 is the game's.");
+        percent("Shadows", s.hdr_shadows, 50.0f, "Brightness below mid grey: 50 is the game's, more lifts the shadows.");
+        percent("Saturation", s.hdr_saturation, 50.0f, "Color intensity: 50 is the game's, 0 is black and white.");
+        percent("Highlight saturation", s.hdr_highlight_saturation, 50.0f, "Color in the bright parts only: 50 is the game's.");
+        percent("Blowout", s.hdr_blowout, 0.0f, "The brightest colors fade to white near the peak (from a quarter of it), like overexposed film: 0 is off. Most visible on fires and the clinic window.");
         if (ImGui::Button("Reset color grading")) {
             Store(s.hdr_exposure, 1.0f, true);
             Store(s.hdr_contrast, 50.0f, true);
@@ -342,6 +355,14 @@ void HdrSection(BbSettings::Values& s) {
             Store(s.hdr_highlight_saturation, 50.0f, true);
             Store(s.hdr_blowout, 0.0f, true);
         }
+        ImGui::TreePop();
+    }
+    if (ImGui::TreeNodeEx("Game effects (scene only)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        SliderReset("Bloom", s.hdr_bloom, 0.0f, 100.0f, 50.0f, "%.0f",
+                    "The game's glow around lights and bright areas: 50 is the game's, 0 removes it, 100 doubles it. As RenoDX's Bloom.");
+        SliderReset("Vignette", s.hdr_vignette, 0.0f, 100.0f, 50.0f, "%.0f",
+                    "The game's darkening toward the screen edges, where the game has one: 50 is the game's, 0 removes it, 100 doubles it. As RenoDX's Vignette.");
+        ImGui::TextDisabled("Film grain: not yet (the grain is added in the game's 8-bit image).");
         ImGui::TreePop();
     }
 
@@ -369,6 +390,8 @@ void HdrSection(BbSettings::Values& s) {
         Store(s.hdr_strength, 1.0f, true);
         Store(s.hdr_boost, 0.0f, true);
         Store(s.hdr_ui_nits, 203.0f, true);
+        Store(s.hdr_bloom, 50.0f, true);
+        Store(s.hdr_vignette, 50.0f, true);
         s.hdr_compare = 0;
         s.hdr_debug = 0;
         s.hdr_test_pattern = false;

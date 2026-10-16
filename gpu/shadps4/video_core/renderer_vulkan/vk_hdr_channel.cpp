@@ -413,10 +413,10 @@ HdrChannel::Slot HdrChannel::Acquire(const Instance& instance, Scheduler& schedu
         latest.store(-1, std::memory_order_release);
         width = w;
         height = h;
-        for (auto& slot : images) {
-            slot.view.reset();
-            slot.image = VideoCore::UniqueImage(instance.GetDevice(), instance.GetAllocator());
-            slot.image.Create(vk::ImageCreateInfo{
+        const auto create = [&](VideoCore::UniqueImage& image, vk::UniqueImageView& view) {
+            view.reset();
+            image = VideoCore::UniqueImage(instance.GetDevice(), instance.GetAllocator());
+            image.Create(vk::ImageCreateInfo{
                 .imageType = vk::ImageType::e2D,
                 .format = vk::Format::eR16G16B16A16Sfloat,
                 .extent = {w, h, 1},
@@ -428,15 +428,19 @@ HdrChannel::Slot HdrChannel::Acquire(const Instance& instance, Scheduler& schedu
                          vk::ImageUsageFlagBits::eSampled,
                 .initialLayout = vk::ImageLayout::eUndefined,
             });
-            auto [result, view] = instance.GetDevice().createImageViewUnique({
-                .image = vk::Image(slot.image),
+            auto [result, new_view] = instance.GetDevice().createImageViewUnique({
+                .image = vk::Image(image),
                 .viewType = vk::ImageViewType::e2D,
                 .format = vk::Format::eR16G16B16A16Sfloat,
                 .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
             });
             ASSERT_MSG(result == vk::Result::eSuccess, "HDR channel: image view: {}",
                        vk::to_string(result));
-            slot.view = std::move(view);
+            view = std::move(new_view);
+        };
+        for (auto& slot : images) {
+            create(slot.image, slot.view);
+            create(slot.aux, slot.aux_view);
             slot.layout = vk::ImageLayout::eUndefined;
         }
         LOG_INFO(Render_Vulkan, "HDR channel: {}x{}", w, h);
@@ -444,7 +448,8 @@ HdrChannel::Slot HdrChannel::Acquire(const Instance& instance, Scheduler& schedu
     const u32 index = next;
     next ^= 1u;
     auto& slot = images[index];
-    const Slot out{index, vk::Image(slot.image), *slot.view, slot.layout};
+    const Slot out{index, vk::Image(slot.image), *slot.view, slot.layout, vk::Image(slot.aux),
+                   *slot.aux_view};
     slot.layout = vk::ImageLayout::eShaderReadOnlyOptimal; // after the recorded write
     return out;
 }
@@ -484,7 +489,7 @@ std::optional<HdrChannel::Latest> HdrChannel::LatestImage() const {
     if (stale_frames > 2 || index < 0 || !images[index].view) {
         return std::nullopt;
     }
-    return Latest{*images[index].view, width, height};
+    return Latest{*images[index].view, *images[index].aux_view, width, height};
 }
 
 } // namespace Vulkan
