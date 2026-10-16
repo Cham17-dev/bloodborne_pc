@@ -46,7 +46,10 @@ feu :
 1. Extraire l'artifact par-dessus `E:\Bloodborne\hdr`. Launcher : *Allow HDR output* coché, *HDR tonemap (test)*
    = **bbport HDR**, *HDR peak brightness* = 1000.
 2. *HDR debug view* = **Pixels taken as UI in red** → capture JXR (Win + Alt + Impr. écran). Attendu : seule
-   l'interface en rouge, ni les vitres ni les barreaux.
+   l'interface en rouge, ni les vitres ni les barreaux, ni les contours des objets et du personnage (le 15/10,
+   presque tous les bords étaient rouges : même cause, le mélange des voisins par l'AA). Une capture caméra
+   immobile, une autre en tournant la caméra : des bords rouges seulement en mouvement indiqueraient un
+   décalage d'une image entre le canal et l'image affichée, pas un problème d'AA.
 3. *HDR debug view* = **Off** → capture JXR au même endroit (mesure des nits).
 4. Même chose en *HDR tonemap (test)* = **bbport** (sans HDR) pour comparer.
 5. Envoyer les `.jxr` (dossier `Vidéos\Captures`).
