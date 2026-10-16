@@ -41,6 +41,18 @@ MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # This build; GitHub release tags are windows-v<VERSION>.
 VERSION = '1.7.8'
+
+
+def build_name():
+    """The CI build (launcher/build.txt, e.g. 'hdr-25'), or '' for a local build."""
+    try:
+        return (PORT_DIR / 'launcher' / 'build.txt').read_text(encoding='utf-8').strip()[:40]
+    except OSError:
+        return ''
+
+
+BUILD = build_name()
+VERSION_TEXT = f'v{VERSION}' + (f' · build {BUILD}' if BUILD else '')
 # HDR test build (fork Cham17-dev/bloodborne_pc, branch hdr): no release updates.
 HDR_TEST_BUILD = True
 # Co-op: the community server that answers the game's own server requests.
@@ -803,7 +815,7 @@ class Launcher:
         tk.Label(side, text='BLOODBORNE', bg=BG, fg=GOLD, font=('Georgia', 16)).pack(anchor='w', padx=22, pady=(24, 0))
         self.side = side
         tk.Label(side, text=_('by Super Medo'), bg=BG, fg=TEXT, font=('Segoe UI', 10)).pack(anchor='w', padx=22)
-        tk.Label(side, text=_('native port · Windows', 'нативный порт · Windows') + f'  ·  v{VERSION}' + ('\n' + _('co-op test build') if COOP_TEST else ''), bg=BG, fg=MUTED, justify='left',
+        tk.Label(side, text=_('native port · Windows', 'нативный порт · Windows') + f'  ·  {VERSION_TEXT}' + ('\n' + _('co-op test build') if COOP_TEST else ''), bg=BG, fg=MUTED, justify='left',
                  font=('Segoe UI', 9)).pack(anchor='w', padx=22, pady=(0, 20))
         self.nav, self.current_page = {}, None
         for name, title in (('play', _('Play', 'Играть')), ('graphics', _('Graphics', 'Графика')),
@@ -1739,7 +1751,7 @@ class Launcher:
         ttk.Button(holder, text=_('Check for updates', 'Проверить обновления'),
                    command=lambda: threading.Thread(target=self.check_update, args=(True,), daemon=True).start()
                    ).pack(side='left')
-        ttk.Label(holder, text=f'v{VERSION}', style='Muted.TLabel').pack(side='left', padx=10)
+        ttk.Label(holder, text=VERSION_TEXT, style='Muted.TLabel').pack(side='left', padx=10)
         holder = ttk.Frame(f)
         holder.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(10, 0))
         ttk.Button(holder, text=_('Clear shader cache', 'Очистить кэш шейдеров'), command=self.clear_cache).pack(side='left')
@@ -2055,6 +2067,7 @@ class Launcher:
             log_dir = Path(self.app.get('user_dir') or DATA_DIR / 'user')
             log_dir.mkdir(parents=True, exist_ok=True)
             log = open(log_dir / 'last_run.log', 'w', encoding='utf-8', buffering=1)
+            log.write(f'bbport {VERSION_TEXT}\n')
         except OSError:
             pass
         warned = False
@@ -2359,6 +2372,7 @@ def play_without_window(settings):
     log_dir.mkdir(parents=True, exist_ok=True)
     tracker = trophies.Tracker(log_dir)
     with open(log_dir / 'last_run.log', 'w', encoding='utf-8', buffering=1) as log:
+        log.write(f'bbport {VERSION_TEXT}\n')
         process = subprocess.Popen(run_command(), cwd=PORT_DIR, env=game_environment(settings),
                                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, creationflags=NO_WINDOW)
