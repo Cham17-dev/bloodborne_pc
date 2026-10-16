@@ -29,7 +29,8 @@ Options (launcher → Fenêtre, ou variables d'environnement) :
 | HDR diagnostic (collect shaders) | `BB_DUMP_SHADERS=1`, `BB_PIPELINE_CACHE=0`, `BB_CAPTURE_AUTO=20`, `BB_CAPTURE_DIR=<sauvegardes>/shader/dumps/frames` | off |
 | — | `BB_HDR_GAMMA22=0` : décodage sRGB au lieu de gamma 2.2 | 1 |
 
-Le journal (`last_run.log`) contient `HDR output: on, HDR10 swapchain` quand la sortie HDR est active,
+Le journal (`user\last_run.log`, lignes GPU au niveau info : `BB_GPU_LOG=info`, mis d'office par le launcher
+depuis hdr-22 quand un mode « HDR tonemap » est choisi) contient `HDR output: on, HDR10 swapchain` quand la sortie HDR est active,
 ou `HDR output: off, the display offers no HDR10 format` quand l'écran ne propose pas le HDR10.
 
 ## Reprendre le projet (point au 16/10, après-midi)

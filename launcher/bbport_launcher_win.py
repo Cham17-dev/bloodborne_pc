@@ -491,6 +491,8 @@ def game_environment(s):
             env['BB_HDR_TEST_PATTERN'] = '1'
     if s.get('hdr_tonemap', ''):
         env['BB_HDR_TONEMAP'] = s['hdr_tonemap']
+        # The HDR lines of last_run.log (HDR output, HDR channel, HDR pass, variants) are info.
+        env.setdefault('BB_GPU_LOG', 'info')
     if s.get('hdr_tonemapper', ''):
         env['BB_HDR_TONEMAPPER'] = s['hdr_tonemapper']
     if s.get('hdr_peak_nits', ''):
