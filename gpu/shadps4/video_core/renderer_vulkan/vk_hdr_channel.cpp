@@ -342,6 +342,16 @@ std::atomic<u32> native16_count{0};
 // The shaders after the composite that write its image or the copy the AA reads (docs/HDR.md):
 // PointSampleColor1 (copy), EmissiveToGlowPS (copy for the glow, clamped by bbport), DLAA, and
 // the glow's addition.
+// The chain's targets: 1920x1080 (the registers give the height padded to whole 8-row tiles),
+// 8-bit RGBA.
+constexpr bool ChainSize(u32 width, u32 height) {
+    return width == 1920 && height >= 1080 && height <= 1088;
+}
+constexpr bool ChainFormat(vk::Format format) {
+    return format == vk::Format::eR8G8B8A8Unorm || format == vk::Format::eR8G8B8A8Srgb ||
+           format == vk::Format::eB8G8R8A8Unorm || format == vk::Format::eB8G8R8A8Srgb;
+}
+
 constexpr bool ChainShader(u64 ps_hash) {
     return ps_hash == 0xf7229091 || ps_hash == 0x57f3b8c2 || ps_hash == 0xda1faca9 ||
            ps_hash == 0x8c08444c;
@@ -405,11 +415,21 @@ void HdrChannel::SetNative16Active(bool active) {
 
 void HdrChannel::NoteTarget(u64 ps_hash, VAddr address, u32 width, u32 height,
                             vk::Format format) {
-    if (!Native16() || width != 1920 || height != 1080 || format != vk::Format::eR8G8B8A8Unorm) {
+    if (!Native16()) {
         return;
     }
     const TonemapVariant* v = FindVariant(ps_hash);
     if (!(v && v->standard) && !ChainShader(ps_hash)) {
+        return;
+    }
+    if (!ChainSize(width, height) || !ChainFormat(format)) {
+        static std::mutex logged_mutex;
+        static std::unordered_set<u64> logged;
+        std::scoped_lock lock{logged_mutex};
+        if (logged.insert(ps_hash).second) {
+            LOG_INFO(Render_Vulkan, "HDR 16-bit: target {:#x} of ps {:08x} left 8-bit ({}x{} {})",
+                     address, ps_hash, width, height, vk::to_string(format));
+        }
         return;
     }
     std::scoped_lock lock{native16_mutex};
@@ -421,8 +441,7 @@ void HdrChannel::NoteTarget(u64 ps_hash, VAddr address, u32 width, u32 height,
 }
 
 bool HdrChannel::Upgraded(VAddr address, u32 width, u32 height, vk::Format format) {
-    if (!Native16Active() || width != 1920 || height != 1080 ||
-        format != vk::Format::eR8G8B8A8Unorm ||
+    if (!Native16Active() || !ChainSize(width, height) || !ChainFormat(format) ||
         native16_count.load(std::memory_order_acquire) == 0) {
         return false;
     }
