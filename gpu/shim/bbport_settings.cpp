@@ -58,6 +58,24 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         if (!value.empty()) v.hdr_strength = Clamp(f, 0.0f, 3.0f);
     } else if (key == "hdr_boost") {
         if (!value.empty()) v.hdr_boost = Clamp(f, 0.0f, 1.0f);
+    } else if (key == "hdr_ui_nits") {
+        if (!value.empty()) v.hdr_ui_nits = Clamp(f, 48.0f, 500.0f);
+    } else if (key == "hdr_gamma") {
+        v.hdr_gamma22 = value != "srgb";
+    } else if (key == "hdr_exposure") {
+        if (!value.empty()) v.hdr_exposure = Clamp(f, 0.0f, 2.0f);
+    } else if (key == "hdr_contrast") {
+        if (!value.empty()) v.hdr_contrast = Clamp(f, 0.0f, 100.0f);
+    } else if (key == "hdr_highlights") {
+        if (!value.empty()) v.hdr_grade_highlights = Clamp(f, 0.0f, 100.0f);
+    } else if (key == "hdr_shadows") {
+        if (!value.empty()) v.hdr_shadows = Clamp(f, 0.0f, 100.0f);
+    } else if (key == "hdr_saturation") {
+        if (!value.empty()) v.hdr_saturation = Clamp(f, 0.0f, 100.0f);
+    } else if (key == "hdr_highlight_saturation") {
+        if (!value.empty()) v.hdr_highlight_saturation = Clamp(f, 0.0f, 100.0f);
+    } else if (key == "hdr_blowout") {
+        if (!value.empty()) v.hdr_blowout = Clamp(f, 0.0f, 100.0f);
     } else if (key == "show_fps") {
         v.show_fps = i != 0;
     } else if (key == "fsr4_auto_exposure") {
@@ -129,6 +147,9 @@ void Load() {
         if (const char* value = std::getenv(env)) {
             Set(v, key, value);
         }
+    }
+    if (const char* env = std::getenv("BB_HDR_GAMMA22")) {
+        v.hdr_gamma22 = std::atoi(env) != 0;
     }
     if (const char* env = std::getenv("BB_HDR_DEBUG")) {
         v.hdr_debug = std::clamp(std::atoi(env), 0, 2);
@@ -223,6 +244,13 @@ void Save() {
     std::fprintf(file, "hdr_paper_white=%.0f\nhdr_peak_nits=%.0f\nhdr_strength=%.2f\nhdr_boost=%.2f\n",
                  v.hdr_paper_white.load(), v.hdr_peak_nits.load(), v.hdr_strength.load(),
                  v.hdr_boost.load());
+    std::fprintf(file,
+                 "hdr_ui_nits=%.0f\nhdr_gamma=%s\nhdr_exposure=%.2f\nhdr_contrast=%.0f\n"
+                 "hdr_highlights=%.0f\nhdr_shadows=%.0f\nhdr_saturation=%.0f\n"
+                 "hdr_highlight_saturation=%.0f\nhdr_blowout=%.0f\n",
+                 v.hdr_ui_nits.load(), v.hdr_gamma22 ? "2.2" : "srgb", v.hdr_exposure.load(),
+                 v.hdr_contrast.load(), v.hdr_grade_highlights.load(), v.hdr_shadows.load(),
+                 v.hdr_saturation.load(), v.hdr_highlight_saturation.load(), v.hdr_blowout.load());
     std::fprintf(file, "model_lod=%d\noutput_res=%dx%d\n", v.model_lod.load(),
                  OutputWidths[v.output_res], OutputHeights[v.output_res]);
     // Read by run.py at start (hud_layout.py).

@@ -256,7 +256,21 @@ void HdrSection(BbSettings::Values& s) {
     float paper = s.hdr_paper_white;
     Store(s.hdr_paper_white, paper,
           ImGui::SliderFloat("Paper white", &paper, 80.0f, 500.0f, "%.0f nits"));
-    Hint("Brightness of the game's white and of the HUD. Raise it if the game looks dim, lower it in a dark room. 203 is the HDR reference.");
+    Hint("Brightness of the game's white. Raise it if the game looks dim, lower it in a dark room. 203 is the HDR reference.");
+    float ui = s.hdr_ui_nits;
+    Store(s.hdr_ui_nits, ui, ImGui::SliderFloat("HUD brightness", &ui, 48.0f, 500.0f, "%.0f nits"));
+    Hint("Brightness of the HUD and menus drawn over the scene (the pixels the UI debug view shows in red). Only where the HDR highlights are active; elsewhere the HUD follows paper white.");
+    static const char* decodings[] = {"2.2 power (SDR displays)", "sRGB curve"};
+    int decoding = s.hdr_gamma22 ? 0 : 1;
+    if (ImGui::BeginCombo("SDR decoding", decodings[decoding])) {
+        for (int i = 0; i < 2; ++i) {
+            if (ImGui::Selectable(decodings[i], i == decoding)) {
+                Store(s.hdr_gamma22, i == 0, true);
+            }
+        }
+        ImGui::EndCombo();
+    }
+    Hint("How the game's SDR image is turned into light, like RenoDX's Gamma Correction. 2.2: as SDR monitors show it, deeper shadows (default). sRGB: lighter near-blacks.");
     float peak = s.hdr_peak_nits;
     Store(s.hdr_peak_nits, peak,
           ImGui::SliderFloat("Peak brightness", &peak, 400.0f, 4000.0f, "%.0f nits"));
@@ -277,6 +291,32 @@ void HdrSection(BbSettings::Values& s) {
     ImGui::SameLine();
     HdrPreset(s, "SDR look", 0.0f, 0.0f);
     Hint("Game: bbport's default (strength 1, no boost). Balanced: 1.2 and 0.35. Vivid: 1.5 and 0.7. SDR look: no HDR highlights, with the menu's paper white (Compare shows the same without changing these).");
+
+    if (ImGui::TreeNodeEx("Color grading (scene only)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        Slider("Exposure", s.hdr_exposure, 0.0f, 2.0f);
+        Hint("Brightness of the whole scene before the rest (1 = the game's).");
+        const auto percent = [](const char* label, std::atomic<float>& value, const char* hint) {
+            float v = value;
+            Store(value, v, ImGui::SliderFloat(label, &v, 0.0f, 100.0f, "%.0f"));
+            Hint(hint);
+        };
+        percent("Contrast", s.hdr_contrast, "Around mid grey: 50 is the game's, more deepens shadows and raises light.");
+        percent("Highlights", s.hdr_grade_highlights, "Brightness above mid grey: 50 is the game's.");
+        percent("Shadows", s.hdr_shadows, "Brightness below mid grey: 50 is the game's, more lifts the shadows.");
+        percent("Saturation", s.hdr_saturation, "Color intensity: 50 is the game's, 0 is black and white.");
+        percent("Highlight saturation", s.hdr_highlight_saturation, "Color in the bright parts only: 50 is the game's.");
+        percent("Blowout", s.hdr_blowout, "The brightest colors fade to white near the peak, like overexposed film: 0 is off.");
+        if (ImGui::Button("Reset color grading")) {
+            Store(s.hdr_exposure, 1.0f, true);
+            Store(s.hdr_contrast, 50.0f, true);
+            Store(s.hdr_grade_highlights, 50.0f, true);
+            Store(s.hdr_shadows, 50.0f, true);
+            Store(s.hdr_saturation, 50.0f, true);
+            Store(s.hdr_highlight_saturation, 50.0f, true);
+            Store(s.hdr_blowout, 0.0f, true);
+        }
+        ImGui::TreePop();
+    }
 
     static const char* debug_views[] = {"Off", "Highlight gain as colors",
                                         "Pixels taken as UI in red"};
@@ -301,12 +341,13 @@ void HdrSection(BbSettings::Values& s) {
         Store(s.hdr_peak_nits, 1000.0f, true);
         Store(s.hdr_strength, 1.0f, true);
         Store(s.hdr_boost, 0.0f, true);
+        Store(s.hdr_ui_nits, 203.0f, true);
         s.hdr_compare = 0;
         s.hdr_debug = 0;
         s.hdr_test_pattern = false;
     }
     ImGui::SameLine();
-    ImGui::TextDisabled("Paper white, peak, strength and boost are saved to bbport.ini.");
+    ImGui::TextDisabled("Sliders are saved to bbport.ini (Compare, debug and pattern are not).");
 }
 
 void Menu() {

@@ -126,6 +126,14 @@ Analyse hors jeu des shaders du dump 1.09 (outils dans `docs/hdr-tools/`) :
 
 ### Passe HDR générique (étape 3c, codée le 16/10)
 
+**Réglages façon RenoDX (build hdr-29).** Menu en jeu, en direct, enregistrés dans `bbport.ini` : **HUD
+brightness** (`hdr_ui_nits`, les pixels pris pour l'interface, seulement là où le canal HDR est actif), **SDR
+decoding** (`hdr_gamma=2.2|srgb`, l'équivalent de « Gamma Correction » ; `BB_HDR_GAMMA22` prioritaire), et
+**Color grading** de la scène (`hdr_exposure` 0–2, `hdr_contrast`, `hdr_highlights`, `hdr_shadows`,
+`hdr_saturation`, `hdr_highlight_saturation` 0–100 neutres à 50, `hdr_blowout` 0–100). Différence avec RenoDX :
+ici l'étalonnage agit sur l'image HDR reconstruite (après les gains du canal, avant l'épaule finale), pas sur la
+scène linéaire avant la courbe du jeu. Formules : `post_process.frag`, `grade_scene`.
+
 **Outils de test en jeu (build hdr-28).** Dans la section HDR du menu : état (« active here » / « not in this
 area », Neutwo ou PsychoV30, composite en cours), **Compare** (HDR / SDR du jeu / écran partagé SDR à gauche, HDR à
 droite, avec étiquettes) et la touche **F9** qui fait défiler ces trois modes même menu fermé, préréglages

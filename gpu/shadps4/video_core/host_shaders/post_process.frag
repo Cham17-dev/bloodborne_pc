@@ -25,7 +25,44 @@ layout (push_constant) uniform settings {
     float hdr_strength;    // bbport: exponent of the channel's gains (1 = as computed)
     float hdr_boost;       // bbport: boost of the scene's SDR highlights (0 .. 1: white to peak)
     uint hdr_compare;      // bbport: 0 HDR, 1 the game's SDR, 2 split (SDR left, HDR right)
+    float hdr_ui_nits;     // bbport: nits of the HUD's white (pixels taken as UI)
+    // bbport: the scene's grading, live (in-game menu, like RenoDX's): exposure (1 neutral),
+    // contrast, highlights, shadows, saturation, highlight saturation (-1 .. 1, 0 neutral),
+    // blowout (0 .. 1).
+    float hdr_exposure;
+    float hdr_contrast;
+    float hdr_highlights;
+    float hdr_shadows;
+    float hdr_saturation;
+    float hdr_highlight_saturation;
+    float hdr_blowout;
 } pp;
+
+const vec3 LUMA709 = vec3(0.2126390059, 0.7151686788, 0.0721923154);
+
+// The scene's grading (linear BT.709, 1 = paper white), around mid grey 0.18: exposure, then
+// contrast (a power around mid grey, 0.5 .. 2), highlights (above mid grey) and shadows (below,
+// raised when positive), all on luminance with the color scaled; then saturation, more or less in
+// the highlights, and blowout (the brightest colors desaturated toward white near the peak).
+vec3 grade_scene(vec3 v, float peak) {
+    const float grey = 0.18;
+    v *= pp.hdr_exposure;
+    float l = dot(v, LUMA709);
+    if (l > 1e-6) {
+        float n = grey * pow(l / grey, exp2(pp.hdr_contrast));
+        if (n > grey) {
+            n *= pow(n / grey, 0.4 * pp.hdr_highlights);
+        } else {
+            n *= min(pow(n / grey, -0.25 * pp.hdr_shadows), 4.0);
+        }
+        v *= n / l;
+        l = n;
+    }
+    float sat = (1.0 + pp.hdr_saturation) *
+                mix(1.0, 1.0 + pp.hdr_highlight_saturation, smoothstep(grey, 1.5, l));
+    v = max(l + (v - l) * sat, 0.0);
+    return mix(v, vec3(l), pp.hdr_blowout * smoothstep(0.25 * peak, peak, l));
+}
 
 const float cutoff = 0.0031308, a = 1.055, b = 0.055, d = 12.92;
 vec3 gamma(vec3 rgb) {
@@ -155,7 +192,7 @@ void main() {
             float l_sdr = dot(lin, luma709);
             float y = clamp((l_sdr - 0.45) / 0.55, 0.0, 1.0);
             float boost = 1.0 + scene * clamp(pp.hdr_boost, 0.0, 1.0) * (peak - 1.0) * y * y * y;
-            vec3 v = max(lin * gains * boost, 0.0);
+            vec3 v = grade_scene(max(lin * gains * boost, 0.0), peak);
             float l = dot(v, luma709);
             float k = 0.6 * peak;
             if (l > k) {
@@ -163,6 +200,9 @@ void main() {
                 v *= (k + over * inversesqrt(1.0 + (over / room) * (over / room))) / l;
             }
             nits = min(max(bt709_to_bt2020(v), 0.0) * pp.hdr_paper_white, vec3(pp.hdr_peak_nits));
+            // The HUD (pixels taken as UI): the game's SDR at its own brightness.
+            vec3 ui = sdr_to_nits(signal, vec3(1.0)) * (pp.hdr_ui_nits / pp.hdr_paper_white);
+            nits = mix(ui, nits, scene);
             float gain = dot(v, luma709) / max(l_sdr, 1e-4);
             if (pp.hdr_debug == 1u) {
                 // Gain heat map: grey = 1 (SDR), blue to red = up to the peak.

@@ -81,6 +81,18 @@ struct Values {
     std::atomic<float> hdr_peak_nits{1000.0f};
     std::atomic<float> hdr_strength{1.0f};
     std::atomic<float> hdr_boost{0.0f};
+    // HDR, like RenoDX's settings (in-game menu, live, saved): HUD brightness in nits, the SDR
+    // decoding (2.2 power or sRGB), and the scene's color grading (sliders 0..100, 50 neutral;
+    // exposure 0..2, 1 neutral; blowout 0 none).
+    std::atomic<float> hdr_ui_nits{203.0f};
+    std::atomic<bool> hdr_gamma22{true};
+    std::atomic<float> hdr_exposure{1.0f};
+    std::atomic<float> hdr_contrast{50.0f};
+    std::atomic<float> hdr_grade_highlights{50.0f};
+    std::atomic<float> hdr_shadows{50.0f};
+    std::atomic<float> hdr_saturation{50.0f};
+    std::atomic<float> hdr_highlight_saturation{50.0f};
+    std::atomic<float> hdr_blowout{0.0f};
     /// Set by the presenter: the frame is sent in HDR10 (the menu shows the HDR section).
     std::atomic<bool> hdr_output{false};
     /// Set by the presenter: the all-areas HDR highlights are on (strength and boost apply).

@@ -64,7 +64,8 @@ public:
         return u32(nits < 80.0f ? 80.0f : nits > 500.0f ? 500.0f : nits);
     }
     // Decode the SDR frame with a pure 2.2 power (as SDR displays show it) instead of sRGB.
-    bool IsHdrGamma22() { static const auto value = Flag("BB_HDR_GAMMA22", true); return value; }
+    // bbport.ini hdr_gamma (2.2 or srgb) or BB_HDR_GAMMA22; the in-game menu changes it live.
+    bool IsHdrGamma22() { return BbSettings::Get().hdr_gamma22.load(); }
     // Shows an HDR10 test pattern instead of the game (HDR output only).
     bool IsHdrTestPattern() { static const auto value = Flag("BB_HDR_TEST_PATTERN", false); return value; }
     // Replaces the game's tonemap shader with bbport's (BB_HDR_TONEMAP=1; =2 tints the left half

@@ -470,6 +470,16 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         pp_settings.hdr_strength = std::clamp(BbSettings::Get().hdr_strength.load(), 0.0f, 3.0f);
         pp_settings.hdr_boost = std::clamp(BbSettings::Get().hdr_boost.load(), 0.0f, 1.0f);
         pp_settings.hdr_compare = u32(std::clamp(BbSettings::Get().hdr_compare.load(), 0, 2));
+        const auto& bb = BbSettings::Get();
+        const auto centred = [](float slider) { return std::clamp(slider, 0.0f, 100.0f) / 50.0f - 1.0f; };
+        pp_settings.hdr_ui_nits = std::clamp(bb.hdr_ui_nits.load(), 48.0f, 500.0f);
+        pp_settings.hdr_exposure = std::clamp(bb.hdr_exposure.load(), 0.0f, 2.0f);
+        pp_settings.hdr_contrast = centred(bb.hdr_contrast);
+        pp_settings.hdr_highlights = centred(bb.hdr_grade_highlights);
+        pp_settings.hdr_shadows = centred(bb.hdr_shadows);
+        pp_settings.hdr_saturation = centred(bb.hdr_saturation);
+        pp_settings.hdr_highlight_saturation = centred(bb.hdr_highlight_saturation);
+        pp_settings.hdr_blowout = std::clamp(bb.hdr_blowout.load(), 0.0f, 100.0f) / 100.0f;
     }
     // The in-game menu shows its HDR section when the frame is sent in HDR10.
     BbSettings::Get().hdr_output = bool(frame->is_hdr);

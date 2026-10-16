@@ -31,6 +31,16 @@ public:
         float hdr_boost = 0.0f;
         // bbport HDR comparison (in-game menu, F9): 0 HDR, 1 the game's SDR, 2 split (SDR left).
         u32 hdr_compare = 0;
+        // bbport HDR, live: HUD nits, and the scene's grading (exposure; contrast, highlights,
+        // shadows, saturation, highlight saturation in -1..1, 0 neutral; blowout 0..1).
+        float hdr_ui_nits = 203.0f;
+        float hdr_exposure = 1.0f;
+        float hdr_contrast = 0.0f;
+        float hdr_highlights = 0.0f;
+        float hdr_shadows = 0.0f;
+        float hdr_saturation = 0.0f;
+        float hdr_highlight_saturation = 0.0f;
+        float hdr_blowout = 0.0f;
     };
 
     void Create(vk::Device device, vk::Format surface_format);
