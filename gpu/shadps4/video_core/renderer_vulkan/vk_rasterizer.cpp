@@ -1225,6 +1225,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         });
         HdrChannel::Get().Published(slot.index);
     }
+    if (const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)]) {
+        HdrChannel::NoteDraw(ps->pgm_hash);
+    }
     if (FrameCapture::Active()) {
         const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
         FrameCapture::Draw(vs_info.pgm_hash, ps ? ps->pgm_hash : 0, num_indices, num_instances);

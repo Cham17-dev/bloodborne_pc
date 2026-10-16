@@ -10,6 +10,7 @@
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
 #include "video_core/host_shaders/bb_tonemap_hdr_frag.h"
+#include "video_core/renderer_vulkan/bb_tonemap_variants.h"
 #include "video_core/renderer_vulkan/vk_hdr_channel.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -54,6 +55,37 @@ float HdrChannel::Knee() {
 u32 HdrChannel::Debug() {
     static const u32 debug = u32(EnvFloat("BB_HDR_DEBUG", 0.0f, 0.0f, 2.0f));
     return debug;
+}
+
+void HdrChannel::NoteDraw(u64 ps_hash) {
+    if (ps_hash == 0 || ps_hash > 0xffffffffULL) {
+        return;
+    }
+    const auto it = std::lower_bound(
+        TonemapVariants.begin(), TonemapVariants.end(), u32(ps_hash),
+        [](const TonemapVariant& v, u32 h) { return v.hash < h; });
+    if (it == TonemapVariants.end() || it->hash != u32(ps_hash)) {
+        return;
+    }
+    // GPU thread only: plain flags are enough.
+    static std::array<bool, TonemapVariants.size()> seen{};
+    static u32 count = 0;
+    bool& flag = seen[size_t(it - TonemapVariants.begin())];
+    if (flag) {
+        return;
+    }
+    flag = true;
+    ++count;
+    static constexpr const char* curves[] = {"exp curve (words 832-833)",
+                                             "other curve (words 833-834)", "no curve"};
+    const bool replaced = GameShaderReplaced(ps_hash);
+    LOG_INFO(Render_Vulkan,
+             "HDR tonemap variant {:08x} in use ({} so far): {}, {}{}, {} textures, exp {} log {}; "
+             "{}",
+             it->hash, count, curves[it->curve < 3 ? it->curve : 2],
+             it->gamma ? "gamma 2.2" : "no gamma", it->grain ? ", grain" : "", it->textures,
+             it->exps, it->logs,
+             replaced ? "replaced by bbport" : "NOT replaced: no HDR highlights here");
 }
 
 vk::ShaderModule HdrChannel::FragmentModule(const Instance& instance) {

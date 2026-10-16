@@ -10,6 +10,7 @@
 | 2 | Identifier le shader de tonemap du jeu | **Fait** — voir « Tonemap de Bloodborne » ci-dessous |
 | 3a | Remplacer le shader de tonemap (`hdr/bb_tonemap.frag`, `GameShaderCode()`, option *HDR tonemap (test)*, `BB_HDR_TONEMAP=0/1/2`) | **Validé** (15/10) : mode 2 teinte la partie gauche (environ un quart de l'écran : la cible fait plus de 1920 px de large en sortie 4K, à prendre en compte), mode 1 donne une image identique au jeu. Le cache de pipelines est contourné (remplacement aussi au chargement depuis le cache). |
 | 3b | Canal HDR : dessin fantôme du tonemap dans une image RGBA16F (gain HDR par pixel) + application du gain dans le post-process final là où l'image est encore la scène | **Fonctionne** (15/10, build hdr-15) : fenêtre de la clinique jusqu'à 916 nits, pas de plantage, interface normale. **En cours** : détection de l'interface (barreaux de fenêtre encore pris pour l'interface à cause de l'AA → correctif 3×3, build hdr-16, à tester) |
+| 3c | Couvrir toutes les variantes du composite final (300 dans `eboot.bin`, voir « Variantes du tonemap ») | **Relevé fait** (16/10). Build hdr-17 : journal des variantes utilisées en jeu. Remplacement des autres variantes : selon ce que le journal montre |
 | 4 | Upscalers (FSR/DLSS en mode mis à l'échelle travaillent sur l'image déjà tonemappée) | À faire |
 
 Options (launcher → Fenêtre, ou variables d'environnement) :
@@ -29,13 +30,18 @@ Options (launcher → Fenêtre, ou variables d'environnement) :
 Le journal (`last_run.log`) contient `HDR output: on, HDR10 swapchain` quand la sortie HDR est active,
 ou `HDR output: off, the display offers no HDR10 format` quand l'écran ne propose pas le HDR10.
 
-## Reprendre le projet (point au 15/10, 23 h)
+## Reprendre le projet (point au 16/10, 9 h)
 
 Où on en est : le HDR natif marche (étape 3b). La fenêtre de la clinique monte à 916 nits au lieu de 203 en SDR.
 Il reste à affiner quels pixels sont « la scène » (amplifiés) et lesquels sont « l'interface » (laissés en SDR).
+Nouveau (16/10) : le composite final existe en 300 variantes (voir « Variantes du tonemap ») ; seule
+`5c02eaf8` est remplacée. Le build hdr-17 écrit dans `last_run.log` chaque variante que le jeu utilise.
 
-**Prochain test (build `bbport-windows-hdr-16`, commit `b5c6727`, comparaison sur 3×3 texels)** — devant la
-fenêtre lumineuse de la clinique (là où on se réveille), puis devant une lanterne ou un feu :
+Jeu : `E:\Bloodborne\Game\CUSA03173` (dump 1.09). bbport : `E:\Bloodborne\hdr`.
+
+**Prochain test (build `bbport-windows-hdr-17` ; le canal HDR est celui de hdr-16, comparaison sur 3×3
+texels)** — devant la fenêtre lumineuse de la clinique (là où on se réveille), puis devant une lanterne ou un
+feu :
 
 1. Extraire l'artifact par-dessus `E:\Bloodborne\hdr`. Launcher : *Allow HDR output* coché, *HDR tonemap (test)*
    = **bbport HDR**, *HDR peak brightness* = 1000.
@@ -44,6 +50,9 @@ fenêtre lumineuse de la clinique (là où on se réveille), puis devant une lan
 3. *HDR debug view* = **Off** → capture JXR au même endroit (mesure des nits).
 4. Même chose en *HDR tonemap (test)* = **bbport** (sans HDR) pour comparer.
 5. Envoyer les `.jxr` (dossier `Vidéos\Captures`).
+6. Ensuite jouer normalement dans plusieurs zones (rêve du chasseur, Yharnam, Cathédrale, Forêt interdite,
+   Byrgenwerth, cauchemars, donjons des calices si possible), quitter, et envoyer les lignes
+   `HDR tonemap variant` de `last_run.log`. Une ligne « NOT replaced » signale une zone restée en SDR.
 
 Analyse des captures : `docs/hdr-tools/jxr_nits.py` (mode d'emploi en tête du fichier : compiler jxrlib, décoder
 en `-c 25`, surtout pas `-c 28` qui donne une image zoomée fausse).
@@ -72,6 +81,31 @@ Passe `#…` à 2 dessins, cible `R8G8B8A8Unorm 1920x1080` (la cible de l'interf
   `0x10508e0000` (RGBA8). Rôle exact à confirmer (quad de 4 indices).
 - Après : copie `f7229091` vers `0x10508e0000`, AA du jeu `da1faca9` vers la cible UI, copie `57f3b8c2`, puis
   l'interface ; au début de l'image suivante, copie de la cible UI vers le tampon d'affichage (RGBA8 sRGB).
+
+## Variantes du tonemap (relevé statique du 16/10)
+
+Analyse hors jeu des shaders du dump 1.09 (outils dans `docs/hdr-tools/`) :
+
+- `dvdroot_ps4/shader/*.shaderbnd.dcx` (DCX zlib + BND4, noms en clair, `bnd_extract.py`) : effets nommés.
+  `gxposteffect` contient les briques `ToneMap_*` (Exp, Filmic, Reinhard, Tabled, TabledLUT, Divide, Gamma,
+  None…) et identifie des hashes mesurés en jeu : `ed4c7668` = **ColorGrading** (le 2e dessin de la passe :
+  LUT d'étalonnage), `da1faca9` = **DLAA** (AA du jeu), `57f3b8c2` = EmissiveToGlowPS, `f7229091` =
+  PointSampleColor1, `200820a1` = LutCopy2DTo3DCs. `gxflvershader` (14 571 shaders) = matériaux des modèles.
+- Le tonemap `5c02eaf8`, son vs `1ea5a07e` et la copie d'affichage `38d65b32` sont **dans `eboot.bin`**
+  (5 469 shaders embarqués ; hash = `shader_hash` du pied `OrbShdr`, celui de shadPS4).
+- `bb_shader_scan.py` trouve le composite final par ses constantes (mots 616 et 840–851) : **300 variantes**,
+  générées dans `gpu/shadps4/video_core/renderer_vulkan/bb_tonemap_variants.h` :
+  - 40 « courbe exp » (k, c aux mots 832–833, la courbe de `5c02eaf8`) ;
+  - 160 « autre courbe » (réglages aux mots 833–834 ; 0, 1 ou 3 exp/log de plus : sans doute Reinhard /
+    Divide / Filmic, à confirmer en désassemblant une variante utilisée) ;
+  - 100 sans courbe (écrêtage).
+  Le reste varie par options : bloom (2 ou 3 textures, jusqu'à 7), gamma 2,2 en sortie (mot 808) ou non, grain.
+- Les dumps du 15/10 (clinique, rues, rêve du chasseur) n'ont vu que `5c02eaf8`. Build hdr-17 :
+  `HdrChannel::NoteDraw` écrit `HDR tonemap variant <hash> in use … replaced by bbport / NOT replaced` à la
+  première utilisation de chaque variante.
+- Suite selon le journal : pour une variante « courbe exp », même remplacement que `5c02eaf8` (même
+  interface, à vérifier par variante) ; pour une « autre courbe », désassembler la variante et adapter
+  `bb_tonemap_hdr.frag`.
 
 ## Plan de l'étape 3b (rédigé le 15/10 au soir)
 

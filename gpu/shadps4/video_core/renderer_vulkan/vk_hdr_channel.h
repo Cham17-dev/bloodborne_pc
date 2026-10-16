@@ -36,6 +36,10 @@ public:
     /// BB_HDR_DEBUG: 0 off, 1 the gain as a heat map, 2 the pixels taken as UI in red.
     static u32 Debug();
 
+    /// GPU thread, every draw: logs once per shader the variants of the game's final composite
+    /// (bb_tonemap_variants.h) that the game uses, with their curve and whether bbport replaces it.
+    static void NoteDraw(u64 ps_hash);
+
     /// The HDR tonemap fragment shader, with its specialization constants set (peak, knee).
     vk::ShaderModule FragmentModule(const Instance& instance);
 
