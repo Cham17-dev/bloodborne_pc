@@ -44,8 +44,12 @@ public:
         return m_lockedOn.load(std::memory_order_relaxed);
     }
 
-    /// Mouse sampler thread: applies relative motion to the camera.
+    /// Mouse sampler thread: gathers relative motion for the next camera update.
     void OnMouseMotion(float xrel, float yrel);
+    /// The game's thread, from the camera hook: turns `camera` by the gathered motion.
+    void Apply(uintptr_t camera);
+    /// Turns `camera` by mouse counts (the game's thread).
+    void Turn(uintptr_t camera, float xrel, float yrel);
 
 private:
     BloodborneCam() = default;
@@ -63,6 +67,8 @@ private:
     std::atomic<float> m_scale_x{1.0f}, m_scale_y{1.0f};
     std::atomic<bool> m_sync{true};
     std::atomic<bool> m_lockedOn{false};
+    std::atomic<float> m_pendingX{0.0f}, m_pendingY{0.0f}; ///< mouse counts since the last update
+    std::atomic<int64_t> m_lastApplyMs{0};
     bool m_addressesResolved = false;
     bool m_addressSearchFailed = false;
 
