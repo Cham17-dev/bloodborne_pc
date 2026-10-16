@@ -198,7 +198,7 @@ INI_FLAGS = {'sharpen', 'object_motion', 'show_fps', 'mute_unfocused', *(k for k
 INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': '0.50',
                 'object_motion': '1', 'show_fps': '1', 'output_res': '1920x1080', 'model_lod': '0',
                 'live_resolution': 'auto', 'hud_position': '100', 'fov': '43', 'mute_unfocused': '0',
-                'button_prompts': 'auto',
+                'button_prompts': 'auto', 'dualsense_haptics': '100',
                 **{key: '1' if on else '0' for key, _t, on in EFFECTS + EXTRAS + CHEATS + TWEAKS}}
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'), 'user_dir': '', 'dlc_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
@@ -240,6 +240,9 @@ PROMPT_MODES = [('auto', ('Follow the device in use', 'По используем
                 ('playstation', ('PlayStation', 'PlayStation')),
                 ('keyboard', ('Keyboard and mouse', 'Клавиатура и мышь')),
                 ('xbox', ('Xbox', 'Xbox')), ('switch', ('Nintendo Switch', 'Nintendo Switch'))]
+# DualSense haptics strength (src/runtime_haptics.c), percent.
+HAPTICS = [('0', ('Off (rumble)', 'Выключены (вибрация)')), ('50', ('Light', 'Слабые')),
+           ('100', ('Normal', 'Обычные')), ('150', ('Strong', 'Сильные'))]
 HUD_POSITIONS = [('100', ('Screen edges', 'У краёв экрана')), ('75', ('75%',)), ('50', ('Halfway', 'Посередине')),
                  ('25', ('25%',)), ('0', ('Centred (16:9)', 'По центру (16:9)'))]
 LIVE = [('auto', ('Auto (by graphics card)', 'Авто (по видеокарте)')), ('0', ('Off (faster)', 'Выключена (быстрее)')),
@@ -1489,6 +1492,12 @@ class Launcher:
                    "the controller's (PlayStation, Xbox or Switch) while you use it.",
                    'Значки кнопок в игре: ваши клавиши и мышь, пока вы играете ими, и кнопки '
                    'геймпада (PlayStation, Xbox или Switch), пока вы используете его.'))
+        self.row(f, _('DualSense haptics', 'Тактильная отдача DualSense'),
+                 self.choice(f, 'dualsense_haptics', 'ini', HAPTICS),
+                 _("A DualSense on a USB cable feels the game's sounds, as PS5 games do: steps, rolls, "
+                   'hits and landings. Off, or over Bluetooth, it rumbles like other controllers.',
+                   'DualSense, подключённый кабелем USB, передаёт звуки игры, как в играх PS5: шаги, '
+                   'перекаты, удары и приземления. Если выключено или по Bluetooth — обычная вибрация.'))
         preset = ttk.Frame(f)
         ttk.Button(preset, text=_('Use the Dark Souls III layout', 'Раскладка Dark Souls III'),
                    command=self.apply_layout_preset).pack(side='left')

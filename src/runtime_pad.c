@@ -881,7 +881,13 @@ static ABI int32_t pad_vibration(int32_t handle, const uint8_t *param) {
     if (!param) return ERR_INVALID_ARG;
     pthread_mutex_lock(&lock);
     SDL_Gamepad *g=current_gamepad();
-    if (g) SDL_RumbleGamepad(g,(uint16_t)(param[0]*257),(uint16_t)(param[1]*257),1000);
+    /* A DualSense with haptics on gets the vibration through them (runtime_haptics.c): SDL's
+     * rumble would switch its audio haptics off. */
+    if (runtime_haptics_rumble(g && SDL_GetGamepadType(g)==SDL_GAMEPAD_TYPE_PS5,param[0])) {
+        SDL_RumbleGamepad(g,0,0,0);
+    } else if (g) {
+        SDL_RumbleGamepad(g,(uint16_t)(param[0]*257),(uint16_t)(param[1]*257),1000);
+    }
     pthread_mutex_unlock(&lock);
     return 0;
 }

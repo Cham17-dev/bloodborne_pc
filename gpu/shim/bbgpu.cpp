@@ -347,6 +347,10 @@ extern "C" int bbgpu_overlay_captures_input(void) {
     return BbOverlay::CapturesInput() ? 1 : 0;
 }
 
+extern "C" int bbgpu_haptics_strength(void) {
+    return BbSettings::Get().dualsense_haptics.load(std::memory_order_relaxed);
+}
+
 extern "C" int bbgpu_audio_muted(void) {
     return g_window && BbSettings::Get().mute_unfocused && !g_window->IsFocused() ? 1 : 0;
 }

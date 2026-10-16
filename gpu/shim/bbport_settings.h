@@ -86,6 +86,8 @@ struct Values {
     std::atomic<bool> mute_unfocused{false};
     /// Keyboard and mouse button prompts: with the device in use (auto), or always one kind.
     std::atomic<int> button_prompts{PromptsAuto};
+    /// DualSense haptics from the game's sound (runtime_haptics.c), percent; 0 plain rumble.
+    std::atomic<int> dualsense_haptics{100};
     // FSR 4 checks (menu): the provider's auto exposure, the jitter sign it is given.
     std::atomic<bool> fsr4_auto_exposure{true};
     std::atomic<bool> fsr4_invert_jitter{false};
