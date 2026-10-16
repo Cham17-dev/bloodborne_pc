@@ -238,7 +238,8 @@ def fov_options(current):
 # The game's button icons (gpu/shim/bbport_prompts.cpp): with the device in use, or always one kind.
 PROMPT_MODES = [('auto', ('Follow the device in use', 'По используемому устройству')),
                 ('playstation', ('PlayStation', 'PlayStation')),
-                ('keyboard', ('Keyboard and mouse', 'Клавиатура и мышь'))]
+                ('keyboard', ('Keyboard and mouse', 'Клавиатура и мышь')),
+                ('xbox', ('Xbox', 'Xbox')), ('switch', ('Nintendo Switch', 'Nintendo Switch'))]
 HUD_POSITIONS = [('100', ('Screen edges', 'У краёв экрана')), ('75', ('75%',)), ('50', ('Halfway', 'Посередине')),
                  ('25', ('25%',)), ('0', ('Centred (16:9)', 'По центру (16:9)'))]
 LIVE = [('auto', ('Auto (by graphics card)', 'Авто (по видеокарте)')), ('0', ('Off (faster)', 'Выключена (быстрее)')),
@@ -1485,9 +1486,9 @@ class Launcher:
 
         self.row(f, _('Button prompts', 'Подсказки кнопок'), self.choice(f, 'button_prompts', 'ini', PROMPT_MODES),
                  _("The game's button icons: your keyboard and mouse keys while you play with them, "
-                   "the controller's while you use it.",
+                   "the controller's (PlayStation, Xbox or Switch) while you use it.",
                    'Значки кнопок в игре: ваши клавиши и мышь, пока вы играете ими, и кнопки '
-                   'геймпада, пока вы используете его.'))
+                   'геймпада (PlayStation, Xbox или Switch), пока вы используете его.'))
         preset = ttk.Frame(f)
         ttk.Button(preset, text=_('Use the Dark Souls III layout', 'Раскладка Dark Souls III'),
                    command=self.apply_layout_preset).pack(side='left')

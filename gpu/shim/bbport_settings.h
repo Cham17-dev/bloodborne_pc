@@ -62,7 +62,9 @@ inline bool Ultrawide(int output) {
 }
 
 /// Button prompts (bbport_prompts.cpp): the game's icons switch with the device in use, or stay.
-enum Prompts : int { PromptsAuto = 0, PromptsPlayStation = 1, PromptsKeyboard = 2, PromptsCount };
+enum Prompts : int {
+    PromptsAuto = 0, PromptsPlayStation = 1, PromptsKeyboard = 2, PromptsXbox = 3, PromptsSwitch = 4, PromptsCount
+};
 
 /// Field of view (fov.py): the game's camera has 43 degrees.
 inline constexpr int FovDefault = 43, FovMin = 30, FovMax = 90;

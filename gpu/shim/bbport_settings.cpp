@@ -56,7 +56,10 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.mute_unfocused = i != 0;
     } else if (key == "button_prompts") {
         v.button_prompts = value == "playstation" ? PromptsPlayStation
-                         : value == "keyboard" ? PromptsKeyboard : PromptsAuto;
+                         : value == "keyboard"    ? PromptsKeyboard
+                         : value == "xbox"        ? PromptsXbox
+                         : value == "switch"      ? PromptsSwitch
+                                                  : PromptsAuto;
     } else if (key == "fsr4_auto_exposure") {
         v.fsr4_auto_exposure = i != 0;
     } else if (key == "fsr4_invert_jitter") {
@@ -216,7 +219,7 @@ void Save() {
     std::fprintf(file, "model_lod=%d\noutput_res=%dx%d\n", v.model_lod.load(),
                  OutputWidths[v.output_res], OutputHeights[v.output_res]);
     std::fprintf(file, "mute_unfocused=%d\n", int(v.mute_unfocused.load()));
-    static constexpr const char* prompts[PromptsCount] = {"auto", "playstation", "keyboard"};
+    static constexpr const char* prompts[PromptsCount] = {"auto", "playstation", "keyboard", "xbox", "switch"};
     std::fprintf(file, "button_prompts=%s\n", prompts[std::clamp(v.button_prompts.load(), 0, PromptsCount - 1)]);
     // Read by run.py at start (hud_layout.py).
     std::fprintf(file, "hud_position=%d\n", v.hud_position.load());

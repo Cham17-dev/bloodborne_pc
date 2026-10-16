@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// bbport: keyboard and mouse key-guide icons (bbport_prompt_icons.h).
+// bbport: keyboard and mouse, Xbox and Switch key-guide icons (bbport_prompt_icons.h).
 
 #include "bbport_prompt_icons.h"
 
@@ -186,6 +186,8 @@ void Mouse(Canvas& c, const std::string& input, float top) {
         Text(c, input == "sidebuttonback" ? "4" : "5", mid, (split + y1) / 2 + 1, 8, 9, 6, kGlyph);
     }
 }
+
+Pixels Finish(const Canvas& c);
 
 void Plate(Canvas& c) {
     FillRoundRect(c, 1, 1, 31, 31, 7, kRim);
@@ -419,6 +421,85 @@ Pixels Draw(const Inputs& inputs) {
         if (mouse && label.empty()) Mouse(c, "mouse", 4.5f);
         else Text(c, label, 16, 16, 26, 14, 6, kGlyph);
     }
+    return Finish(c);
+}
+
+namespace {
+
+// The face buttons' letters: Xbox's own colours, a little darker as the game's PlayStation
+// symbols are; the Switch's are all one colour.
+constexpr Color kXboxA{96, 168, 58, 255}, kXboxB{206, 54, 48, 255}, kXboxX{48, 112, 208, 255},
+                kXboxY{222, 176, 38, 255};
+
+void Round(Canvas& c) {
+    FillRoundRect(c, 1, 1, 31, 31, 15, kRim);
+    FillRoundRect(c, 2, 2, 30, 30, 14, kPlate);
+}
+
+/// A face button: the letter on the round plate, as the game's Cross and Circle are drawn.
+void Face(Canvas& c, const char* letter, Color color) {
+    Round(c);
+    Text(c, letter, 16, 16, 20, 19, 12, color);
+}
+
+/// A shoulder button or trigger: its name on the plate, as the game's L1 and R2.
+void Shoulder(Canvas& c, const char* name) {
+    FillRoundRect(c, 1, 5, 31, 28, 5, kRim);
+    FillRoundRect(c, 2, 6, 30, 27, 4, kPlate);
+    Text(c, name, 16, 16.5f, 26, 19, 9, kGlyph);
+}
+
+} // namespace
+
+bool DrawPad(Icon icon, Pad pad, Pixels& out) {
+    const bool xbox = pad == PadXbox;
+    Canvas c;
+    switch (icon) {
+    case Cancel: Face(c, xbox ? "A" : "B", xbox ? kXboxA : kGlyph); break;     // Cross
+    case OK: Face(c, xbox ? "B" : "A", xbox ? kXboxB : kGlyph); break;         // Circle
+    case R_L: Face(c, xbox ? "X" : "Y", xbox ? kXboxX : kGlyph); break;        // Square
+    case R_U: Face(c, xbox ? "Y" : "X", xbox ? kXboxY : kGlyph); break;        // Triangle
+    case L1: Shoulder(c, xbox ? "LB" : "L"); break;
+    case R1: Shoulder(c, xbox ? "RB" : "R"); break;
+    case L2: Shoulder(c, xbox ? "LT" : "ZL"); break;
+    case R2: Shoulder(c, xbox ? "RT" : "ZR"); break;
+    case L3: case R3:
+        // A stick pressed: the game's own stick icon is the letter alone.
+        Round(c);
+        Text(c, icon == L3 ? "LS" : "RS", 16, 16, 22, 15, 9, kGlyph);
+        break;
+    case Start:
+        Round(c);
+        if (xbox) {
+            // Menu: three lines.
+            for (const float y : {11.0f, 16.0f, 21.0f}) Line(c, 10.5f, y, 21.5f, y, 2.2f, kGlyph);
+        } else {
+            Line(c, 9.5f, 16, 22.5f, 16, 3, kGlyph);  // +
+            Line(c, 16, 9.5f, 16, 22.5f, 3, kGlyph);
+        }
+        break;
+    case TP_L:
+        // The touchpad's controller binding is Back: Xbox's View, the Switch's minus.
+        Round(c);
+        if (xbox) {
+            FillRoundRect(c, 12, 9, 23, 18, 1.5f, kGlyph);
+            FillRoundRect(c, 13.6f, 10.6f, 21.4f, 16.4f, 0.5f, kPlate);
+            FillRoundRect(c, 9, 14, 20, 23, 1.5f, kGlyph);
+            FillRoundRect(c, 10.6f, 15.6f, 18.4f, 21.4f, 0.5f, kPlate);
+        } else {
+            Line(c, 9.5f, 16, 22.5f, 16, 3, kGlyph);
+        }
+        break;
+    default:
+        return false;  // the d-pad, the sticks, the touchpad's right half: the game's own
+    }
+    out = Finish(c);
+    return true;
+}
+
+namespace {
+
+Pixels Finish(const Canvas& c) {
     Pixels out{};
     for (int i = 0; i < Size * Size; ++i) {
         const float a = c.px[i][3];
@@ -432,6 +513,8 @@ Pixels Draw(const Inputs& inputs) {
     }
     return out;
 }
+
+} // namespace
 
 namespace {
 /// The better of modes 5 and 6 for the 4x4 block at (bx, by) of an RGBA image `width` wide.
@@ -463,9 +546,12 @@ size_t TiledBlockOffset(int bx, int by, int width) {
 }
 
 std::vector<uint8_t> RenderArea(const Inputs& inputs, const Area& area) {
+    return RenderIconArea(Draw(inputs), area);
+}
+
+std::vector<uint8_t> RenderIconArea(const Pixels& icon, const Area& area) {
     // The 32x32 icon scaled to the game's 26x26 sprite (each output pixel the alpha-weighted
     // average of what it covers), centred in an otherwise transparent area.
-    const Pixels icon = Draw(inputs);
     constexpr int kSprite = 26;
     std::vector<uint8_t> rgba(size_t(area.w) * area.h * 4, 0);
     const int ox = (area.w - kSprite) / 2, oy = (area.h - kSprite) / 2;

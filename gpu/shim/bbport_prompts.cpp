@@ -45,16 +45,42 @@ std::vector<Entry> entries;
 std::array<Bytes, BbPromptIcons::Count> keyboard_icons;
 std::array<Bytes, HudCount> keyboard_sprites;
 bool keyboard_ready = false;
+// Xbox and Switch (BbPromptIcons::Pad order); empty for an icon that stays the game's own.
+std::array<std::array<Bytes, BbPromptIcons::Count>, BbPromptIcons::PadCount> pad_icons;
+std::array<std::array<Bytes, HudCount>, BbPromptIcons::PadCount> pad_sprites;
 std::set<uintptr_t> searched;      // HUD atlases already looked at
-std::atomic<int> device{-1};       // -1 not seen yet, 0 controller, 1 keyboard and mouse
+std::atomic<int> device{-1};       // -1 nothing seen yet, else a Device
 std::atomic<bool> dirty{false};    // something to write: a new picture, a device or binding change
-bool shown_keyboard = false;       // Apply's last decision (window thread)
+int shown = PlayStation;           // Apply's last decision (window thread): what guest memory has
 
-bool WantKeyboard() {
+Device Want() {
     switch (BbSettings::Get().button_prompts.load(std::memory_order_relaxed)) {
-    case BbSettings::PromptsPlayStation: return false;
-    case BbSettings::PromptsKeyboard: return true;
-    default: return device.load(std::memory_order_relaxed) != 0; // nothing used yet: keyboard
+    case BbSettings::PromptsPlayStation: return PlayStation;
+    case BbSettings::PromptsKeyboard: return Keyboard;
+    case BbSettings::PromptsXbox: return Xbox;
+    case BbSettings::PromptsSwitch: return Switch;
+    default: {
+        const int used = device.load(std::memory_order_relaxed);
+        return used < 0 ? Keyboard : Device(used); // nothing used yet: keyboard
+    }
+    }
+}
+
+/// The Xbox and Switch pictures: they do not depend on the bindings, drawn once.
+void DrawPads() {
+    for (int pad = 0; pad < BbPromptIcons::PadCount; ++pad) {
+        for (int icon = 0; icon < BbPromptIcons::Count; ++icon) {
+            BbPromptIcons::Pixels pixels;
+            if (!BbPromptIcons::DrawPad(BbPromptIcons::Icon(icon), BbPromptIcons::Pad(pad), pixels)) continue;
+            const auto encoded = BbPromptIcons::Encode(pixels);
+            pad_icons[pad][icon].assign(encoded.begin(), encoded.end());
+        }
+        for (int s = 0; s < HudCount; ++s) {
+            BbPromptIcons::Pixels pixels;
+            if (BbPromptIcons::DrawPad(BbPromptIcons::HudIcon[s], BbPromptIcons::Pad(pad), pixels)) {
+                pad_sprites[pad][s] = BbPromptIcons::RenderIconArea(pixels, BbPromptIcons::HudAreas[s]);
+            }
+        }
     }
 }
 
@@ -127,20 +153,20 @@ void Configure(const char* const* inputs, int count) {
         sprites[s] = BbPromptIcons::RenderArea(lists[BbPromptIcons::HudIcon[s]], BbPromptIcons::HudAreas[s]);
     }
     std::scoped_lock lock{mutex};
+    if (!keyboard_ready) DrawPads();
     keyboard_icons = icons;
     keyboard_sprites = sprites;
     keyboard_ready = true;
     dirty = true;
 }
 
-void OnInput(bool is_keyboard) {
-    const int value = is_keyboard ? 1 : 0;
+void OnInput(Device value) {
     if (device.exchange(value, std::memory_order_relaxed) != value) dirty = true;
 }
 
-void OnControllerConnected() {
+void OnControllerConnected(Device value) {
     int unknown = -1;
-    if (device.compare_exchange_strong(unknown, 0, std::memory_order_relaxed)) dirty = true;
+    if (device.compare_exchange_strong(unknown, value, std::memory_order_relaxed)) dirty = true;
 }
 
 void OnUpload(uintptr_t address, size_t size, uint32_t width, uint32_t height, uint32_t levels,
@@ -190,19 +216,25 @@ void OnUpload(uintptr_t address, size_t size, uint32_t width, uint32_t height, u
 }
 
 void Apply() {
-    const bool want = WantKeyboard();
-    if (!dirty.exchange(false) && want == shown_keyboard) return;
-    shown_keyboard = want;
+    const Device want = Want();
+    if (!dirty.exchange(false) && want == shown) return;
+    shown = want;
 
     std::vector<Entry> snapshot;
-    std::array<Bytes, BbPromptIcons::Count> icons;
+    std::array<Bytes, BbPromptIcons::Count> icons; // empty: the game's own
     std::array<Bytes, HudCount> sprites;
     {
         std::scoped_lock lock{mutex};
-        if (want && !keyboard_ready) return;
+        if (want != PlayStation && !keyboard_ready) return;
         snapshot = entries;
-        icons = keyboard_icons;
-        sprites = keyboard_sprites;
+        if (want == Keyboard) {
+            icons = keyboard_icons;
+            sprites = keyboard_sprites;
+        } else if (want != PlayStation) {
+            const int pad = want == Xbox ? BbPromptIcons::PadXbox : BbPromptIcons::PadSwitch;
+            icons = pad_icons[pad];
+            sprites = pad_sprites[pad];
+        }
     }
     // Written without any lock: a write to a page the texture cache protects faults into it.
     auto* memory = Core::Memory::Instance();
@@ -213,7 +245,8 @@ void Apply() {
             written.emplace_back(e.base, e.sprite, 0); // unmapped, or the game put something else there
             continue;
         }
-        const Bytes& target = !want ? e.original : e.sprite < 0 ? icons[e.icon] : sprites[e.sprite];
+        const Bytes& mine = e.sprite < 0 ? icons[e.icon] : sprites[e.sprite];
+        const Bytes& target = mine.empty() ? e.original : mine;
         const uint64_t target_hash = Hash(target);
         if (target_hash == e.written) continue;
         const auto pieces = Pieces(e.sprite);

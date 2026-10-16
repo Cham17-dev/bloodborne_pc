@@ -1,5 +1,6 @@
 // bbport: SDL3 window for the Vulkan swapchain (X11 or Wayland).
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <array>
@@ -13,6 +14,23 @@
 #include "bloodborne_cam.h"
 
 namespace Frontend {
+
+/// The buttons a controller has, for its prompts: SDL's type, by vendor and product.
+static BbPrompts::Device PadDevice(SDL_JoystickID id) {
+    switch (SDL_GetGamepadTypeForID(id)) {
+    case SDL_GAMEPAD_TYPE_PS3:
+    case SDL_GAMEPAD_TYPE_PS4:
+    case SDL_GAMEPAD_TYPE_PS5:
+        return BbPrompts::PlayStation;
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO:
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+        return BbPrompts::Switch;
+    default:
+        return BbPrompts::Xbox; // Xbox, and the many controllers that copy its buttons
+    }
+}
 
 namespace {
 // MOU-007: each wheel step keeps its direction's bit set for 33 ms (shadPS4's pulse length,
@@ -115,23 +133,28 @@ bool WindowSDL::PollEvents() {
         // real mouse movement, or a controller button or a stick or trigger pushed past half.
         switch (event.type) {
         case SDL_EVENT_KEY_DOWN:
-            if (!event.key.repeat) BbPrompts::OnInput(true);
+            if (!event.key.repeat) BbPrompts::OnInput(BbPrompts::Keyboard);
             break;
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
         case SDL_EVENT_MOUSE_WHEEL:
-            BbPrompts::OnInput(true);
+            BbPrompts::OnInput(BbPrompts::Keyboard);
             break;
         case SDL_EVENT_MOUSE_MOTION:
-            if (std::abs(event.motion.xrel) + std::abs(event.motion.yrel) >= 3.0f) BbPrompts::OnInput(true);
+            if (std::abs(event.motion.xrel) + std::abs(event.motion.yrel) >= 3.0f) {
+                BbPrompts::OnInput(BbPrompts::Keyboard);
+            }
             break;
         case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
-            BbPrompts::OnInput(false);
+            BbPrompts::OnInput(PadDevice(event.gbutton.which));
             break;
         case SDL_EVENT_GAMEPAD_ADDED:
-            BbPrompts::OnControllerConnected(); // the game starts with its prompts
+            // The game starts with the controller's prompts.
+            std::printf("Prompts: controller %s: %s\n", SDL_GetGamepadNameForID(event.gdevice.which),
+                        SDL_GetGamepadStringForType(SDL_GetGamepadTypeForID(event.gdevice.which)));
+            BbPrompts::OnControllerConnected(PadDevice(event.gdevice.which));
             break;
         case SDL_EVENT_GAMEPAD_AXIS_MOTION:
-            if (std::abs(int(event.gaxis.value)) > 16000) BbPrompts::OnInput(false);
+            if (std::abs(int(event.gaxis.value)) > 16000) BbPrompts::OnInput(PadDevice(event.gaxis.which));
             break;
         default:
             break;

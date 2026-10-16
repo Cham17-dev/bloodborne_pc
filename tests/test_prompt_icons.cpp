@@ -112,6 +112,29 @@ int main(int argc, char** argv) {
                 .write(reinterpret_cast<const char*>(encoded.data()), encoded.size());
         }
     }
+    // Xbox and Switch: every button the PlayStation names, the d-pad and the sticks the game's own.
+    for (int pad = 0; pad < PadCount; ++pad) {
+        int drawn_count = 0;
+        for (int icon = 0; icon < Count; ++icon) {
+            Pixels drawn;
+            if (!DrawPad(Icon(icon), Pad(pad), drawn)) continue;
+            ++drawn_count;
+            const auto encoded = Encode(drawn);
+            const double error = Error(drawn, encoded);
+            worst = std::max(worst, error);
+            const std::string name = std::string(pad == PadXbox ? "xbox_" : "switch_") + Names[icon];
+            std::printf("%-20s mse %6.1f\n", name.c_str(), error);
+            if (argc > 1) {
+                std::ofstream(std::string(argv[1]) + "/" + name + ".rgba", std::ios::binary)
+                    .write(reinterpret_cast<const char*>(drawn.data()), drawn.size());
+                std::ofstream(std::string(argv[1]) + "/" + name + ".bc7", std::ios::binary)
+                    .write(reinterpret_cast<const char*>(encoded.data()), encoded.size());
+            }
+        }
+        Pixels unused;
+        assert(drawn_count == 12 && !DrawPad(L_UDLR, Pad(pad), unused) && !DrawPad(LS, Pad(pad), unused));
+    }
+
     // The tiled block order: for a 32-pixel-wide texture it is the icons' own (Encode), and
     // wider textures continue with the next micro tile to the right.
     for (int by = 0; by < 8; ++by) {

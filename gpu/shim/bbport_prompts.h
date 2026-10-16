@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // bbport: button prompts that follow the input device. The game's key-guide icons (KG_*) are
 // found in guest memory as the texture cache uploads them, and their pixels are swapped between
-// the game's PlayStation icons and keyboard and mouse icons drawn from input.ini
-// (bbport_prompt_icons.h) whenever the device in use changes (bbport.ini button_prompts).
+// the game's PlayStation icons, keyboard and mouse icons drawn from input.ini, and Xbox and
+// Switch buttons (bbport_prompt_icons.h) whenever the device in use changes (bbport.ini
+// button_prompts).
 
 #pragma once
 
@@ -15,11 +16,14 @@ namespace BbPrompts {
 /// per BbPromptIcons::Icon ("e", "lshift+leftbutton", "w a s d", "mouse", "" for nothing).
 void Configure(const char* const* inputs, int count);
 
-/// Window thread: an input event from the keyboard or mouse (true) or a controller (false).
-void OnInput(bool keyboard);
-/// Window thread: a controller is connected. Before any input, the prompts are the
-/// controller's then; without one, keyboard and mouse.
-void OnControllerConnected();
+/// What the prompts show: the keyboard and mouse, or a kind of controller.
+enum Device : int { Keyboard, PlayStation, Xbox, Switch };
+
+/// Window thread: an input event from the keyboard or mouse, or a controller of that kind.
+void OnInput(Device device);
+/// Window thread: a controller of that kind is connected. Before any input, the prompts are
+/// the controller's then; without one, keyboard and mouse.
+void OnControllerConnected(Device device);
 
 /// Window thread, every PollEvents: writes the icons that should change (outside every
 /// renderer lock: a write to a tracked page faults into the texture cache).

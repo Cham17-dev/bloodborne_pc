@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// bbport: keyboard and mouse button prompts drawn in the style of the game's own key-guide icons
-// (menu/common.tpf.dcx, KG_*: 32x32 BC7, stored in the PS4's tiled layout). Pure functions, no
-// renderer state: bbport_prompts.cpp swaps them in, tests/test_prompt_icons.cpp renders them.
+// bbport: keyboard and mouse, Xbox and Switch button prompts drawn in the style of the game's own
+// key-guide icons (menu/common.tpf.dcx, KG_*: 32x32 BC7, stored in the PS4's tiled layout). Pure
+// functions, no renderer state: bbport_prompts.cpp swaps them in, tests/test_prompt_icons.cpp
+// renders them.
 
 #pragma once
 
@@ -46,6 +47,13 @@ inline std::array<uint8_t, Bytes> Render(const Inputs& inputs) { return Encode(D
 /// The short label a key gets on its cap ("Space", "Shift", "E"); empty for a mouse input.
 std::string KeyLabel(const std::string& input);
 
+/// Other controllers' buttons in the place of the PlayStation ones, by position: Cross is the
+/// bottom face button (Xbox A, Switch B), Circle the right one (Xbox B, Switch A).
+enum Pad : int { PadXbox, PadSwitch, PadCount };
+/// `icon` as `pad`'s button, in the game's style; false for an icon that stays the game's own
+/// (the d-pad and the sticks, which every controller has alike).
+bool DrawPad(Icon icon, Pad pad, Pixels& out);
+
 /// The HUD atlas (MENU_Common_00091, 1024x512 BC7): its own Circle, Cross and L3, which the
 /// prompts in the world use ("Pick Up Item"), not the KG_* icons. Each is a 26x26 sprite in a
 /// block-aligned area that holds nothing else.
@@ -63,5 +71,7 @@ extern const uint64_t HudPlayStationHash[HudCount];
 size_t TiledBlockOffset(int bx, int by, int width);
 /// The sprite for `inputs` sized to `area` (the icon at 26x26, centred), as BC7 blocks row by row.
 std::vector<uint8_t> RenderArea(const Inputs& inputs, const Area& area);
+/// The same for an icon already drawn (DrawPad).
+std::vector<uint8_t> RenderIconArea(const Pixels& icon, const Area& area);
 
 } // namespace BbPromptIcons

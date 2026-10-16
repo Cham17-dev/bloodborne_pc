@@ -106,13 +106,16 @@ Shift is only a modifier in it, so Shift + click never passes through a dodge (s
 ## Button prompts
 
 ```ini
-button_prompts = auto   # bbport.ini: auto (default) | playstation | keyboard
+button_prompts = auto   # bbport.ini: auto (default) | playstation | xbox | switch | keyboard
 ```
 
 The game's button icons (its key guides in menus, the buttons in messages, and the prompts in the
 world such as "Pick Up Item" or "Open Door") follow the device
 you use: a key, a click, the wheel or moving the mouse shows keyboard and mouse icons, a controller
-button or stick shows the controller's, mid-game. Without any input yet they are the controller's
+button or stick shows the controller's, mid-game: PlayStation for a DualShock or DualSense, Switch
+for a Pro Controller or Joy-Cons, and Xbox for any other controller. The Xbox and Switch icons
+stand for the buttons in the same place (Cross is Xbox A and Switch B, Circle is Xbox B and Switch
+A); the d-pad and stick icons stay the game's own. Without any input yet they are the controller's
 when one is connected. The keyboard icons are drawn from `input.ini` (a binding's first keyboard
 or mouse input, the last input of a combination with its modifier above it, the mouse for the
 stick it drives), so they follow your bindings and change with F8. Set in the launcher's
