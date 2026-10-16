@@ -612,6 +612,12 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
         }
         if (alloc_result == vk::Result::eSuccess) {
             Vulkan::NoteOverBudget("buffer");
+        } else {
+            std::printf("GPU: video memory full: no room for %llu MiB of game memory (only VRAM "
+                        "can hold it on this GPU). A lower output resolution or upscaler preset "
+                        "needs less.\n",
+                        static_cast<unsigned long long>(alloc_info.allocationSize >> 20));
+            std::fflush(stdout);
         }
     }
     device_memory = Vulkan::Check(vk::ResultValue<vk::DeviceMemory>{alloc_result, device_memory});
