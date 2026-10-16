@@ -107,7 +107,8 @@ struct Values {
     std::atomic<bool> hdr_channel_live{false};   ///< this frame has HDR highlights
     std::atomic<unsigned> hdr_variant{0};        ///< last composite with the HDR pass
     std::atomic<int> hdr_mode{0};                ///< BB_HDR_TONEMAP
-    std::atomic<int> hdr_tonemapper{0};          ///< 0 Neutwo, 1 PsychoV30
+    std::atomic<int> hdr_tonemapper{0};          ///< 0 Neutwo, 1 PsychoV30 (live, saved)
+    std::atomic<bool> hdr_per_channel{false};    ///< Neutwo per channel (else luminance)
     // FSR 4 checks (menu): the provider's auto exposure, the jitter sign it is given.
     std::atomic<bool> fsr4_auto_exposure{true};
     std::atomic<bool> fsr4_invert_jitter{false};

@@ -58,6 +58,10 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         if (!value.empty()) v.hdr_strength = Clamp(f, 0.0f, 3.0f);
     } else if (key == "hdr_boost") {
         if (!value.empty()) v.hdr_boost = Clamp(f, 0.0f, 1.0f);
+    } else if (key == "hdr_tonemapper") {
+        if (!value.empty()) v.hdr_tonemapper = std::clamp(i, 0, 1);
+    } else if (key == "hdr_scaling") {
+        v.hdr_per_channel = value == "per_channel";
     } else if (key == "hdr_ui_nits") {
         if (!value.empty()) v.hdr_ui_nits = Clamp(f, 48.0f, 500.0f);
     } else if (key == "hdr_gamma") {
@@ -147,6 +151,9 @@ void Load() {
         if (const char* value = std::getenv(env)) {
             Set(v, key, value);
         }
+    }
+    if (const char* env = std::getenv("BB_HDR_TONEMAPPER")) {
+        v.hdr_tonemapper = std::clamp(std::atoi(env), 0, 1);
     }
     if (const char* env = std::getenv("BB_HDR_GAMMA22")) {
         v.hdr_gamma22 = std::atoi(env) != 0;
@@ -245,9 +252,11 @@ void Save() {
                  v.hdr_paper_white.load(), v.hdr_peak_nits.load(), v.hdr_strength.load(),
                  v.hdr_boost.load());
     std::fprintf(file,
+                 "hdr_tonemapper=%d\nhdr_scaling=%s\n"
                  "hdr_ui_nits=%.0f\nhdr_gamma=%s\nhdr_exposure=%.2f\nhdr_contrast=%.0f\n"
                  "hdr_highlights=%.0f\nhdr_shadows=%.0f\nhdr_saturation=%.0f\n"
                  "hdr_highlight_saturation=%.0f\nhdr_blowout=%.0f\n",
+                 v.hdr_tonemapper.load(), v.hdr_per_channel ? "per_channel" : "luminance",
                  v.hdr_ui_nits.load(), v.hdr_gamma22 ? "2.2" : "srgb", v.hdr_exposure.load(),
                  v.hdr_contrast.load(), v.hdr_grade_highlights.load(), v.hdr_shadows.load(),
                  v.hdr_saturation.load(), v.hdr_highlight_saturation.load(), v.hdr_blowout.load());

@@ -10,10 +10,11 @@
 // constants (vk_hdr_channel.cpp). The math is hdr/bb_composite.glsl (checked against the game's
 // code, see there).
 //
-// Output (RGBA16F), as hdr/bb_tonemap_hdr.frag: r, b, a = HDR gains of red, green and blue (equal
-// with the Neutwo shoulder, per channel with PsychoV30), g = luminance of the game's encoded output
-// (to tell the scene from the UI drawn over it). Additive variants (no curve: HDR output
-// tonemapped by a later pass) and curves without a knee get gains of 1.
+// Output (RGBA16F), as hdr/bb_tonemap_hdr.frag: r, b, a = gains of red, green and blue from the
+// game's color to the untonemapped one (post_process.frag grades and tonemaps it live), g =
+// luminance of the game's encoded output (to tell the scene from the UI drawn over it). Additive
+// variants (no curve: HDR output tonemapped by a later pass) and curves without a knee get
+// gains of 1.
 
 #version 450
 #extension GL_EXT_fragment_shader_barycentric : require
@@ -152,16 +153,17 @@ void main() {
     vec3 sdr_encoded = exp2(encode * log2(clamp(sdr_graded + BB_EPS, 0.0, 1.0)));
     float sdr_luma = dot(max(sdr_graded, 0.0), luma_bgr);
     float hdr_luma = dot(max(hdr_graded, 0.0), luma_bgr);
-    // Neutwo: one gain (>= 1) for the three channels. PsychoV30: a gain per channel (it moves hue
-    // and saturation too, and may darken), from the color matrix's rows (red, green, blue);
-    // where the game's channel is near zero, the luminance gain.
+    // A gain per channel, from the color matrix's rows (red, green, blue): the untonemapped
+    // color over the game's (a saturated light keeps its color above white); where the game's
+    // channel is near zero, the luminance gain. The final pass grades and tonemaps (BB_HDR_PEAK
+    // is 10000 nits here, BB_TONEMAPPER 0: the curve is the game's slope continued).
     float gain = (has_hdr && sdr_luma > 1e-4) ? hdr_luma / sdr_luma : 1.0;
     vec3 gains = vec3(clamp(gain, 1.0, 64.0));
-    if (BB_TONEMAPPER == 1 && has_hdr) {
+    if (has_hdr) {
         vec3 sdr_rows = max(bb_grade(o, sdr_screen), 0.0);
         vec3 hdr_rows = max(bb_grade(o, hdr_screen), 0.0);
         for (int i = 0; i < 3; ++i) {
-            gains[i] = sdr_rows[i] > 0.02 ? hdr_rows[i] / sdr_rows[i] : gain;
+            gains[i] = sdr_rows[i] > 0.02 ? hdr_rows[i] / sdr_rows[i] : gains[i];
         }
         gains = clamp(gains, 0.0, 64.0);
     }

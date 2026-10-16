@@ -232,11 +232,11 @@ std::optional<std::vector<u32>> BuildComposite(const TonemapVariant& v, std::spa
         *why = "the HDR shader's decorations were not found";
         return std::nullopt;
     }
-    // Neutwo: the highlights unbounded here (up to 10000 nits); the final pass shapes them to
-    // the peak live (strength, boost, peak: in-game menu). PsychoV30 is fitted to the peak.
+    // The channel holds the untonemapped image (the game's curve below the knee, its slope
+    // continued above, up to 10000 nits); the final pass grades it and tonemaps it to the peak
+    // live, with Neutwo or PsychoV30 (in-game menu), as RenoDX does.
     const float paper = float(EmulatorSettings.GetHdrPaperWhite());
-    const float target = HdrChannel::Tonemapper() == 1 ? HdrChannel::PeakNits() : 10000.0f;
-    const float peak = std::max(target / paper, HdrChannel::Knee() + 0.05f);
+    const float peak = std::max(10000.0f / paper, HdrChannel::Knee() + 0.05f);
     SetSpirvSpecConstant(spv, 1, std::bit_cast<u32>(peak));
     SetSpirvSpecConstant(spv, 2, std::bit_cast<u32>(HdrChannel::Knee()));
     SetSpirvSpecConstant(spv, 10, v.curve);
@@ -248,7 +248,7 @@ std::optional<std::vector<u32>> BuildComposite(const TonemapVariant& v, std::spa
     SetSpecBool(spv, 16, v.gamma);
     SetSpecBool(spv, 17, v.additive);
     SetSpirvSpecConstant(spv, 18, *buffer_index);
-    SetSpirvSpecConstant(spv, 19, HdrChannel::Tonemapper());
+    SetSpirvSpecConstant(spv, 19, 0u); // untonemapped (the final pass tonemaps)
     SetSpecBool(spv, 20, v.gain);
     SetSpecBool(spv, 21, v.floor);
     SetSpecBool(spv, 22, v.scene_mat);
@@ -284,7 +284,7 @@ void HdrChannel::NoteGameShader(u64 pgm_hash, std::span<const u32> spv) {
         it->second.spv = std::move(*built);
         LOG_INFO(Render_Vulkan, "HDR pass: composite variant {:08x} ready ({}{}, {})",
                  u32(pgm_hash), CurveNames[v->curve < 4 ? v->curve : 3],
-                 v->luminance ? " on luminance" : "", Tonemapper() == 1 ? "PsychoV30" : "Neutwo");
+                 v->luminance ? " on luminance" : "", "untonemapped");
     } else if (!it->second.conflicting && it->second.spv != *built) {
         it->second.conflicting = true;
         LOG_WARNING(Render_Vulkan,
@@ -337,8 +337,9 @@ float HdrChannel::Knee() {
 }
 
 u32 HdrChannel::Tonemapper() {
-    static const u32 tonemapper = u32(EnvFloat("BB_HDR_TONEMAPPER", 0.0f, 0.0f, 1.0f));
-    return tonemapper;
+    // bbport.ini hdr_tonemapper or BB_HDR_TONEMAPPER; the in-game menu changes it live (the final
+    // pass tonemaps).
+    return u32(std::clamp(BbSettings::Get().hdr_tonemapper.load(), 0, 1));
 }
 
 u32 HdrChannel::Debug() {
@@ -389,7 +390,8 @@ vk::ShaderModule HdrChannel::FragmentModule(const Instance& instance) {
     if (!fragment) {
         std::vector<u32> spv(std::begin(BB_TONEMAP_HDR_FRAG), std::end(BB_TONEMAP_HDR_FRAG));
         const float paper = float(EmulatorSettings.GetHdrPaperWhite());
-        const float peak = std::max(PeakNits() / paper, Knee() + 0.05f);
+        // Untonemapped too (the final pass tonemaps to the peak).
+        const float peak = std::max(10000.0f / paper, Knee() + 0.05f);
         SetSpirvSpecConstant(spv, 1, std::bit_cast<u32>(peak));
         SetSpirvSpecConstant(spv, 2, std::bit_cast<u32>(Knee()));
         fragment = vk::UniqueShaderModule{CompileSPV(spv, instance.GetDevice()),

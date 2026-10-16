@@ -237,13 +237,13 @@ void HdrSection(BbSettings::Values& s) {
     } else if (s.hdr_channel_live) {
         ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.45f, 1.0f), "HDR highlights: active here");
         ImGui::SameLine();
-        ImGui::TextDisabled("(%s, %s, composite %08x)", all_areas ? "all areas" : "first area",
-                            s.hdr_tonemapper == 1 ? "PsychoV30" : "Neutwo", s.hdr_variant.load());
+        ImGui::TextDisabled("(%s, composite %08x)", all_areas ? "all areas" : "first area",
+                            s.hdr_variant.load());
     } else {
         ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
                            "HDR highlights: not in this area (its composite is not covered: SDR)");
     }
-    Hint("Neutwo or PsychoV30 and the HDR tonemap mode are chosen in the launcher (Display page) and need a restart. With BB_GPU_LOG=info, last_run.log lists the composites in use (HDR tonemap variant) and the full-screen passes (HDR scan).");
+    Hint("The HDR tonemap mode is chosen in the launcher (Display page) and needs a restart. With BB_GPU_LOG=info, last_run.log lists the composites in use (HDR tonemap variant) and the full-screen passes (HDR scan).");
 
     int compare = s.hdr_compare;
     if (ImGui::BeginCombo("Compare", HdrCompareName(compare))) {
@@ -280,6 +280,30 @@ void HdrSection(BbSettings::Values& s) {
     Hint("The brightest your display can show (1000 on a QD-OLED in its HDR 1000 mode). Highlights roll off toward it instead of clipping. The test pattern below shows where your display stops.");
 
     ImGui::BeginDisabled(!s.hdr_highlights);
+    static const char* tonemappers[] = {"Neutwo (the game's look)", "PsychoV30 (RenoDX)"};
+    int tonemapper = std::clamp(s.hdr_tonemapper.load(), 0, 1);
+    if (ImGui::BeginCombo("Tone mapper", tonemappers[tonemapper])) {
+        for (int i = 0; i < 2; ++i) {
+            if (ImGui::Selectable(tonemappers[i], i == tonemapper)) {
+                Store(s.hdr_tonemapper, i, true);
+            }
+        }
+        ImGui::EndCombo();
+    }
+    Hint("How the light above the game's white is brought down to your display's peak. Neutwo keeps the game's image and rolls the highlights off near the peak. PsychoV30 (from RenoDX) models the eye's response: truer colors in bright lights, slightly different midtones.");
+    ImGui::BeginDisabled(tonemapper != 0);
+    static const char* scalings[] = {"Luminance (hue kept)", "Per channel"};
+    int scaling = s.hdr_per_channel ? 1 : 0;
+    if (ImGui::BeginCombo("Scaling", scalings[scaling])) {
+        for (int i = 0; i < 2; ++i) {
+            if (ImGui::Selectable(scalings[i], i == scaling)) {
+                Store(s.hdr_per_channel, i == 1, true);
+            }
+        }
+        ImGui::EndCombo();
+    }
+    Hint("Neutwo, as RenoDX's Scaling: on luminance the colors of bright lights keep their hue; per channel they saturate and go toward white sooner (a filmic look).");
+    ImGui::EndDisabled();
     Slider("Highlight strength", s.hdr_strength, 0.0f, 3.0f);
     Hint("How much of the light the game computed above its white is shown (the moon, the clinic window, fires): 0 is the SDR look, 1 is bbport's default, more is brighter.");
     Slider("Highlight boost", s.hdr_boost, 0.0f, 1.0f);

@@ -480,13 +480,14 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         pp_settings.hdr_saturation = centred(bb.hdr_saturation);
         pp_settings.hdr_highlight_saturation = centred(bb.hdr_highlight_saturation);
         pp_settings.hdr_blowout = std::clamp(bb.hdr_blowout.load(), 0.0f, 100.0f) / 100.0f;
+        pp_settings.hdr_tonemapper = HdrChannel::Tonemapper();
+        pp_settings.hdr_per_channel = bb.hdr_per_channel ? 1u : 0u;
     }
     // The in-game menu shows its HDR section when the frame is sent in HDR10.
     BbSettings::Get().hdr_output = bool(frame->is_hdr);
     BbSettings::Get().hdr_highlights = frame->is_hdr && HdrChannel::Enabled();
     BbSettings::Get().hdr_channel_live = bool(hdr_channel);
     BbSettings::Get().hdr_mode = int(EmulatorSettings.GetHdrTonemapMode());
-    BbSettings::Get().hdr_tonemapper = int(HdrChannel::Tonemapper());
     pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings, hdr_channel);
     if (frame_dump) {
         // The presented image as the swapchain blit reads it (General after the pass).

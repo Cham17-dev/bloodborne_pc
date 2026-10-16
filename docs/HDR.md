@@ -126,6 +126,15 @@ Analyse hors jeu des shaders du dump 1.09 (outils dans `docs/hdr-tools/`) :
 
 ### Passe HDR générique (étape 3c, codée le 16/10)
 
+**Même ordre que RenoDX (build hdr-31).** Le canal ne contient plus une image déjà tonemappée mais l'image
+**non compressée** : la courbe du jeu sous le genou, sa pente prolongée au-dessus (pic 10 000 nits dans le shader du
+composite), avec un **gain par canal** (lignes de la matrice de couleurs). La passe finale fait, en direct :
+gains^force × boost → **étalonnage** (`grade_scene`) → **tonemapping** (`tonemap_scene`) : Neutwo à partir de
+0,6 × pic, sur la luminance (teinte gardée, canal max ramené au pic) ou **par canal**, ou **PsychoV30** (RenoDX,
+paramètres par défaut : gris moyen 0,18 conservé). Choix en jeu (« Tone mapper », « Scaling »), enregistrés dans
+`bbport.ini` (`hdr_tonemapper=0|1`, `hdr_scaling=luminance|per_channel`) ; `BB_HDR_TONEMAPPER` prioritaire. Le
+mode 3 (premier composite) est lui aussi non compressé. État testé avant ce changement : branche `hdr-30-stable`.
+
 **Réglages façon RenoDX (build hdr-29).** Menu en jeu, en direct, enregistrés dans `bbport.ini` : **HUD
 brightness** (`hdr_ui_nits`, les pixels pris pour l'interface, seulement là où le canal HDR est actif), **SDR
 decoding** (`hdr_gamma=2.2|srgb`, l'équivalent de « Gamma Correction » ; `BB_HDR_GAMMA22` prioritaire), et

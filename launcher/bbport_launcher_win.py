@@ -211,6 +211,7 @@ INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': 
                 'object_motion': '1', 'show_fps': '1', 'output_res': '1920x1080', 'model_lod': '0',
                 'live_resolution': 'auto', 'hud_position': '100',
                 'hdr_paper_white': '203', 'hdr_peak_nits': '1000', 'hdr_strength': '1.00', 'hdr_boost': '0.00',
+                'hdr_tonemapper': '0',
                 **{key: '1' if on else '0' for key, _t, on in EFFECTS + EXTRAS + CHEATS + TWEAKS}}
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'), 'user_dir': '', 'dlc_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
@@ -279,8 +280,9 @@ HDR_TONEMAP = [('', ('Game (default)', 'Игры (по умолчанию)')), (
 HDR_PEAK_NITS = [('1000', ('1000 nits (default)', '1000 нит (по умолчанию)')), ('400', ('400 nits', '400 нит')),
                  ('600', ('600 nits', '600 нит')), ('800', ('800 nits', '800 нит')),
                  ('1500', ('1500 nits', '1500 нит')), ('2000', ('2000 nits', '2000 нит'))]
-# bbport HDR: the highlight curve of the all-areas HDR pass (BB_HDR_TONEMAPPER).
-HDR_TONEMAPPER = [('', ('Neutwo: the game\'s look, brighter highlights (default)',
+# bbport HDR: the tone mapper of the all-areas HDR pass (bbport.ini hdr_tonemapper, also live in
+# the in-game menu).
+HDR_TONEMAPPER = [('0', ('Neutwo: the game\'s look, brighter highlights (default)',
                         'Neutwo: вид игры, более яркие блики (по умолчанию)')),
                   ('1', ('PsychoV30 (RenoDX): perceptual, truer colors in bright lights',
                          'PsychoV30 (RenoDX): перцептивный, более точные цвета ярких источников'))]
@@ -342,7 +344,7 @@ def migrate_hdr_settings(app, ini, lines):
     """Paper white and peak moved from settings.json to bbport.ini (hdr-27): an older choice is
     kept when bbport.ini does not have the key yet."""
     present = {line.split('=', 1)[0].strip() for line in lines if '=' in line}
-    for key in ('hdr_paper_white', 'hdr_peak_nits'):
+    for key in ('hdr_paper_white', 'hdr_peak_nits', 'hdr_tonemapper'):
         if key not in present and str(app.get(key, '')).strip():
             ini[key] = str(app[key]).strip()
 
@@ -514,8 +516,6 @@ def game_environment(s):
         env['BB_HDR_TONEMAP'] = s['hdr_tonemap']
         # The HDR lines of last_run.log (HDR output, HDR channel, HDR pass, variants) are info.
         env.setdefault('BB_GPU_LOG', 'info')
-    if s.get('hdr_tonemapper', ''):
-        env['BB_HDR_TONEMAPPER'] = s['hdr_tonemapper']
     if s.get('hdr_debug', ''):
         env['BB_HDR_DEBUG'] = s['hdr_debug']
     if s.get('hdr_probe'):
@@ -1081,7 +1081,7 @@ class Launcher:
                    'Заменяет шейдер тонмаппинга игры шейдером bbport. Режим проверки окрашивает '
                    'левую половину экрана в пурпурный.'))
         self.row(f, _('HDR highlights (all areas)', 'Блики HDR (все локации)'),
-                 self.choice(f, 'hdr_tonemapper', 'app', HDR_TONEMAPPER),
+                 self.choice(f, 'hdr_tonemapper', 'ini', HDR_TONEMAPPER),
                  _('With "bbport HDR, all areas": how the highlights above the game\'s white are drawn.',
                    'С «bbport HDR, все локации»: как рисуются блики выше белого игры.'))
         self.row(f, _('HDR peak brightness', 'Пиковая яркость HDR'),

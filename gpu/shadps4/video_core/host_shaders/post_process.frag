@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #version 450
+#extension GL_GOOGLE_include_directive : require
 
 layout (location = 0) in vec2 uv;
 layout (location = 0) out vec4 color;
 
 layout (binding = 0) uniform sampler2D texSampler;
-// bbport HDR side channel (vk_hdr_channel.h): r, b, a = HDR gains of the red, green and blue
-// channels (equal with the Neutwo shoulder; per channel with PsychoV30, which also moves hue and
-// saturation), g = the game's output luminance (gamma 2.2 encoded) where they were computed.
+// bbport HDR side channel (vk_hdr_channel.h): r, b, a = gains of the red, green and blue
+// channels from the game's color to the untonemapped one (graded and tonemapped here, live),
+// g = the game's output luminance (gamma 2.2 encoded) where they were computed.
 layout (binding = 1) uniform sampler2D hdrChannel;
 
 layout (push_constant) uniform settings {
@@ -36,9 +37,41 @@ layout (push_constant) uniform settings {
     float hdr_saturation;
     float hdr_highlight_saturation;
     float hdr_blowout;
+    uint hdr_tonemapper;   // bbport: 0 Neutwo, 1 PsychoV30 (RenoDX)
+    uint hdr_per_channel;  // bbport: Neutwo per channel (else on luminance, hue kept)
 } pp;
 
 const vec3 LUMA709 = vec3(0.2126390059, 0.7151686788, 0.0721923154);
+
+#include "hdr/psychov30.glsl"
+
+// Neutwo shoulder: x below k unchanged, above it rising toward `peak` (never reaching it).
+float neutwo_shoulder(float x, float k, float peak) {
+    if (x <= k) {
+        return x;
+    }
+    float over = x - k, room = max(peak - k, 1e-3);
+    return k + over * inversesqrt(1.0 + (over / room) * (over / room));
+}
+
+// The untonemapped, graded scene (1 = paper white) to the display's range, like RenoDX's tone
+// mapper: Neutwo from 0.6 of the peak (on luminance, or per channel), or PsychoV30.
+vec3 tonemap_scene(vec3 v, float peak) {
+    if (pp.hdr_tonemapper == 1u) {
+        return max(rd_psychov30(v, peak), 0.0);
+    }
+    float k = 0.6 * peak;
+    if (pp.hdr_per_channel != 0u) {
+        return vec3(neutwo_shoulder(v.r, k, peak), neutwo_shoulder(v.g, k, peak),
+                    neutwo_shoulder(v.b, k, peak));
+    }
+    float l = dot(v, LUMA709);
+    v *= l > 0.0 ? neutwo_shoulder(l, k, peak) / l : 1.0;
+    // A saturated color can still have a channel above the peak: scaled down, hue kept.
+    float m = max(max(v.r, v.g), v.b);
+    return m > peak ? v * (peak / m) : v;
+}
+
 
 // The scene's grading (linear BT.709, 1 = paper white), around mid grey 0.18: exposure, then
 // contrast (a power around mid grey, 0.5 .. 2), highlights (above mid grey) and shadows (below,
@@ -192,13 +225,7 @@ void main() {
             float l_sdr = dot(lin, luma709);
             float y = clamp((l_sdr - 0.45) / 0.55, 0.0, 1.0);
             float boost = 1.0 + scene * clamp(pp.hdr_boost, 0.0, 1.0) * (peak - 1.0) * y * y * y;
-            vec3 v = grade_scene(max(lin * gains * boost, 0.0), peak);
-            float l = dot(v, luma709);
-            float k = 0.6 * peak;
-            if (l > k) {
-                float over = l - k, room = peak - k;
-                v *= (k + over * inversesqrt(1.0 + (over / room) * (over / room))) / l;
-            }
+            vec3 v = tonemap_scene(grade_scene(max(lin * gains * boost, 0.0), peak), peak);
             nits = min(max(bt709_to_bt2020(v), 0.0) * pp.hdr_paper_white, vec3(pp.hdr_peak_nits));
             // The HUD (pixels taken as UI): the game's SDR at its own brightness.
             vec3 ui = sdr_to_nits(signal, vec3(1.0)) * (pp.hdr_ui_nits / pp.hdr_paper_white);

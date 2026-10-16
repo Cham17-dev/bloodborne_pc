@@ -41,6 +41,10 @@ public:
         float hdr_saturation = 0.0f;
         float hdr_highlight_saturation = 0.0f;
         float hdr_blowout = 0.0f;
+        // bbport HDR, live: tonemapper of the final pass (0 Neutwo, 1 PsychoV30) and Neutwo's
+        // scaling (0 luminance, 1 per channel).
+        u32 hdr_tonemapper = 0;
+        u32 hdr_per_channel = 0;
     };
 
     void Create(vk::Device device, vk::Format surface_format);
