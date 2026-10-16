@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 bbport
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// bbport HDR: Bloodborne's final composite (bloom + tone curve + color matrix + gamma), all 280
+// bbport HDR: Bloodborne's final composite (bloom + tone curve + color matrix + gamma), all 715
 // standard variants of renderer_vulkan/bb_tonemap_variants.h, and its HDR version. Same math as
 // docs/hdr-tools/bb_composite_model.py, which reproduces the game's code of every variant (run by
 // docs/hdr-tools/gcn_emu.py); docs/hdr-tools/bb_composite_check compares this file with it.
@@ -11,9 +11,11 @@
 // The game's math (x: the exposed scene, before the curve):
 //   ms   = tint(mult; 752, 753, 756) * c754 + c755          scene tint (mult: 1x1 texture)
 //   mb   = clamp(tint(mult; 744, 745, 748)) * c746 + c747   bloom base
-//   x    = pre(scene) * c616 * vignettes * ms
+//   x    = pre(scene) * c616 * vignettes * ms                (c616: 1 in variants without it)
+//          or, scene matrix variants: (A (pre(scene) * ms) + a) * vignettes  (3x4, words 856..867)
 //   T    = curve(x)                                         per channel or on the mean of RGB
-//   U    = clamp(c617 * (mb + bloom * ms));  S = T + U - T U   (screen blend)
+//   g    = c617 * (mb + bloom * ms), or max(B (mb + bloom * ms) + b, 0)  (3x4, words 872..883)
+//   U    = clamp(g);  S = T + U - T U   (screen blend; additive variants: S = x + g, no max)
 //   out  = M S + offsets  (3x4, words 840..851), then pow(clamp(out), c808) when gamma-encoded
 // tint(t; s, b, sat) = mean + sat * (t * c[s] + c[b] - mean) around the mean of the scaled RGB.
 
@@ -29,7 +31,18 @@ struct BbComposite {
     bool vig888;    // lens vignette (888-892)
     bool gamma;     // output encoded with c808
     bool additive;  // no curve, bloom added, unclamped (HDR output for a later pass)
+    bool gain;      // scene gain c616 (else 1)
+    bool floor;     // curve input raised to BB_FLOOR first
+    bool scene_mat; // 3x4 matrix on the tinted scene (856..867), vignettes after it
+    bool glow_mat;  // 3x4 matrix on the glow (872..883) instead of c617
 };
+
+// A 3x4 matrix of the constant buffer (rows at base, base + 4, base + 8; offsets in column 3).
+vec3 bb_mat34(uint base, vec3 v) {
+    return vec3(bb_c(base) * v.r + bb_c(base + 1u) * v.g + bb_c(base + 2u) * v.b + bb_c(base + 3u),
+                bb_c(base + 4u) * v.r + bb_c(base + 5u) * v.g + bb_c(base + 6u) * v.b + bb_c(base + 7u),
+                bb_c(base + 8u) * v.r + bb_c(base + 9u) * v.g + bb_c(base + 10u) * v.b + bb_c(base + 11u));
+}
 
 const float BB_FLOOR = 6.103515625e-05;   // 2^-14: scene floor before the curves
 const float BB_EPS = 2.384185791015625e-07; // 2^-22: added before log2 / rcp
@@ -80,7 +93,7 @@ float bb_pre(int kind, float v) {
 
 // The exposed scene x (before the curve).
 vec3 bb_exposed(BbComposite o, vec4 scene, vec3 ms, vec2 vig_uv) {
-    float gain = bb_c(616u) * bb_vignettes(o, vig_uv);
+    float gain = (o.gain ? bb_c(616u) : 1.0) * bb_vignettes(o, vig_uv);
     vec3 sc = scene.rgb;
     if (o.pre == 3) {
         float a = clamp(scene.a, 0.0, 1.0);
@@ -91,7 +104,20 @@ vec3 bb_exposed(BbComposite o, vec4 scene, vec3 ms, vec2 vig_uv) {
     } else if (o.pre != 0) {
         sc = vec3(bb_pre(o.pre, sc.r), bb_pre(o.pre, sc.g), bb_pre(o.pre, sc.b));
     }
+    if (o.scene_mat) {
+        return bb_mat34(856u, sc * ms) * gain;
+    }
     return sc * gain * ms;
+}
+
+// The glow before its clamp (g above).
+vec3 bb_glow(BbComposite o, vec3 base, vec3 bloom, vec3 ms) {
+    vec3 g = base + bloom * ms;
+    if (!o.glow_mat) {
+        return bb_c(617u) * g;
+    }
+    g = bb_mat34(872u, g);
+    return o.additive ? g : max(g, 0.0);
 }
 
 // The curve's function, unclamped (v >= BB_FLOOR).
@@ -114,7 +140,9 @@ vec3 bb_curve(BbComposite o, vec3 x) {
     if (o.curve == 3) {
         return clamp(x, 0.0, 1.0);
     }
-    x = max(x, BB_FLOOR);
+    if (o.floor) {
+        x = max(x, BB_FLOOR);
+    }
     if (!o.luminance) {
         return clamp(vec3(bb_f(o.curve, x.r), bb_f(o.curve, x.g), bb_f(o.curve, x.b)), 0.0, 1.0);
     }
@@ -187,7 +215,7 @@ bool bb_curve_hdr(BbComposite o, vec3 x, float knee, float peak, out vec3 t) {
         ks = ws;
     }
     float room = max(peak - knee, 1e-3);
-    if (o.curve != 3) {
+    if (o.curve != 3 && o.floor) {
         x = max(x, BB_FLOOR);
     }
     if (o.luminance) {
@@ -201,7 +229,9 @@ bool bb_curve_hdr(BbComposite o, vec3 x, float knee, float peak, out vec3 t) {
         return true;
     }
     for (int i = 0; i < 3; ++i) {
-        t[i] = x[i] < kv ? (o.curve == 3 ? x[i] : bb_f(o.curve, x[i]))
+        // Below the knee, the game's value (clamped: without the floor, a negative input can
+        // take the Reinhard curve past its pole).
+        t[i] = x[i] < kv ? (o.curve == 3 ? x[i] : clamp(bb_f(o.curve, x[i]), 0.0, 1.0))
                          : knee + bb_neutwo((x[i] - kv) * ks, room);
     }
     t = max(t, bb_curve(o, x)); // never under the game's own value
@@ -221,11 +251,12 @@ vec3 bb_composite_sdr(BbComposite o, vec4 scene, vec3 mult, vec3 bloom, vec2 vig
     vec3 x = bb_exposed(o, scene, ms, vig_uv);
     vec3 base = bb_bloom_base(mult);
     vec3 s;
+    vec3 g = bb_glow(o, base, bloom, ms);
     if (o.additive) {
-        s = x + bb_c(617u) * (base + bloom * ms);
+        s = x + g;
     } else {
         vec3 t = bb_curve(o, x);
-        vec3 u = clamp(bb_c(617u) * (base + bloom * ms), 0.0, 1.0);
+        vec3 u = clamp(g, 0.0, 1.0);
         s = t + u - t * u;
     }
     vec3 out_color = bb_grade(s);

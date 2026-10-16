@@ -124,6 +124,16 @@ Analyse hors jeu des shaders du dump 1.09 (outils dans `docs/hdr-tools/`) :
 
 ### Passe HDR générique (étape 3c, codée le 16/10)
 
+**Élargie le 16/10 au soir (build hdr-24) : 715 variantes au lieu de 280.** Le premier relevé exigeait le mot
+616 (gain de la scène) ; le jeu a deux autres familles, reconnues par les mots 840–851 : sans gain (gain 1), et
+avec une **matrice 3×4 sur la scène teintée** (mots 856–867, vignettages appliqués après) et **une sur le halo**
+(mots 872–883, `max(·, 0)` au lieu de `c617`), certaines sans plancher 2^-14 avant la courbe. Le Rêve du chasseur
+n'était pas couvert (en jeu : canal HDR figé, puis absent). Relevé : 748 variantes, **715 reproduites** (écart
+max 0,018), 33 laissées en SDR (16 distorsions, 4 triviales, 13 à matrice et pré-exposition reproduites à plus de
+0,02). GLSL contre modèle : 2,1e-5 sur 183 040 pixels, 0 violation HDR et PsychoV30. Depuis hdr-23, une zone dont le
+composite n'est pas couvert reste en SDR (plus de canal figé), et le journal liste les passes plein écran
+(`HDR scan:`) avec `BB_GPU_LOG=info`.
+
 **Relevé exact des variantes.** Correction : le code d'un shader commence à `s_mov_b32 vcc_hi, n`
 (`0xBEEB03FF`), le pied `OrbShdr` étant `(n + 1) × 2` mots plus loin (shadPS4 `SearchBinaryInfo`) ; l'export
 `eboot_shaders.bin` contient assez d'octets avant le pied. `gcn_emu.py` exécute le code GCN d'une variante

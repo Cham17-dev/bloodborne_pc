@@ -19,7 +19,8 @@ def variants():
             if v[0] == 1:
                 yield int(m.group(1), 16), dict(curve=v[1], luminance=v[2], pre=v[3], pre_lum=v[4],
                                                 cos4=v[5], vig888=v[6], gamma=v[7], grain=0,
-                                                additive=v[9], alpha_clamp=v[10])
+                                                additive=v[9], alpha_clamp=v[10], gain=v[11],
+                                                floor=v[12], scene_mat=v[13], glow_mat=v[14])
 
 
 def cases():
@@ -38,8 +39,9 @@ def write(path):
     with open(path, 'wb') as f:
         for h, o, cb, pixels in cases():
             f.write(struct.pack('<1024f', *[cb.get(w, 0.0) for w in range(1024)]))
-            f.write(struct.pack('<8i', o['curve'], o['luminance'], o['pre'], o['pre_lum'], o['cos4'],
-                                o['vig888'], o['gamma'], o['additive']))
+            f.write(struct.pack('<12i', o['curve'], o['luminance'], o['pre'], o['pre_lum'], o['cos4'],
+                                o['vig888'], o['gamma'], o['additive'], o['gain'], o['floor'],
+                                o['scene_mat'], o['glow_mat']))
             for vals, uv in pixels:
                 f.write(struct.pack('<16f', *vals['scene'], *vals['mult'][:3], 0, *vals['bloom'][:3], 0,
                                     uv[0], uv[1], 0, 0))

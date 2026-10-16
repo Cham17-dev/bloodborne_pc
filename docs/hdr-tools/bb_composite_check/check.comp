@@ -12,7 +12,8 @@ float bb_c(uint w) { return cb[w]; }
 void main() {
     uint i = gl_GlobalInvocationID.x;
     BbComposite o = BbComposite(opt[0], opt[1] != 0, opt[2], opt[3] != 0, opt[4] != 0, opt[5] != 0,
-                                opt[6] != 0, opt[7] != 0);
+                                opt[6] != 0, opt[7] != 0, opt[8] != 0, opt[9] != 0, opt[10] != 0,
+                                opt[11] != 0);
     vec4 scene = data[4 * i], mult = data[4 * i + 1], bloom = data[4 * i + 2], uv = data[4 * i + 3];
     outv[5 * i] = vec4(bb_composite_sdr(o, scene, mult.rgb, bloom.rgb, uv.xy), 0.0);
     vec3 x = bb_exposed(o, scene, bb_scene_tint(mult.rgb), uv.xy);
@@ -25,7 +26,7 @@ void main() {
     float grey, slope;
     bool pk = o.curve != 3 && bb_knee(o.curve, 0.18, grey, slope);
     float contrast = pk ? clamp(grey * slope / 0.18, 0.3, 3.0) : 1.0;
-    vec3 xg = max(x, BB_FLOOR);
+    vec3 xg = max(x, BB_FLOOR);  // as hdr/bb_composite_hdr.frag
     vec3 at_grey = rd_psychov30(vec3(grey), 4.93, 1.0, 1.0, 1.0, contrast, 1.0, 1.0, vec3(grey),
                                 vec3(0.18), 1.0, 0, 1.0, RD_PSY30_SOURCE_BOUNDARY_BT709);
     vec3 at_x = rd_psychov30(xg, 4.93, 1.0, 1.0, 1.0, contrast, 1.0, 1.0, vec3(grey), vec3(0.18),

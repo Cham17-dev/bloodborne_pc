@@ -247,6 +247,10 @@ std::optional<std::vector<u32>> BuildComposite(const TonemapVariant& v, std::spa
     SetSpecBool(spv, 17, v.additive);
     SetSpirvSpecConstant(spv, 18, *buffer_index);
     SetSpirvSpecConstant(spv, 19, HdrChannel::Tonemapper());
+    SetSpecBool(spv, 20, v.gain);
+    SetSpecBool(spv, 21, v.floor);
+    SetSpecBool(spv, 22, v.scene_mat);
+    SetSpecBool(spv, 23, v.glow_mat);
     return spv;
 }
 

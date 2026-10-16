@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
 // bbport HDR, generic pass (BB_HDR_TONEMAP=4, docs/HDR.md step 3c): the HDR side channel for any
-// of the 280 standard variants of Bloodborne's final composite (bb_tonemap_variants.h). The game
+// of the 715 standard variants of Bloodborne's final composite (bb_tonemap_variants.h). The game
 // draws its composite unchanged; this shader replays the same draw into bbport's RGBA16F channel
 // image. Its interface is the game shader's: when bbport recompiles a composite variant,
 // HdrChannel copies that variant's descriptor bindings, input locations and constant-buffer slot
@@ -31,6 +31,10 @@ layout(constant_id = 16) const bool BB_GAMMA = true;
 layout(constant_id = 17) const bool BB_ADDITIVE = false;
 layout(constant_id = 18) const uint BB_BUFFER_INDEX = 0u; // index of the constant buffer in buf_offsets
 layout(constant_id = 19) const int BB_TONEMAPPER = 0;     // 0 Neutwo shoulder, 1 PsychoV30
+layout(constant_id = 20) const bool BB_GAIN = true;
+layout(constant_id = 21) const bool BB_FLOOR_ON = true;
+layout(constant_id = 22) const bool BB_SCENE_MAT = false;
+layout(constant_id = 23) const bool BB_GLOW_MAT = false;
 
 // The game shader's constant buffer (decorations copied from the variant).
 layout(set = 0, binding = 0, std430) readonly buffer bb_ssbo_block {
@@ -88,7 +92,7 @@ bool bb_curve_psychov(BbComposite o, vec3 x, float peak, out vec3 t) {
     }
     float contrast = clamp(grey_in * slope / 0.18, 0.3, 3.0);
     if (o.curve != 3) {
-        x = max(x, BB_FLOOR);
+        x = max(x, BB_FLOOR); // PsychoV30 needs a positive input
     }
     t = rd_psychov30(x, peak, 1.0, 1.0, 1.0, contrast, 1.0, 1.0, vec3(grey_in), vec3(0.18), 1.0,
                      0, 1.0, RD_PSY30_SOURCE_BOUNDARY_BT709);
@@ -111,7 +115,8 @@ void main() {
     buf_off = bitfieldExtract(offsets[slot >> 2u], int((slot & 3u) * 8u), 8) >> 2u;
 
     BbComposite o = BbComposite(BB_CURVE, BB_LUMINANCE, BB_PRE, BB_PRE_LUM, BB_COS4, BB_VIG888,
-                                BB_GAMMA, BB_ADDITIVE);
+                                BB_GAMMA, BB_ADDITIVE, BB_GAIN, BB_FLOOR_ON, BB_SCENE_MAT,
+                                BB_GLOW_MAT);
 
     vec4 scene = textureLod(sampler2D(bb_img_scene, bb_samp_scene),
                             interp(bb_in_scene[0], bb_in_scene[1], bb_in_scene[2]), 0.0);
@@ -131,8 +136,9 @@ void main() {
     bool has_hdr = !BB_ADDITIVE && (BB_TONEMAPPER == 1
                                         ? bb_curve_psychov(o, x, BB_HDR_PEAK, hdr_t)
                                         : bb_curve_hdr(o, x, BB_HDR_KNEE, BB_HDR_PEAK, hdr_t));
-    vec3 glow = clamp(bb_c(617u) * (base + bloom * ms), 0.0, 1.0);
-    vec3 sdr_screen = BB_ADDITIVE ? x + bb_c(617u) * (base + bloom * ms) : sdr_t + glow - sdr_t * glow;
+    vec3 g = bb_glow(o, base, bloom, ms);
+    vec3 glow = clamp(g, 0.0, 1.0);
+    vec3 sdr_screen = BB_ADDITIVE ? x + g : sdr_t + glow - sdr_t * glow;
     // Screen blend on the SDR part only (above 1 it would subtract).
     vec3 hdr_screen = has_hdr ? hdr_t + glow * (1.0 - min(hdr_t, 1.0)) : sdr_screen;
 
