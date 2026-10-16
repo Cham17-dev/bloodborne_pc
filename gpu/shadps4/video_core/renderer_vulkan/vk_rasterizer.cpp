@@ -1225,6 +1225,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, handle);
         });
         HdrChannel::Get().Published(slot.index);
+        if (const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)]) {
+            BbSettings::Get().hdr_variant = u32(ps->pgm_hash);
+        }
     }
     if (const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)]) {
         HdrChannel::NoteDraw(ps->pgm_hash);

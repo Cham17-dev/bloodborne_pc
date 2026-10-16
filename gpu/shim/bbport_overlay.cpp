@@ -8,6 +8,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
+#include <string>
+#include <algorithm>
 
 #include <SDL3/SDL.h>
 #include "bbport_settings.h"
@@ -156,6 +158,157 @@ void Hint(const char* text) {
     }
 }
 
+const char* HdrCompareName(int mode) {
+    static constexpr const char* names[] = {"HDR", "SDR (the game's image)",
+                                             "Split: SDR left | HDR right"};
+    return names[std::clamp(mode, 0, int(BbSettings::Values::HdrCompareCount) - 1)];
+}
+
+// A short message at the top of the screen (F9), for two seconds.
+std::string toast_text;
+std::chrono::steady_clock::time_point toast_until{};
+
+void ShowToast(std::string text) {
+    toast_text = std::move(text);
+    toast_until = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+}
+
+bool ToastActive() {
+    return !toast_text.empty() && std::chrono::steady_clock::now() < toast_until;
+}
+
+void CycleHdrCompare() {
+    auto& s = BbSettings::Get();
+    if (!s.hdr_output) {
+        return;
+    }
+    const int next = (s.hdr_compare + 1) % int(BbSettings::Values::HdrCompareCount);
+    s.hdr_compare = next;
+    ShowToast(std::string("HDR comparison: ") + HdrCompareName(next) + "  (F9)");
+}
+
+// A label in a corner of the screen, no input.
+void Label(const char* id, ImVec2 pos, ImVec2 pivot, const char* text) {
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
+    ImGui::SetNextWindowBgAlpha(0.6f);
+    ImGui::Begin(id, nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                     ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
+                     ImGuiWindowFlags_NoFocusOnAppearing);
+    ImGui::TextUnformatted(text);
+    ImGui::End();
+}
+
+// The toast, and the SDR / HDR labels of the split comparison.
+void HdrLabels() {
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const float pad = 12.0f * base_scale;
+    const float top = viewport->WorkPos.y + 60.0f * base_scale;
+    const float mid = viewport->WorkPos.x + viewport->WorkSize.x * 0.5f;
+    if (ToastActive()) {
+        Label("##hdr_toast", ImVec2(mid, viewport->WorkPos.y + pad), ImVec2(0.5f, 0.0f),
+              toast_text.c_str());
+    }
+    const auto& s = BbSettings::Get();
+    if (s.hdr_output && s.hdr_compare == BbSettings::Values::HdrCompareSplit) {
+        Label("##hdr_sdr", ImVec2(mid - pad, top), ImVec2(1.0f, 0.0f), "SDR (game)");
+        Label("##hdr_hdr", ImVec2(mid + pad, top), ImVec2(0.0f, 0.0f), "HDR");
+    }
+}
+
+void HdrPreset(BbSettings::Values& s, const char* label, float strength, float boost) {
+    if (ImGui::Button(label)) {
+        Store(s.hdr_strength, strength, true);
+        Store(s.hdr_boost, boost, true);
+    }
+}
+
+void HdrSection(BbSettings::Values& s) {
+    ImGui::SeparatorText("HDR (changes apply at once)");
+    // What runs now: mode, curve, and whether this area has HDR highlights.
+    const int mode = s.hdr_mode;
+    const bool all_areas = mode == 4;
+    if (!s.hdr_highlights) {
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
+                           "HDR highlights off: the game's image in HDR10 (launcher: HDR tonemap).");
+    } else if (s.hdr_channel_live) {
+        ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.45f, 1.0f), "HDR highlights: active here");
+        ImGui::SameLine();
+        ImGui::TextDisabled("(%s, %s, composite %08x)", all_areas ? "all areas" : "first area",
+                            s.hdr_tonemapper == 1 ? "PsychoV30" : "Neutwo", s.hdr_variant.load());
+    } else {
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
+                           "HDR highlights: not in this area (its composite is not covered: SDR)");
+    }
+    Hint("Neutwo or PsychoV30 and the HDR tonemap mode are chosen in the launcher (Display page) and need a restart. With BB_GPU_LOG=info, last_run.log lists the composites in use (HDR tonemap variant) and the full-screen passes (HDR scan).");
+
+    int compare = s.hdr_compare;
+    if (ImGui::BeginCombo("Compare", HdrCompareName(compare))) {
+        for (int i = 0; i < int(BbSettings::Values::HdrCompareCount); ++i) {
+            if (ImGui::Selectable(HdrCompareName(i), i == compare)) {
+                s.hdr_compare = i;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    Hint("F9 switches between HDR, the game's SDR image and a split screen, also with this menu closed. SDR is the game's image at the paper white below, with no HDR highlights. Not saved: each session starts in HDR.");
+
+    float paper = s.hdr_paper_white;
+    Store(s.hdr_paper_white, paper,
+          ImGui::SliderFloat("Paper white", &paper, 80.0f, 500.0f, "%.0f nits"));
+    Hint("Brightness of the game's white and of the HUD. Raise it if the game looks dim, lower it in a dark room. 203 is the HDR reference.");
+    float peak = s.hdr_peak_nits;
+    Store(s.hdr_peak_nits, peak,
+          ImGui::SliderFloat("Peak brightness", &peak, 400.0f, 4000.0f, "%.0f nits"));
+    Hint("The brightest your display can show (1000 on a QD-OLED in its HDR 1000 mode). Highlights roll off toward it instead of clipping. The test pattern below shows where your display stops.");
+
+    ImGui::BeginDisabled(!s.hdr_highlights);
+    Slider("Highlight strength", s.hdr_strength, 0.0f, 3.0f);
+    Hint("How much of the light the game computed above its white is shown (the moon, the clinic window, fires): 0 is the SDR look, 1 is bbport's default, more is brighter.");
+    Slider("Highlight boost", s.hdr_boost, 0.0f, 1.0f);
+    Hint("Raises the bright parts the game drew close to its white toward the peak, for scenes lit for SDR (Hunter's Dream): 0 is off, 1 takes the game's white to the peak. Midtones and the HUD do not change.");
+    ImGui::TextUnformatted("Presets:");
+    ImGui::SameLine();
+    HdrPreset(s, "Game", 1.0f, 0.0f);
+    ImGui::SameLine();
+    HdrPreset(s, "Balanced", 1.2f, 0.35f);
+    ImGui::SameLine();
+    HdrPreset(s, "Vivid", 1.5f, 0.7f);
+    ImGui::SameLine();
+    HdrPreset(s, "SDR look", 0.0f, 0.0f);
+    Hint("Game: bbport's default (strength 1, no boost). Balanced: 1.2 and 0.35. Vivid: 1.5 and 0.7. SDR look: no HDR highlights, with the menu's paper white (Compare shows the same without changing these).");
+
+    static const char* debug_views[] = {"Off", "Highlight gain as colors",
+                                        "Pixels taken as UI in red"};
+    int debug = std::clamp(s.hdr_debug.load(), 0, 2);
+    if (ImGui::BeginCombo("Debug view", debug_views[debug])) {
+        for (int i = 0; i < 3; ++i) {
+            if (ImGui::Selectable(debug_views[i], i == debug)) {
+                s.hdr_debug = i;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    Hint("Gain as colors: grey keeps the SDR value, blue to red are raised up to the peak. UI in red: the pixels kept in SDR because they look like the HUD drawn over the scene; only the HUD should be red. Not saved.");
+    ImGui::EndDisabled();
+    bool pattern = s.hdr_test_pattern;
+    if (ImGui::Checkbox("Test pattern", &pattern)) {
+        s.hdr_test_pattern = pattern;
+    }
+    Hint("Shows a test pattern instead of the game. Row 2 and 3: grey patches from 0.1 to 10000 nits; patches that look the same are above what your display shows, so set Peak brightness to the last one that is brighter than its left neighbour. Not saved.");
+    if (ImGui::Button("Reset HDR")) {
+        Store(s.hdr_paper_white, 203.0f, true);
+        Store(s.hdr_peak_nits, 1000.0f, true);
+        Store(s.hdr_strength, 1.0f, true);
+        Store(s.hdr_boost, 0.0f, true);
+        s.hdr_compare = 0;
+        s.hdr_debug = 0;
+        s.hdr_test_pattern = false;
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("Paper white, peak, strength and boost are saved to bbport.ini.");
+}
+
 void Menu() {
     auto& s = BbSettings::Get();
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -298,28 +451,7 @@ void Menu() {
     ImGui::EndDisabled(); // upscaler off
 
     if (s.hdr_output) {
-        ImGui::SeparatorText("HDR (live)");
-        float paper = s.hdr_paper_white;
-        Store(s.hdr_paper_white, paper,
-              ImGui::SliderFloat("Paper white", &paper, 80.0f, 500.0f, "%.0f nits"));
-        Hint("Brightness of the game's white (and of the HUD). Raise it if the game looks dim, lower it in a dark room.");
-        float peak = s.hdr_peak_nits;
-        Store(s.hdr_peak_nits, peak,
-              ImGui::SliderFloat("Peak brightness", &peak, 400.0f, 4000.0f, "%.0f nits"));
-        Hint("The brightest your display can show. Highlights roll off toward it instead of clipping. Set it to your display's peak (for example 1000 on a QD-OLED in its HDR 1000 mode).");
-        ImGui::BeginDisabled(!s.hdr_highlights);
-        Slider("Highlight strength", s.hdr_strength, 0.0f, 3.0f);
-        Hint("How much of the light above the game's white is shown (the moon, the clinic window, fires): 0 is the game's SDR look, 1 is bbport's default, more is brighter.");
-        Slider("Highlight boost", s.hdr_boost, 0.0f, 1.0f);
-        Hint("Raises the bright parts the game drew near its white toward the peak, for scenes lit for SDR (Hunter's Dream): 0 is off. Midtones and the HUD are not changed.");
-        if (ImGui::Button("Reset HDR")) {
-            Store(s.hdr_strength, 1.0f, true);
-            Store(s.hdr_boost, 0.0f, true);
-        }
-        ImGui::EndDisabled();
-        if (!s.hdr_highlights) {
-            ImGui::TextDisabled("Strength and boost need HDR tonemap \"bbport HDR, all areas\" in the launcher.");
-        }
+        HdrSection(s);
     }
 
     ImGui::SeparatorText("Output resolution");
@@ -573,6 +705,11 @@ bool HandleEvent(const SDL_Event& event) {
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP: {
         const bool down = event.type == SDL_EVENT_KEY_DOWN;
+        if (down && !event.key.repeat && event.key.key == SDLK_F9 &&
+            BbSettings::Get().hdr_output) {
+            CycleHdrCompare();
+            return true;
+        }
         if (down && !event.key.repeat &&
             (event.key.key == SDLK_INSERT || (is_open && event.key.key == SDLK_ESCAPE))) {
             SetOpen(event.key.key == SDLK_INSERT ? !is_open : false);
@@ -653,7 +790,9 @@ bool HandleEvent(const SDL_Event& event) {
 }
 
 bool Visible() {
-    return initialized && (menu_open || text_entry_active || BbSettings::Get().show_fps);
+    const auto& s = BbSettings::Get();
+    return initialized && (menu_open || text_entry_active || s.show_fps || ToastActive() ||
+                           (s.hdr_output && s.hdr_compare == BbSettings::Values::HdrCompareSplit));
 }
 
 bool CapturesInput() {
@@ -702,6 +841,7 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     if (text_entry_active) {
         TextEntryBox();
     }
+    HdrLabels();
     ImGui::Render();
 
     const vk::RenderingAttachmentInfo attachment{

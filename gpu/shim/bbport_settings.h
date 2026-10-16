@@ -85,6 +85,17 @@ struct Values {
     std::atomic<bool> hdr_output{false};
     /// Set by the presenter: the all-areas HDR highlights are on (strength and boost apply).
     std::atomic<bool> hdr_highlights{false};
+    // HDR tests (in-game menu, this session only; BB_HDR_DEBUG / BB_HDR_TEST_PATTERN at start).
+    enum HdrCompare : int { HdrCompareHdr = 0, HdrCompareSdr = 1, HdrCompareSplit = 2,
+                            HdrCompareCount };
+    std::atomic<int> hdr_compare{HdrCompareHdr}; ///< F9 cycles
+    std::atomic<int> hdr_debug{0};               ///< 1 gain as colors, 2 pixels taken as UI
+    std::atomic<bool> hdr_test_pattern{false};
+    // Set by the renderer, shown by the menu.
+    std::atomic<bool> hdr_channel_live{false};   ///< this frame has HDR highlights
+    std::atomic<unsigned> hdr_variant{0};        ///< last composite with the HDR pass
+    std::atomic<int> hdr_mode{0};                ///< BB_HDR_TONEMAP
+    std::atomic<int> hdr_tonemapper{0};          ///< 0 Neutwo, 1 PsychoV30
     // FSR 4 checks (menu): the provider's auto exposure, the jitter sign it is given.
     std::atomic<bool> fsr4_auto_exposure{true};
     std::atomic<bool> fsr4_invert_jitter{false};

@@ -342,8 +342,8 @@ u32 HdrChannel::Tonemapper() {
 }
 
 u32 HdrChannel::Debug() {
-    static const u32 debug = u32(EnvFloat("BB_HDR_DEBUG", 0.0f, 0.0f, 2.0f));
-    return debug;
+    // BB_HDR_DEBUG at start; the in-game menu changes it live.
+    return u32(std::clamp(BbSettings::Get().hdr_debug.load(), 0, 2));
 }
 
 void HdrChannel::NoteDraw(u64 ps_hash) {

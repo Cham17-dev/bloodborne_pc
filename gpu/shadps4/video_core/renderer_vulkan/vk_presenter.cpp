@@ -457,7 +457,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         attribute.attrib.pixel_format == Libraries::VideoOut::PixelFormat::A2R10G10B10Srgb;
     pp_settings.hdr_paper_white = static_cast<float>(EmulatorSettings.GetHdrPaperWhite());
     pp_settings.hdr_gamma22 = EmulatorSettings.IsHdrGamma22() ? 1 : 0;
-    pp_settings.hdr_test_pattern = EmulatorSettings.IsHdrTestPattern() ? 1 : 0;
+    pp_settings.hdr_test_pattern = BbSettings::Get().hdr_test_pattern ? 1 : 0;
     // bbport HDR side channel: the gains of the last tonemap draw (vk_hdr_channel.h).
     vk::ImageView hdr_channel{};
     if (frame->is_hdr && HdrChannel::Enabled()) {
@@ -469,10 +469,14 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         pp_settings.hdr_peak_nits = HdrChannel::PeakNits();
         pp_settings.hdr_strength = std::clamp(BbSettings::Get().hdr_strength.load(), 0.0f, 3.0f);
         pp_settings.hdr_boost = std::clamp(BbSettings::Get().hdr_boost.load(), 0.0f, 1.0f);
+        pp_settings.hdr_compare = u32(std::clamp(BbSettings::Get().hdr_compare.load(), 0, 2));
     }
     // The in-game menu shows its HDR section when the frame is sent in HDR10.
     BbSettings::Get().hdr_output = bool(frame->is_hdr);
     BbSettings::Get().hdr_highlights = frame->is_hdr && HdrChannel::Enabled();
+    BbSettings::Get().hdr_channel_live = bool(hdr_channel);
+    BbSettings::Get().hdr_mode = int(EmulatorSettings.GetHdrTonemapMode());
+    BbSettings::Get().hdr_tonemapper = int(HdrChannel::Tonemapper());
     pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings, hdr_channel);
     if (frame_dump) {
         // The presented image as the swapchain blit reads it (General after the pass).

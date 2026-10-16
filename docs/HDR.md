@@ -126,6 +126,12 @@ Analyse hors jeu des shaders du dump 1.09 (outils dans `docs/hdr-tools/`) :
 
 ### Passe HDR générique (étape 3c, codée le 16/10)
 
+**Outils de test en jeu (build hdr-28).** Dans la section HDR du menu : état (« active here » / « not in this
+area », Neutwo ou PsychoV30, composite en cours), **Compare** (HDR / SDR du jeu / écran partagé SDR à gauche, HDR à
+droite, avec étiquettes) et la touche **F9** qui fait défiler ces trois modes même menu fermé, préréglages
+(Game 1/0, Balanced 1,2/0,35, Vivid 1,5/0,7, SDR look 0/0), **Debug view** et **Test pattern** en direct (non
+enregistrés), **Reset HDR**. Le choix Neutwo / PsychoV30 et le mode restent dans le launcher (au lancement).
+
 **Réglages en direct (build hdr-27).** Section « HDR (live) » du menu en jeu (Insert ou L3+R3) : paper white,
 pic, force et boost des hautes lumières, appliqués par la passe finale (`post_process.frag`) à chaque image. Le
 canal ne borne plus les gains Neutwo (pic 10 000 nits dans le shader du composite) : la passe finale élève les

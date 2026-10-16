@@ -24,6 +24,7 @@ layout (push_constant) uniform settings {
     float hdr_peak_nits;   // bbport: peak luminance
     float hdr_strength;    // bbport: exponent of the channel's gains (1 = as computed)
     float hdr_boost;       // bbport: boost of the scene's SDR highlights (0 .. 1: white to peak)
+    uint hdr_compare;      // bbport: 0 HDR, 1 the game's SDR, 2 split (SDR left, HDR right)
 } pp;
 
 const float cutoff = 0.0031308, a = 1.055, b = 0.055, d = 12.92;
@@ -109,7 +110,9 @@ void main() {
         if (pp.srgb_input) color_linear.rgb = degamma(color_linear.rgb);
         vec3 signal = clamp(gamma(clamp(color_linear.rgb, 0.0, 1.0)), 0.0, 1.0);
         vec3 nits = sdr_to_nits(signal, vec3(1.0));
-        if (pp.hdr_channel) {
+        // Comparison: the game's SDR (at paper white) on the whole frame or on its left half.
+        bool sdr_side = pp.hdr_compare == 1u || (pp.hdr_compare == 2u && uv.x < 0.5);
+        if (pp.hdr_channel && !sdr_side) {
             // Where the finished frame is still what the tonemap wrote (same luminance, give or
             // take the game's AA, grain and brightness setting), it is the scene: its highlights
             // are raised by the channel's gain. Elsewhere (UI drawn over it) it stays SDR.
@@ -171,6 +174,9 @@ void main() {
             } else if (pp.hdr_debug == 2u && scene < 0.5) {
                 nits = mix(nits, vec3(pp.hdr_paper_white, 0.0, 0.0), 0.6); // taken as UI
             }
+        }
+        if (pp.hdr_compare == 2u && abs(uv.x - 0.5) * float(textureSize(texSampler, 0).x) < 1.5) {
+            nits = vec3(pp.hdr_paper_white); // split line
         }
         color = vec4(pq_encode(nits), 1.0);
     } else {

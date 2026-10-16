@@ -29,6 +29,8 @@ public:
         // bbport HDR, live (in-game menu): gains exponent, boost of the SDR highlights.
         float hdr_strength = 1.0f;
         float hdr_boost = 0.0f;
+        // bbport HDR comparison (in-game menu, F9): 0 HDR, 1 the game's SDR, 2 split (SDR left).
+        u32 hdr_compare = 0;
     };
 
     void Create(vk::Device device, vk::Format surface_format);

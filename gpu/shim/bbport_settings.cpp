@@ -130,6 +130,12 @@ void Load() {
             Set(v, key, value);
         }
     }
+    if (const char* env = std::getenv("BB_HDR_DEBUG")) {
+        v.hdr_debug = std::clamp(std::atoi(env), 0, 2);
+    }
+    if (const char* env = std::getenv("BB_HDR_TEST_PATTERN")) {
+        v.hdr_test_pattern = std::atoi(env) != 0;
+    }
     v.startup_preset = v.preset;
     v.startup_upscaler = v.upscaler;
     v.startup_object_motion = v.object_motion;
