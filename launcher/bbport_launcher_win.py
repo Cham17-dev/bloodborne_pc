@@ -210,6 +210,7 @@ INI_FLAGS = {'sharpen', 'object_motion', 'show_fps', *(k for k, _t, _o in EFFECT
 INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': '0.50',
                 'object_motion': '1', 'show_fps': '1', 'output_res': '1920x1080', 'model_lod': '0',
                 'live_resolution': 'auto', 'hud_position': '100',
+                'hdr_paper_white': '203', 'hdr_peak_nits': '1000', 'hdr_strength': '1.00', 'hdr_boost': '0.00',
                 **{key: '1' if on else '0' for key, _t, on in EFFECTS + EXTRAS + CHEATS + TWEAKS}}
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'), 'user_dir': '', 'dlc_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
@@ -274,7 +275,8 @@ HDR_TONEMAP = [('', ('Game (default)', 'Игры (по умолчанию)')), (
                ('4', ('bbport HDR, all areas (experimental, needs HDR output)',
                       'bbport HDR, все локации (эксперимент, нужен вывод HDR)'))]
 # bbport HDR: peak luminance of the display, in nits (BB_HDR_PEAK_NITS).
-HDR_PEAK_NITS = [('', ('1000 nits (default)', '1000 нит (по умолчанию)')), ('400', ('400 nits', '400 нит')),
+# bbport.ini keys since hdr-27 (the in-game menu changes them live; other values show as they are).
+HDR_PEAK_NITS = [('1000', ('1000 nits (default)', '1000 нит (по умолчанию)')), ('400', ('400 nits', '400 нит')),
                  ('600', ('600 nits', '600 нит')), ('800', ('800 nits', '800 нит')),
                  ('1500', ('1500 nits', '1500 нит')), ('2000', ('2000 nits', '2000 нит'))]
 # bbport HDR: the highlight curve of the all-areas HDR pass (BB_HDR_TONEMAPPER).
@@ -286,7 +288,7 @@ HDR_TONEMAPPER = [('', ('Neutwo: the game\'s look, brighter highlights (default)
 HDR_DEBUG = [('', ('Off', 'Выкл.')), ('1', ('Highlight gain as colors', 'Усиление бликов цветом')),
              ('2', ('Pixels taken as UI in red', 'Пиксели интерфейса красным'))]
 # bbport HDR: luminance of the game's white (paper white) in HDR output, in nits.
-HDR_PAPER_WHITE = [('', ('203 nits (default)', '203 нит (по умолчанию)')), ('100', ('100 nits', '100 нит')),
+HDR_PAPER_WHITE = [('203', ('203 nits (default)', '203 нит (по умолчанию)')), ('100', ('100 nits', '100 нит')),
                    ('150', ('150 nits', '150 нит')), ('250', ('250 nits', '250 нит')),
                    ('300', ('300 nits', '300 нит')), ('400', ('400 nits', '400 нит'))]
 UI_LANGUAGES = bbport_lang.LANGUAGE_NAMES
@@ -334,6 +336,15 @@ def load_ini():
             key, value = line.split('=', 1)
             values[key.strip()] = value.strip()
     return values, lines
+
+
+def migrate_hdr_settings(app, ini, lines):
+    """Paper white and peak moved from settings.json to bbport.ini (hdr-27): an older choice is
+    kept when bbport.ini does not have the key yet."""
+    present = {line.split('=', 1)[0].strip() for line in lines if '=' in line}
+    for key in ('hdr_paper_white', 'hdr_peak_nits'):
+        if key not in present and str(app.get(key, '')).strip():
+            ini[key] = str(app[key]).strip()
 
 
 def save_ini(values, lines):
@@ -497,8 +508,6 @@ def game_environment(s):
     env['BB_PRESENT_MODE'] = s['present_mode']
     if s['hdr']:
         env['BB_HDR'] = '1'
-        if s.get('hdr_paper_white', ''):
-            env['BB_HDR_PAPER_WHITE'] = s['hdr_paper_white']
         if s.get('hdr_test_pattern'):
             env['BB_HDR_TEST_PATTERN'] = '1'
     if s.get('hdr_tonemap', ''):
@@ -507,8 +516,6 @@ def game_environment(s):
         env.setdefault('BB_GPU_LOG', 'info')
     if s.get('hdr_tonemapper', ''):
         env['BB_HDR_TONEMAPPER'] = s['hdr_tonemapper']
-    if s.get('hdr_peak_nits', ''):
-        env['BB_HDR_PEAK_NITS'] = s['hdr_peak_nits']
     if s.get('hdr_debug', ''):
         env['BB_HDR_DEBUG'] = s['hdr_debug']
     if s.get('hdr_probe'):
@@ -580,6 +587,7 @@ class Launcher:
         self.root = root
         self.app = {**APP_DEFAULTS, **load_json(CONFIG_FILE, {})}
         self.ini, self.ini_lines = load_ini()
+        migrate_hdr_settings(self.app, self.ini, self.ini_lines)
         self.remap_ini_path = input_ini_path(ini_path())
         self.remap_bindings, self.remap_lines, self.remap_toggle_key, self.remap_reload_key, \
             self.mouse_settings = load_input_ini(self.remap_ini_path)
@@ -721,9 +729,15 @@ class Launcher:
             self.vars[key] = v
         return self.vars[key]
 
-    def choice(self, parent, key, store, options, width=38):
-        """A combobox over (value, (english, russian)) pairs, kept in sync with its variable."""
+    def choice(self, parent, key, store, options, width=38, custom=None):
+        """A combobox over (value, (english, russian)) pairs, kept in sync with its variable.
+        custom: a label format for a value not in the list (set elsewhere, e.g. the in-game menu),
+        which is then shown as an extra choice instead of being replaced by the first one."""
         var = self.var(key, store)
+        options = list(options)
+        current = str(var.get())
+        if custom and current and current not in [v for v, _t in options]:
+            options.append((current, tuple(f.format(current) for f in custom)))
         values = [v for v, _t in options]
         box = self.ttk.Combobox(parent, values=[_(*text) for _v, text in options], state='readonly', width=width)
         if var.get() not in values:
@@ -815,7 +829,7 @@ class Launcher:
         tk.Label(side, text='BLOODBORNE', bg=BG, fg=GOLD, font=('Georgia', 16)).pack(anchor='w', padx=22, pady=(24, 0))
         self.side = side
         tk.Label(side, text=_('by Super Medo'), bg=BG, fg=TEXT, font=('Segoe UI', 10)).pack(anchor='w', padx=22)
-        tk.Label(side, text=_('native port · Windows', 'нативный порт · Windows') + f'  ·  {VERSION_TEXT}' + ('\n' + _('co-op test build') if COOP_TEST else ''), bg=BG, fg=MUTED, justify='left',
+        tk.Label(side, text=_('native port · Windows', 'нативный порт · Windows') + f'  ·  v{VERSION}' + (f'\nbuild {BUILD}' if BUILD else '') + ('\n' + _('co-op test build') if COOP_TEST else ''), bg=BG, fg=MUTED, justify='left',
                  font=('Segoe UI', 9)).pack(anchor='w', padx=22, pady=(0, 20))
         self.nav, self.current_page = {}, None
         for name, title in (('play', _('Play', 'Играть')), ('graphics', _('Graphics', 'Графика')),
@@ -1054,9 +1068,12 @@ class Launcher:
                    _('When HDR is on in Windows and the display supports it.',
                      'Если HDR включён в Windows и монитор его поддерживает.'))
         self.row(f, _('HDR brightness (paper white)', 'Яркость HDR (белый)'),
-                 self.choice(f, 'hdr_paper_white', 'app', HDR_PAPER_WHITE),
-                 _('How bright the game\'s white is in HDR. Raise it if the game looks dim.',
-                   'Яркость белого цвета игры в HDR. Увеличьте, если игра выглядит тусклой.'))
+                 self.choice(f, 'hdr_paper_white', 'ini', HDR_PAPER_WHITE,
+                             custom=('{} nits (set in game)', '{} нит (задано в игре)')),
+                 _('How bright the game\'s white is in HDR. Raise it if the game looks dim. '
+                   'Also in the in-game menu (Insert or L3+R3), live.',
+                   'Яркость белого цвета игры в HDR. Увеличьте, если игра выглядит тусклой. '
+                   'Также в меню игры (Insert или L3+R3), на лету.'))
         self.row(f, _('HDR tonemap (test)', 'Тонмаппинг HDR (тест)'),
                  self.choice(f, 'hdr_tonemap', 'app', HDR_TONEMAP),
                  _('Replaces the game\'s tonemap shader with bbport\'s. The check mode tints the left '
@@ -1068,9 +1085,12 @@ class Launcher:
                  _('With "bbport HDR, all areas": how the highlights above the game\'s white are drawn.',
                    'С «bbport HDR, все локации»: как рисуются блики выше белого игры.'))
         self.row(f, _('HDR peak brightness', 'Пиковая яркость HDR'),
-                 self.choice(f, 'hdr_peak_nits', 'app', HDR_PEAK_NITS),
-                 _('The brightest your display can show (with the bbport HDR tonemap).',
-                   'Максимальная яркость дисплея (для тонмаппинга bbport HDR).'))
+                 self.choice(f, 'hdr_peak_nits', 'ini', HDR_PEAK_NITS,
+                             custom=('{} nits (set in game)', '{} нит (задано в игре)')),
+                 _('The brightest your display can show. The in-game menu (Insert or L3+R3) also '
+                   'sets it live, with the strength and boost of the HDR highlights.',
+                   'Максимальная яркость дисплея. В меню игры (Insert или L3+R3) — на лету, '
+                   'вместе с силой и усилением бликов HDR.'))
         self.row(f, _('HDR debug view', 'Отладка HDR'), self.choice(f, 'hdr_debug', 'app', HDR_DEBUG))
         self.check(f, 'hdr_test_pattern', 'app', _('HDR test pattern', 'Тестовая таблица HDR'),
                    _('Shows a test pattern instead of the game, to check the HDR output.',

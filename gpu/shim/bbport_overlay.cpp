@@ -297,6 +297,31 @@ void Menu() {
     Hint("Red/green: horizontal/vertical motion (8 pixels = full brightness). Blue: the pixel has accurate object motion, beyond camera motion. A moving object with no blue or red/green is treated as stationary and may leave trails.");
     ImGui::EndDisabled(); // upscaler off
 
+    if (s.hdr_output) {
+        ImGui::SeparatorText("HDR (live)");
+        float paper = s.hdr_paper_white;
+        Store(s.hdr_paper_white, paper,
+              ImGui::SliderFloat("Paper white", &paper, 80.0f, 500.0f, "%.0f nits"));
+        Hint("Brightness of the game's white (and of the HUD). Raise it if the game looks dim, lower it in a dark room.");
+        float peak = s.hdr_peak_nits;
+        Store(s.hdr_peak_nits, peak,
+              ImGui::SliderFloat("Peak brightness", &peak, 400.0f, 4000.0f, "%.0f nits"));
+        Hint("The brightest your display can show. Highlights roll off toward it instead of clipping. Set it to your display's peak (for example 1000 on a QD-OLED in its HDR 1000 mode).");
+        ImGui::BeginDisabled(!s.hdr_highlights);
+        Slider("Highlight strength", s.hdr_strength, 0.0f, 3.0f);
+        Hint("How much of the light above the game's white is shown (the moon, the clinic window, fires): 0 is the game's SDR look, 1 is bbport's default, more is brighter.");
+        Slider("Highlight boost", s.hdr_boost, 0.0f, 1.0f);
+        Hint("Raises the bright parts the game drew near its white toward the peak, for scenes lit for SDR (Hunter's Dream): 0 is off. Midtones and the HUD are not changed.");
+        if (ImGui::Button("Reset HDR")) {
+            Store(s.hdr_strength, 1.0f, true);
+            Store(s.hdr_boost, 0.0f, true);
+        }
+        ImGui::EndDisabled();
+        if (!s.hdr_highlights) {
+            ImGui::TextDisabled("Strength and boost need HDR tonemap \"bbport HDR, all areas\" in the launcher.");
+        }
+    }
+
     ImGui::SeparatorText("Output resolution");
     static const char* outputs[] = {"1280 x 720", "1920 x 1080", "2560 x 1440", "3840 x 2160",
                                     "2560 x 1080 (21:9)", "3440 x 1440 (21:9)",

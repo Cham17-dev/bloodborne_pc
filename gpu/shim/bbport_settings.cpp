@@ -50,6 +50,14 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.reactive_max = Clamp(f, 0.0f, 1.0f);
     } else if (key == "debug_view") {
         v.debug_view = std::clamp(i, 0, DebugViewCount - 1);
+    } else if (key == "hdr_paper_white") {
+        if (!value.empty()) v.hdr_paper_white = Clamp(f, 80.0f, 500.0f);
+    } else if (key == "hdr_peak_nits") {
+        if (!value.empty()) v.hdr_peak_nits = Clamp(f, 200.0f, 10000.0f);
+    } else if (key == "hdr_strength") {
+        if (!value.empty()) v.hdr_strength = Clamp(f, 0.0f, 3.0f);
+    } else if (key == "hdr_boost") {
+        if (!value.empty()) v.hdr_boost = Clamp(f, 0.0f, 1.0f);
     } else if (key == "show_fps") {
         v.show_fps = i != 0;
     } else if (key == "fsr4_auto_exposure") {
@@ -115,6 +123,7 @@ void Load() {
         {"BB_REACTIVE", "reactive"},              {"BB_REACTIVE_SCALE", "reactive_scale"},
         {"BB_REACTIVE_THRESHOLD", "reactive_threshold"}, {"BB_REACTIVE_MAX", "reactive_max"},
         {"BB_UPSCALE_PRESET", "preset"},            {"BB_OBJECT_MOTION", "object_motion"},
+        {"BB_HDR_PAPER_WHITE", "hdr_paper_white"}, {"BB_HDR_PEAK_NITS", "hdr_peak_nits"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env)) {
@@ -205,6 +214,9 @@ void Save() {
     for (int e = 0; e < EffectCount; ++e) {
         std::fprintf(file, "%s=%d\n", Effects[e].key, int(v.effects[e].load()));
     }
+    std::fprintf(file, "hdr_paper_white=%.0f\nhdr_peak_nits=%.0f\nhdr_strength=%.2f\nhdr_boost=%.2f\n",
+                 v.hdr_paper_white.load(), v.hdr_peak_nits.load(), v.hdr_strength.load(),
+                 v.hdr_boost.load());
     std::fprintf(file, "model_lod=%d\noutput_res=%dx%d\n", v.model_lod.load(),
                  OutputWidths[v.output_res], OutputHeights[v.output_res]);
     // Read by run.py at start (hud_layout.py).

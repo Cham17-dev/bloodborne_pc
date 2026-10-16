@@ -20,7 +20,6 @@
 #include "video_core/renderer_vulkan/bb_tonemap_variants.h"
 #include "video_core/renderer_vulkan/vk_hdr_channel.h"
 
-#include <unordered_set>
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
@@ -233,8 +232,11 @@ std::optional<std::vector<u32>> BuildComposite(const TonemapVariant& v, std::spa
         *why = "the HDR shader's decorations were not found";
         return std::nullopt;
     }
+    // Neutwo: the highlights unbounded here (up to 10000 nits); the final pass shapes them to
+    // the peak live (strength, boost, peak: in-game menu). PsychoV30 is fitted to the peak.
     const float paper = float(EmulatorSettings.GetHdrPaperWhite());
-    const float peak = std::max(HdrChannel::PeakNits() / paper, HdrChannel::Knee() + 0.05f);
+    const float target = HdrChannel::Tonemapper() == 1 ? HdrChannel::PeakNits() : 10000.0f;
+    const float peak = std::max(target / paper, HdrChannel::Knee() + 0.05f);
     SetSpirvSpecConstant(spv, 1, std::bit_cast<u32>(peak));
     SetSpirvSpecConstant(spv, 2, std::bit_cast<u32>(HdrChannel::Knee()));
     SetSpirvSpecConstant(spv, 10, v.curve);
@@ -325,8 +327,8 @@ bool HdrChannel::Generic() {
 }
 
 float HdrChannel::PeakNits() {
-    static const float peak = EnvFloat("BB_HDR_PEAK_NITS", 1000.0f, 200.0f, 10000.0f);
-    return peak;
+    // bbport.ini hdr_peak_nits or BB_HDR_PEAK_NITS; the in-game menu changes it live.
+    return std::clamp(BbSettings::Get().hdr_peak_nits.load(), 200.0f, 10000.0f);
 }
 
 float HdrChannel::Knee() {

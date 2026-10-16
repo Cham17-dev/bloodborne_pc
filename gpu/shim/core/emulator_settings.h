@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <string>
 #include "common/types.h"
+#include "bbport_settings.h"
 
 u32 BbDisplayRefreshHz(); // bbgpu.cpp: primary display refresh rate, 60 when unknown
 
@@ -56,13 +57,11 @@ public:
     bool IsDumpShaders() { static const auto value = Flag("BB_DUMP_SHADERS", false); return value; }
     bool IsFsrEnabled() { static const auto value = Flag("BB_FSR1", false); return value; }
     bool IsHdrAllowed() { static const auto value = Flag("BB_HDR", false); return value; }
-    // bbport HDR: the SDR frame is sent in HDR10 (Rec.2020, PQ) with its white at this luminance.
+    // bbport HDR: the SDR frame is sent in HDR10 (Rec.2020, PQ) with its white at this luminance
+    // (bbport.ini hdr_paper_white or BB_HDR_PAPER_WHITE; the in-game menu changes it live).
     u32 GetHdrPaperWhite() {
-        static const auto value = [] {
-            const long nits = Number("BB_HDR_PAPER_WHITE", 203);
-            return u32(nits < 80 ? 80 : nits > 500 ? 500 : nits);
-        }();
-        return value;
+        const float nits = BbSettings::Get().hdr_paper_white.load();
+        return u32(nits < 80.0f ? 80.0f : nits > 500.0f ? 500.0f : nits);
     }
     // Decode the SDR frame with a pure 2.2 power (as SDR displays show it) instead of sRGB.
     bool IsHdrGamma22() { static const auto value = Flag("BB_HDR_GAMMA22", true); return value; }

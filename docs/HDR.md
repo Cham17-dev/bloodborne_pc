@@ -19,11 +19,13 @@ Options (launcher → Fenêtre, ou variables d'environnement) :
 | Launcher | Variable | Défaut |
 |---|---|---|
 | Allow HDR output | `BB_HDR=1` | off |
-| HDR brightness (paper white) | `BB_HDR_PAPER_WHITE=80..500` | 203 |
+| HDR brightness (paper white) | `bbport.ini` `hdr_paper_white=80..500` (menu en jeu, en direct ; `BB_HDR_PAPER_WHITE` prioritaire) | 203 |
 | HDR test pattern | `BB_HDR_TEST_PATTERN=1` | off |
 | HDR tonemap (test) | `BB_HDR_TONEMAP=0/1/2/3/4` (jeu / bbport / bbport + teinte / bbport HDR / bbport HDR toutes zones) | 0 |
 | HDR highlights (all areas) | `BB_HDR_TONEMAPPER=0/1` (épaule Neutwo / PsychoV30), passe générique seulement | 0 |
-| HDR peak brightness | `BB_HDR_PEAK_NITS=200..10000` | 1000 |
+| HDR peak brightness | `bbport.ini` `hdr_peak_nits=200..10000` (menu en jeu, en direct ; `BB_HDR_PEAK_NITS` prioritaire) | 1000 |
+| Menu en jeu : Highlight strength | `bbport.ini` `hdr_strength=0..3` : exposant des gains du canal (0 = SDR, 1 = calculé) | 1 |
+| Menu en jeu : Highlight boost | `bbport.ini` `hdr_boost=0..1` : hautes lumières SDR de la scène poussées vers le pic (blanc du jeu → 1 + boost·(pic − 1)) | 0 |
 | HDR debug view | `BB_HDR_DEBUG=1` gain en couleurs, `=2` pixels pris pour l'interface en rouge | off |
 | — | `BB_HDR_KNEE=0.3..0.95` : part du blanc sous laquelle la courbe du jeu est gardée | 0.6 |
 | HDR diagnostic (collect shaders) | `BB_DUMP_SHADERS=1`, `BB_PIPELINE_CACHE=0`, `BB_CAPTURE_AUTO=20`, `BB_CAPTURE_DIR=<sauvegardes>/shader/dumps/frames` | off |
@@ -123,6 +125,15 @@ Analyse hors jeu des shaders du dump 1.09 (outils dans `docs/hdr-tools/`) :
   `HDR tonemap variant <hash> in use … <état>` à la première utilisation de chaque variante.
 
 ### Passe HDR générique (étape 3c, codée le 16/10)
+
+**Réglages en direct (build hdr-27).** Section « HDR (live) » du menu en jeu (Insert ou L3+R3) : paper white,
+pic, force et boost des hautes lumières, appliqués par la passe finale (`post_process.frag`) à chaque image. Le
+canal ne borne plus les gains Neutwo (pic 10 000 nits dans le shader du composite) : la passe finale élève les
+gains à la puissance « force », ajoute le boost (lumière SDR au-dessus de ~45 % du blanc, en y³), puis une épaule
+Neutwo sur la luminance à partir de 0,6 × pic. PsychoV30 reste ajusté au pic du lancement. Paper white et pic
+passent de `settings.json` (variables d'environnement) à `bbport.ini`, partagés par le launcher et le menu.
+Mesure au Rêve du chasseur (hdr-26, réglages par défaut) : lune ~200 nits, le jeu y éclaire peu au-dessus de son
+blanc ; le boost sert à ces scènes.
 
 **Élargie encore (build hdr-26) : 1 380 variantes.** Le journal de hdr-24 (`HDR scan:`, partie lancée au Rêve
 du chasseur, carte m21) montre le composite du Rêve : `5e67d866`, dessiné avec le même vertex shader `1ea5a07e`,

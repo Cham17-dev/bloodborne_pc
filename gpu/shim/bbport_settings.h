@@ -74,6 +74,17 @@ struct Values {
     std::atomic<float> reactive_max{0.9f};
     std::atomic<int> debug_view{DebugNone};
     std::atomic<bool> show_fps{false};
+    // HDR output (in-game menu, applied live by the final pass): SDR white and peak in nits, the
+    // strength of the HDR highlights (exponent of the side channel's gains, 1 = as computed) and
+    // the boost of the SDR highlights (0 none .. 1 the game's white at the peak).
+    std::atomic<float> hdr_paper_white{203.0f};
+    std::atomic<float> hdr_peak_nits{1000.0f};
+    std::atomic<float> hdr_strength{1.0f};
+    std::atomic<float> hdr_boost{0.0f};
+    /// Set by the presenter: the frame is sent in HDR10 (the menu shows the HDR section).
+    std::atomic<bool> hdr_output{false};
+    /// Set by the presenter: the all-areas HDR highlights are on (strength and boost apply).
+    std::atomic<bool> hdr_highlights{false};
     // FSR 4 checks (menu): the provider's auto exposure, the jitter sign it is given.
     std::atomic<bool> fsr4_auto_exposure{true};
     std::atomic<bool> fsr4_invert_jitter{false};

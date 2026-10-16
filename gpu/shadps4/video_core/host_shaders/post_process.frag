@@ -22,6 +22,8 @@ layout (push_constant) uniform settings {
     bool hdr_channel;      // bbport: apply the HDR side channel's gains
     uint hdr_debug;        // bbport: 1 = gain heat map, 2 = pixels taken as UI in red
     float hdr_peak_nits;   // bbport: peak luminance
+    float hdr_strength;    // bbport: exponent of the channel's gains (1 = as computed)
+    float hdr_boost;       // bbport: boost of the scene's SDR highlights (0 .. 1: white to peak)
 } pp;
 
 const float cutoff = 0.0031308, a = 1.055, b = 0.055, d = 12.92;
@@ -135,9 +137,30 @@ void main() {
             // far more than that.
             float tolerance = 0.04 + 0.22 * g_max * g_max;
             float scene = 1.0 - smoothstep(tolerance, tolerance + 0.10, miss);
-            vec3 gains = mix(vec3(1.0), max(vec3(channel.r, channel.b, channel.a), 0.0), scene);
-            nits = min(sdr_to_nits(signal, gains), vec3(pp.hdr_peak_nits));
-            float gain = dot(gains, vec3(0.2126390059, 0.7151686788, 0.0721923154));
+            // Live shaping (in-game menu), in units of paper white:
+            //  - strength: the channel's gains raised to this power (more or less of the scene's
+            //    highlights above the game's white);
+            //  - boost: the scene's SDR highlights (above about half of white) raised toward the
+            //    peak, the game's white reaching 1 + boost (peak - 1);
+            //  - then a shoulder from 0.6 of the peak, so nothing clips.
+            const vec3 luma709 = vec3(0.2126390059, 0.7151686788, 0.0721923154);
+            float peak = max(pp.hdr_peak_nits / pp.hdr_paper_white, 1.0);
+            vec3 gains = pow(max(vec3(channel.r, channel.b, channel.a), 0.0),
+                             vec3(max(pp.hdr_strength, 0.0)));
+            gains = mix(vec3(1.0), gains, scene);
+            vec3 lin = pp.hdr_gamma22 ? pow(signal, vec3(2.2)) : degamma(signal);
+            float l_sdr = dot(lin, luma709);
+            float y = clamp((l_sdr - 0.45) / 0.55, 0.0, 1.0);
+            float boost = 1.0 + scene * clamp(pp.hdr_boost, 0.0, 1.0) * (peak - 1.0) * y * y * y;
+            vec3 v = max(lin * gains * boost, 0.0);
+            float l = dot(v, luma709);
+            float k = 0.6 * peak;
+            if (l > k) {
+                float over = l - k, room = peak - k;
+                v *= (k + over * inversesqrt(1.0 + (over / room) * (over / room))) / l;
+            }
+            nits = min(max(bt709_to_bt2020(v), 0.0) * pp.hdr_paper_white, vec3(pp.hdr_peak_nits));
+            float gain = dot(v, luma709) / max(l_sdr, 1e-4);
             if (pp.hdr_debug == 1u) {
                 // Gain heat map: grey = 1 (SDR), blue to red = up to the peak.
                 float peak_gain = max(pp.hdr_peak_nits / pp.hdr_paper_white, 1.001);

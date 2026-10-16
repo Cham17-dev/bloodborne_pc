@@ -156,7 +156,7 @@ void main() {
     // and saturation too, and may darken), from the color matrix's rows (red, green, blue);
     // where the game's channel is near zero, the luminance gain.
     float gain = (has_hdr && sdr_luma > 1e-4) ? hdr_luma / sdr_luma : 1.0;
-    vec3 gains = vec3(max(gain, 1.0));
+    vec3 gains = vec3(clamp(gain, 1.0, 64.0));
     if (BB_TONEMAPPER == 1 && has_hdr) {
         vec3 sdr_rows = max(bb_grade(o, sdr_screen), 0.0);
         vec3 hdr_rows = max(bb_grade(o, hdr_screen), 0.0);

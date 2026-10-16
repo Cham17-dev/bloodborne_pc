@@ -26,6 +26,9 @@ public:
         u32 hdr_channel = 0;
         u32 hdr_debug = 0;
         float hdr_peak_nits = 1000.0f;
+        // bbport HDR, live (in-game menu): gains exponent, boost of the SDR highlights.
+        float hdr_strength = 1.0f;
+        float hdr_boost = 0.0f;
     };
 
     void Create(vk::Device device, vk::Format surface_format);
