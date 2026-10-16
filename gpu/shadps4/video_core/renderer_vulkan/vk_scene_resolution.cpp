@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "video_core/renderer_vulkan/vk_scene_resolution.h"
+#include "video_core/renderer_vulkan/vk_hdr_channel.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -108,6 +109,7 @@ bool SceneTargets::SetSize(SceneResolution::Size next) {
     ++generation;
     recent = {};
     size = next;
+    HdrChannel::SetNative16Active(Reduced());
     std::printf("Scene resolution: raster %ux%u, half-resolution targets %ux%u, UI 1920x1080 "
                 "(live)\n", size.width, size.height, size.width / 2, size.height / 2);
     return true;
@@ -396,6 +398,23 @@ SceneTargets::Entry& SceneTargets::Get(VideoCore::ImageId id, u32 level) {
     }
     auto& entry = entries[key];
     original.scene_proxy = true;
+    // bbport HDR, mode 5: the 16-bit chain's targets get an RGBA16F proxy (vk_hdr_channel.h).
+    // A proxy made before the target joined the chain is resolved, retired after the GPU is done
+    // with it, and made again.
+    const bool native16 = !original.info.props.is_depth &&
+                          HdrChannel::Upgraded(original.info.guest_address,
+                                               original.info.size.width,
+                                               original.info.size.height,
+                                               original.info.pixel_format);
+    if (entry && native16 && entry->image.image_ci.format != HdrChannel::Native16Format) {
+        if (entry->state.valid && entry->state.dirty) {
+            Copy(*entry, original, true);
+        }
+        scheduler.DeferOperation([old = std::move(entry)]() mutable { old.reset(); });
+        entry.reset();
+        recent = {};
+        ++generation;
+    }
     if (!entry) {
         entry = std::make_unique<Entry>();
         entry->source = id;
@@ -404,6 +423,11 @@ SceneTargets::Entry& SceneTargets::Get(VideoCore::ImageId id, u32 level) {
         entry->image = VideoCore::UniqueImage(instance.GetDevice(), instance.GetAllocator());
         auto ci = original.backing->image.image_ci;
         ci.pNext = nullptr;
+        if (native16) {
+            ci.format = HdrChannel::Native16Format;
+            ci.flags &= ~(vk::ImageCreateFlagBits::eMutableFormat |
+                          vk::ImageCreateFlagBits::eExtendedUsage);
+        }
         const auto proxy = ProxySize(original, level);
         ci.extent = vk::Extent3D{proxy.width, proxy.height, 1};
         ci.mipLevels = 1;
@@ -420,7 +444,10 @@ vk::ImageView SceneTargets::View(Entry& e, const VideoCore::Image& original,
     const auto aspect = original.info.props.is_depth
         ? (info.is_storage ? original.aspect_mask : vk::ImageAspectFlags(vk::ImageAspectFlagBits::eDepth))
         : vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor);
-    const auto format = original.info.props.is_depth ? original.backing->image.image_ci.format : info.format;
+    auto format = original.info.props.is_depth ? original.backing->image.image_ci.format : info.format;
+    if (e.image.image_ci.format == HdrChannel::Native16Format) {
+        format = HdrChannel::Native16Format; // the 16-bit chain (vk_hdr_channel.h)
+    }
     auto view = Check(instance.GetDevice().createImageViewUnique({
         .image = e.image, .viewType = vk::ImageViewType::e2D, .format = format,
         .components = info.mapping, .subresourceRange = {aspect,0,1,0,1},

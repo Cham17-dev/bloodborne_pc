@@ -1119,7 +1119,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // which ends the current pass).
     const vk::Pipeline hdr_handle = pipeline->HdrHandle();
     std::optional<HdrChannel::Slot> hdr_slot;
-    if (hdr_handle) {
+    if (hdr_handle && !HdrChannel::Native16()) {
         hdr_slot = HdrChannel::Get().Acquire(instance, scheduler, state.width, state.height);
     }
     scheduler.BeginRendering(state);
@@ -1144,6 +1144,31 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // bbport HDR side channel: the tonemap draw again, into the channel's RGBA16F image, with the
     // same descriptors, push constants, vertex buffers and dynamic state; then the game's pass
     // continues (its attachments loaded, not cleared again).
+    // bbport HDR, mode 5 (16-bit chain): the HDR part of the composite, added to the game's
+    // own (RGBA16F) target in the same pass; color writes only, then the game's state again.
+    if (hdr_handle && HdrChannel::Native16()) {
+        const bool dynamic_masks = instance.IsDynamicColorWriteMaskSupported();
+        const ColorWriteMasks game_masks = scheduler.GetDynamicState().color_write_masks;
+        scheduler.Record([=](vk::CommandBuffer cmdbuf) {
+            cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, hdr_handle);
+            if (dynamic_masks) {
+                const std::array rgb{vk::ColorComponentFlags{vk::ColorComponentFlagBits::eR |
+                                                            vk::ColorComponentFlagBits::eG |
+                                                            vk::ColorComponentFlagBits::eB}};
+                cmdbuf.setColorWriteMaskEXT(0, rgb);
+            }
+            if (is_indexed) {
+                cmdbuf.drawIndexed(num_indices, num_instances, 0, s32(first_vertex),
+                                   first_instance);
+            } else {
+                cmdbuf.draw(num_indices, num_instances, first_vertex, first_instance);
+            }
+            cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, handle);
+            if (dynamic_masks) {
+                cmdbuf.setColorWriteMaskEXT(0, game_masks);
+            }
+        });
+    }
     if (hdr_slot) {
         const auto slot = *hdr_slot;
         const RenderState game_state = state;
@@ -1262,6 +1287,12 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     }
     if (const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)]) {
         HdrChannel::NoteDraw(ps->pgm_hash);
+        if (HdrChannel::Native16() && regs.color_buffers[0]) {
+            const auto& cb0 = regs.color_buffers[0];
+            HdrChannel::NoteTarget(
+                ps->pgm_hash, cb0.Address(), cb0.Pitch(), cb0.Height(),
+                LiverpoolToVK::SurfaceFormat(cb0.GetDataFmt(), cb0.GetNumberFmt()));
+        }
         if (num_indices <= 6 && num_instances == 1 && HdrChannel::Enabled()) {
             HdrChannel::NoteFullscreen(vs_info.pgm_hash, ps->pgm_hash, state.width, state.height,
                                        state.num_color_attachments);

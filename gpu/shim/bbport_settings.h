@@ -107,6 +107,7 @@ struct Values {
     std::atomic<bool> hdr_test_pattern{false};
     // Set by the renderer, shown by the menu.
     std::atomic<bool> hdr_channel_live{false};   ///< this frame has HDR highlights
+    std::atomic<bool> hdr_native16_live{false}; ///< this frame is the 16-bit chain's
     std::atomic<unsigned> hdr_variant{0};        ///< last composite with the HDR pass
     std::atomic<int> hdr_mode{0};                ///< BB_HDR_TONEMAP
     std::atomic<int> hdr_tonemapper{0};          ///< 0 Neutwo, 1 PsychoV30 (live, saved)

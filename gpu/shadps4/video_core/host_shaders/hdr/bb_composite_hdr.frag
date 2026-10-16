@@ -37,6 +37,11 @@ layout(constant_id = 21) const bool BB_FLOOR_ON = true;
 layout(constant_id = 22) const bool BB_SCENE_MAT = false;
 layout(constant_id = 23) const bool BB_GLOW_MAT = false;
 layout(constant_id = 24) const bool BB_GRADE = true;
+// Mode 5 (the 16-bit chain): drawn right after the game's composite into its own (RGBA16F)
+// target with additive blending and color writes only: frag_color0 = the HDR output minus the
+// game's (both encoded as the game encodes, before its grain), so the target ends up with the
+// HDR color plus the game's grain and alpha.
+layout(constant_id = 25) const bool BB_OUTPUT_DELTA = false;
 
 // The game shader's constant buffer (decorations copied from the variant).
 layout(set = 0, binding = 0, std430) readonly buffer bb_ssbo_block {
@@ -198,4 +203,18 @@ void main() {
         }
     }
     frag_aux = aux;
+
+    if (BB_OUTPUT_DELTA) {
+        vec3 delta = vec3(0.0);
+        if (has_hdr) {
+            if (BB_GAMMA) {
+                vec3 hdr_encoded = exp2(bb_c(808u) * log2(max(hdr_graded, 0.0) + BB_EPS));
+                vec3 sdr_game = exp2(bb_c(808u) * log2(clamp(sdr_graded + BB_EPS, 0.0, 1.0)));
+                delta = hdr_encoded - sdr_game;
+            } else {
+                delta = max(hdr_graded, 0.0) - clamp(sdr_graded, 0.0, 1.0);
+            }
+        }
+        frag_color0 = vec4(max(delta, 0.0), 0.0);
+    }
 }

@@ -8,6 +8,7 @@
 #include <mutex>
 #include <ranges>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -25,6 +26,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/motion_history.h"
 #include "video_core/renderer_vulkan/vk_draw_prep.h"
+#include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "video_core/renderer_vulkan/vk_hdr_channel.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_serialization.h"
@@ -82,10 +84,25 @@ bool GameShaderReplaced(u64 pgm_hash) {
 
 std::span<const u32> GameShaderCode(u64 pgm_hash, std::span<const u32> original) {
     static const int mode = EmulatorSettings.GetHdrTonemapMode();
-    if (mode == 4) {
+    if (mode == 4 || mode == 5) {
         // Generic HDR pass: the game's shaders stay as they are; the composite variants get
         // their HDR shader built from this SPIR-V (vk_hdr_channel.h).
         HdrChannel::NoteGameShader(pgm_hash, original);
+        if (mode == 5 && (pgm_hash == 0x57f3b8c2 || pgm_hash == 0x38d65b32)) {
+            // The 16-bit chain: bbport's version of the glow source and the display copy. Kept
+            // per hash and per game SPIR-V (permutations), never freed (spans returned).
+            static std::mutex mutex;
+            static auto* kept = new std::unordered_map<u64, std::vector<u32>>;
+            const u64 key = pgm_hash ^ (u64(SpirvHash(original)) << 32);
+            std::scoped_lock lock{mutex};
+            auto it = kept->find(key);
+            if (it == kept->end()) {
+                it = kept->emplace(key, HdrChannel::ChainReplacement(pgm_hash, original)).first;
+            }
+            if (!it->second.empty()) {
+                return it->second;
+            }
+        }
         return original;
     }
     if (mode <= 0 || pgm_hash != TonemapPgmHash) {
@@ -630,6 +647,19 @@ bool PipelineCache::RefreshGraphicsKey(PipelineSelection& sel) {
         color_buffer.num_conversion = col_buf.GetNumberConversion();
         color_buffer.export_format = regs.color_export_format.GetFormat(cb);
         color_buffer.swizzle = col_buf.Swizzle();
+        // bbport HDR, mode 5: the 16-bit chain's targets are RGBA16F (vk_hdr_channel.h).
+        if (HdrChannel::Native16Active()) {
+            const auto format =
+                LiverpoolToVK::SurfaceFormat(col_buf.GetDataFmt(), col_buf.GetNumberFmt());
+            const VAddr address = col_buf.Address();
+            if (HdrChannel::Upgraded(address, col_buf.Pitch(), col_buf.Height(), format) ||
+                (FrameCapture::IsDisplayBuffer(address) &&
+                 HdrChannel::DisplayUpgraded(address, format))) {
+                color_buffer.data_format = AmdGpu::DataFormat::Format16_16_16_16;
+                color_buffer.num_format = AmdGpu::NumberFormat::Float;
+                color_buffer.num_conversion = AmdGpu::NumberConversion::None;
+            }
+        }
 
         const auto& bc = regs.blend_control[cb];
         color_buffer.blend_self_scale =

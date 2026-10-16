@@ -253,6 +253,16 @@ void HdrSection(BbSettings::Values& s) {
     if (!s.hdr_highlights) {
         ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
                            "HDR highlights off: the game's image in HDR10 (launcher: HDR tonemap).");
+    } else if (mode == 5) {
+        if (s.hdr_native16_live) {
+            ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.45f, 1.0f), "HDR 16-bit chain: active");
+            ImGui::SameLine();
+            ImGui::TextDisabled("(experimental, composite %08x)", s.hdr_variant.load());
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
+                               "HDR 16-bit chain: not active (needs an output other than 1080p)");
+        }
+        Hint("Experimental mode: the game draws its image in 16 bits after its tone mapping, so its highlights reach the final pass without a mask. HUD brightness and Game effects do not apply; the grading also touches the HUD.");
     } else if (s.hdr_channel_live) {
         ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.45f, 1.0f), "HDR highlights: active here");
         ImGui::SameLine();

@@ -411,7 +411,9 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         image_view = Check(device.createImageView({
             .image = display.image,
             .viewType = vk::ImageViewType::e2D,
-            .format = view_info.format,
+            // bbport HDR, mode 5: the 16-bit chain's display image is read as it is.
+            .format = display.format == HdrChannel::Native16Format ? display.format
+                                                                    : view_info.format,
             .components = {vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity,
                            vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eOne},
             .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
@@ -449,7 +451,9 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     expected_ratio = static_cast<float>(image_size.width) / static_cast<float>(image_size.height);
 
     image_view = fsr_pass.Render(cmdbuf, image_view, image_size, {frame->width, frame->height},
-                                 fsr_settings, /*hdr=*/false); // bbport: the display buffer is SDR
+                                 fsr_settings, /*hdr=*/upscaled && display.format ==
+                                                       HdrChannel::Native16Format);
+    // bbport: the display buffer is SDR, but for the 16-bit chain's (vk_hdr_channel.h).
 
     // Vulkan has no sRGB variant of the 10-bit format, so an A2R10G10B10Srgb buffer reaches
     // the post process pass still sRGB encoded and has to be decoded there instead.
@@ -458,6 +462,10 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     pp_settings.hdr_paper_white = static_cast<float>(EmulatorSettings.GetHdrPaperWhite());
     pp_settings.hdr_gamma22 = EmulatorSettings.IsHdrGamma22() ? 1 : 0;
     pp_settings.hdr_test_pattern = BbSettings::Get().hdr_test_pattern ? 1 : 0;
+    // bbport HDR, mode 5: a frame of the 16-bit chain (RGBA16F display image).
+    const bool native16 = upscaled && display.format == HdrChannel::Native16Format;
+    pp_settings.hdr_native16 = native16 && frame->is_hdr ? 1 : 0;
+    BbSettings::Get().hdr_native16_live = native16;
     // bbport HDR side channel: the gains of the last tonemap draw (vk_hdr_channel.h).
     vk::ImageView hdr_channel{};
     vk::ImageView hdr_aux{};

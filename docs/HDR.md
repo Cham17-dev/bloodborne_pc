@@ -126,6 +126,18 @@ Analyse hors jeu des shaders du dump 1.09 (outils dans `docs/hdr-tools/`) :
 
 ### Passe HDR générique (étape 3c, codée le 16/10)
 
+**Mode 5, chaîne 16 bits (build hdr-33, expérimental, `BB_HDR_TONEMAP=5`).** Seulement avec une sortie autre
+que 1080p (proxys à la taille de sortie : `SceneTargets::Reduced`). Les cibles 1920x1080 RGBA8 écrites par une
+variante standard du composite ou par la chaîne (`f7229091`, `57f3b8c2`, `da1faca9`, `8c08444c`) sont notées
+(`HdrChannel::NoteTarget`, log « HDR 16-bit: target … is RGBA16F ») et passent en RGBA16F dès la frame suivante :
+clé de pipeline (`RefreshGraphicsKey`), proxys (`SceneTargets::Get`, l'ancien proxy résolu puis retiré), image UI
+et image d'affichage de l'upscaler. Le composite est suivi, dans la même passe, de notre draw qui **ajoute la part
+HDR** (`BB_OUTPUT_DELTA`, spec 25 : HDR étalonné − SDR écrêté, dans le domaine gamma de la variante). Remplacés :
+`57f3b8c2` (source du glow, écrêtée à 1 : le glow reste celui du jeu) et `38d65b32` (copie écran : table de
+luminosité du jeu sous 1, prolongée en puissance 2,2 au-dessus). La passe finale (`native16_nits`) lit l'image
+linéaire : force (luminance au-dessus de 1 à la puissance), boost, étalonnage, tonemapper. Sans masque d'interface :
+HUD brightness et Effets du jeu ne s'appliquent pas, l'étalonnage touche aussi le HUD. Repli : mode 4 (hdr-32).
+
 **Chantier 16 bits : la chaîne après le composite (diagnostic du 16/10 au soir, hdr-32, 4K sans upscaler).**
 Relevé (`user/shader/dumps/frames`, adresses invitées, cibles 1920x1080 côté jeu, proxys 4K côté bbport) :
 

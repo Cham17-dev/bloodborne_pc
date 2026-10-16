@@ -14,6 +14,7 @@
 #include <mutex>
 #include <optional>
 #include <span>
+#include <vector>
 
 #include "common/types.h"
 #include "video_core/renderer_vulkan/vk_common.h"
@@ -32,7 +33,32 @@ public:
     static bool Enabled();
     /// BB_HDR_TONEMAP=4: the generic pass. The game's composite shaders are not replaced; every
     /// standard variant of bb_tonemap_variants.h gets the channel draw (hdr/bb_composite_hdr.frag).
+    /// Also true in mode 5 (the composites are built the same way).
     static bool Generic();
+
+    // ---- BB_HDR_TONEMAP=5: the 16-bit chain (docs/HDR.md, "Chantier 16 bits") ----------------
+    // The game's 8-bit targets after its composite (1920x1080 RGBA8: the composite's target, its
+    // copy for the AA, and the display buffers) become RGBA16F at the port's output-size images
+    // (scene proxies, UI and display images: only with a scaled output). The composite draw is
+    // followed by bbport's, which adds the HDR part (hdr/bb_composite_hdr.frag, BB_OUTPUT_DELTA),
+    // so the frame carries light above the game's white to the final pass.
+    static bool Native16();
+    /// Mode 5 and the port's output-size images in use (set by the scene proxies, each frame).
+    static bool Native16Active();
+    static void SetNative16Active(bool active);
+    /// GPU thread: the color target of a draw with this pixel shader (guest address, size,
+    /// format): composite variants and the shaders of the chain mark their 1920x1080 RGBA8
+    /// target as 16-bit from the next frame on.
+    static void NoteTarget(u64 ps_hash, VAddr address, u32 width, u32 height, vk::Format format);
+    /// Whether this guest color target is drawn as RGBA16F (pipeline formats, proxies, views).
+    static bool Upgraded(VAddr address, u32 width, u32 height, vk::Format format);
+    /// The display buffers (the game's last copy) when the port draws them at output size.
+    static void SetDisplayRedirect(bool redirect);
+    static bool DisplayUpgraded(VAddr address, vk::Format format);
+    static constexpr vk::Format Native16Format = vk::Format::eR16G16B16A16Sfloat;
+    /// Mode 5: bbport's version of a game shader of the chain (glow source, display copy) with
+    /// the game shader's bindings and locations, or empty to keep the game's.
+    static std::vector<u32> ChainReplacement(u64 pgm_hash, std::span<const u32> game);
 
     /// Generic pass: called with the game's SPIR-V of every shader bbport compiles or loads. For
     /// a composite variant, builds hdr/bb_composite_hdr.frag with that variant's interface

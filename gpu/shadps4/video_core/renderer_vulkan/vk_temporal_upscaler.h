@@ -142,6 +142,8 @@ private:
     void RunScaled();
     void RunUiOnly(VideoCore::ImageId color, VideoCore::ImageId depth);
     void EnsureUiResources(u32 width, u32 height, vk::Format color, vk::Format depth);
+    /// The UI image's format for this guest target (RGBA16F in the HDR 16-bit chain).
+    vk::Format UiColorFormat(const VideoCore::Image& color) const;
     void PrepareUiDepth(VideoCore::ImageId depth);
     /// Render size below the scaled-preset output size (the resolution patch is on).
     [[nodiscard]] bool Scaled() const;

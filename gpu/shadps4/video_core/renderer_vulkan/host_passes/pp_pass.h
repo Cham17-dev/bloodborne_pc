@@ -48,6 +48,8 @@ public:
         // bbport HDR, live: the game's bloom and vignettes (1 = as drawn, 0 none, 2 double).
         float hdr_bloom = 1.0f;
         float hdr_vignette = 1.0f;
+        // bbport HDR, mode 5: the frame is the 16-bit chain's RGBA16F (linear, HDR above 1).
+        u32 hdr_native16 = 0;
     };
 
     void Create(vk::Device device, vk::Format surface_format);

@@ -5,6 +5,7 @@
 #include <bit>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -16,6 +17,8 @@
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
 #include "video_core/host_shaders/bb_composite_hdr_frag.h"
+#include "video_core/host_shaders/bb_display_copy_frag.h"
+#include "video_core/host_shaders/bb_glow_source_frag.h"
 #include "video_core/host_shaders/bb_tonemap_hdr_frag.h"
 #include "video_core/renderer_vulkan/bb_tonemap_variants.h"
 #include "video_core/renderer_vulkan/vk_hdr_channel.h"
@@ -254,6 +257,7 @@ std::optional<std::vector<u32>> BuildComposite(const TonemapVariant& v, std::spa
     SetSpecBool(spv, 22, v.scene_mat);
     SetSpecBool(spv, 23, v.glow_mat);
     SetSpecBool(spv, 24, v.grade);
+    SetSpecBool(spv, 25, HdrChannel::Native16());
     return spv;
 }
 
@@ -314,16 +318,126 @@ HdrChannel& HdrChannel::Get() {
 }
 
 bool HdrChannel::Enabled() {
-    static const bool enabled = (EmulatorSettings.GetHdrTonemapMode() == 3 ||
-                                 EmulatorSettings.GetHdrTonemapMode() == 4) &&
+    static const bool enabled = EmulatorSettings.GetHdrTonemapMode() >= 3 &&
+                                EmulatorSettings.GetHdrTonemapMode() <= 5 &&
                                 EmulatorSettings.IsHdrAllowed();
     return enabled;
 }
 
 bool HdrChannel::Generic() {
-    static const bool generic =
-        EmulatorSettings.GetHdrTonemapMode() == 4 && EmulatorSettings.IsHdrAllowed();
+    static const bool generic = (EmulatorSettings.GetHdrTonemapMode() == 4 ||
+                                 EmulatorSettings.GetHdrTonemapMode() == 5) &&
+                                EmulatorSettings.IsHdrAllowed();
     return generic;
+}
+
+namespace {
+std::atomic<bool> native16_active{false};
+std::atomic<bool> display_redirect{false};
+std::mutex native16_mutex;
+std::unordered_set<VAddr> native16_targets;
+std::atomic<u32> native16_count{0};
+
+// The shaders after the composite that write its image or the copy the AA reads (docs/HDR.md):
+// PointSampleColor1 (copy), EmissiveToGlowPS (copy for the glow, clamped by bbport), DLAA, and
+// the glow's addition.
+constexpr bool ChainShader(u64 ps_hash) {
+    return ps_hash == 0xf7229091 || ps_hash == 0x57f3b8c2 || ps_hash == 0xda1faca9 ||
+           ps_hash == 0x8c08444c;
+}
+} // namespace
+
+std::vector<u32> HdrChannel::ChainReplacement(u64 pgm_hash, std::span<const u32> game) {
+    if (!Native16()) {
+        return {};
+    }
+    std::vector<u32> spv;
+    std::vector<const char*> bindings, locations;
+    if (pgm_hash == 0x57f3b8c2) {
+        spv.assign(std::begin(BB_GLOW_SOURCE_FRAG), std::end(BB_GLOW_SOURCE_FRAG));
+        bindings = {"fs_img0", "fs_samp0"};
+        locations = {"fs_in_attr0_p", "frag_color0"};
+    } else if (pgm_hash == 0x38d65b32) {
+        spv.assign(std::begin(BB_DISPLAY_COPY_FRAG), std::end(BB_DISPLAY_COPY_FRAG));
+        bindings = {"fs_img0", "fs_img1", "fs_samp0"};
+        locations = {"frag_color0"};
+    } else {
+        return {};
+    }
+    const SpvInterface in = ReadInterface(game);
+    const SpvInterface ours = ReadInterface(spv);
+    bool ok = true;
+    for (const char* name : bindings) {
+        const auto value = in.Binding(name);
+        ok = ok && value && SetDecoration(spv, ours, name, SpvDecorationBinding, *value);
+    }
+    for (const char* name : locations) {
+        const auto value = in.Location(name);
+        ok = ok && value && SetDecoration(spv, ours, name, SpvDecorationLocation, *value);
+    }
+    if (!ok) {
+        LOG_WARNING(Render_Vulkan, "HDR 16-bit: shader {:08x} has another interface, kept as it is",
+                    pgm_hash);
+        return {};
+    }
+    LOG_INFO(Render_Vulkan, "HDR 16-bit: shader {:08x} replaced ({})", pgm_hash,
+             pgm_hash == 0x57f3b8c2 ? "glow source clamped" : "display copy above white");
+    return spv;
+}
+
+bool HdrChannel::Native16() {
+    static const bool native =
+        EmulatorSettings.GetHdrTonemapMode() == 5 && EmulatorSettings.IsHdrAllowed();
+    return native;
+}
+
+bool HdrChannel::Native16Active() {
+    return Native16() && native16_active.load(std::memory_order_relaxed);
+}
+
+void HdrChannel::SetNative16Active(bool active) {
+    if (Native16() && native16_active.exchange(active) != active) {
+        LOG_INFO(Render_Vulkan, "HDR 16-bit: {}", active ? "on (output-size images)"
+                                                          : "off (no output-size images)");
+    }
+}
+
+void HdrChannel::NoteTarget(u64 ps_hash, VAddr address, u32 width, u32 height,
+                            vk::Format format) {
+    if (!Native16() || width != 1920 || height != 1080 || format != vk::Format::eR8G8B8A8Unorm) {
+        return;
+    }
+    const TonemapVariant* v = FindVariant(ps_hash);
+    if (!(v && v->standard) && !ChainShader(ps_hash)) {
+        return;
+    }
+    std::scoped_lock lock{native16_mutex};
+    if (native16_targets.insert(address).second) {
+        native16_count.store(u32(native16_targets.size()), std::memory_order_release);
+        LOG_INFO(Render_Vulkan, "HDR 16-bit: target {:#x} (from ps {:08x}) is RGBA16F", address,
+                 ps_hash);
+    }
+}
+
+bool HdrChannel::Upgraded(VAddr address, u32 width, u32 height, vk::Format format) {
+    if (!Native16Active() || width != 1920 || height != 1080 ||
+        format != vk::Format::eR8G8B8A8Unorm ||
+        native16_count.load(std::memory_order_acquire) == 0) {
+        return false;
+    }
+    std::scoped_lock lock{native16_mutex};
+    return native16_targets.contains(address);
+}
+
+void HdrChannel::SetDisplayRedirect(bool redirect) {
+    display_redirect.store(redirect, std::memory_order_relaxed);
+}
+
+bool HdrChannel::DisplayUpgraded(VAddr address, vk::Format format) {
+    (void)address;
+    return Native16Active() && display_redirect.load(std::memory_order_relaxed) &&
+           (format == vk::Format::eR8G8B8A8Srgb || format == vk::Format::eR8G8B8A8Unorm ||
+            format == vk::Format::eB8G8R8A8Srgb || format == vk::Format::eB8G8R8A8Unorm);
 }
 
 float HdrChannel::PeakNits() {

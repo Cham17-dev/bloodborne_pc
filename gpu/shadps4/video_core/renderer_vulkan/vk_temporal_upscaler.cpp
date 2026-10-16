@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "video_core/renderer_vulkan/vk_temporal_upscaler.h"
+#include "video_core/renderer_vulkan/vk_hdr_channel.h"
 #include "video_core/renderer_vulkan/vk_gpu_profiler.h"
 #include "video_core/renderer_vulkan/motion_history.h"
 #include "video_core/renderer_vulkan/vk_scene_resolution.h"
@@ -337,6 +338,7 @@ bool TemporalUpscaler::OnFrameStart() {
 
     // The display pass of an upscaled frame reads the upscaled UI image.
     display_redirect = ui_phase;
+    HdrChannel::SetDisplayRedirect(display_redirect);
     ui_phase = false;
     ui_read_barrier = false;
     done_this_frame = false;
@@ -1362,6 +1364,14 @@ void TemporalUpscaler::OnDraw(u64 vs_hash, VideoCore::ImageId color,
     }
 }
 
+vk::Format TemporalUpscaler::UiColorFormat(const VideoCore::Image& color) const {
+    // bbport HDR, mode 5: the UI image of a 16-bit chain target is RGBA16F (vk_hdr_channel.h).
+    return HdrChannel::Upgraded(color.info.guest_address, color.info.size.width,
+                                color.info.size.height, color.info.pixel_format)
+               ? HdrChannel::Native16Format
+               : color.info.pixel_format;
+}
+
 void TemporalUpscaler::EnsureUiResources(u32 w, u32 h, vk::Format color, vk::Format depth) {
     const bool resized = w != ui_width || h != ui_height;
     const bool new_color = !ui_image || resized || color != ui_format;
@@ -1484,7 +1494,7 @@ void TemporalUpscaler::RunUiOnly(VideoCore::ImageId color_id, VideoCore::ImageId
     const auto& color = texture_cache.GetImage(color_id);
     const auto depth_format = depth_id ? texture_cache.GetImage(depth_id).info.pixel_format
                                       : vk::Format::eD32SfloatS8Uint;
-    EnsureUiResources(target_width, target_height, color.info.pixel_format, depth_format);
+    EnsureUiResources(target_width, target_height, UiColorFormat(color), depth_format);
     PrepareUiDepth(depth_id);
     // Copy only the background already drawn. The subsequent menu/HUD/text draws execute
     // directly at output resolution, including frames with no scene or camera at all.
@@ -1582,7 +1592,7 @@ void TemporalUpscaler::RunScaled() {
         failed = true;
         return;
     }
-    EnsureUiResources(ow, oh, color.info.pixel_format, depth.info.pixel_format);
+    EnsureUiResources(ow, oh, UiColorFormat(color), depth.info.pixel_format);
     PrepareUiDepth(camera_motion.Depth());
     const auto depth_format = depth.info.pixel_format;
     // Views kept across frames: FSR 4 registers images by view in a registry of eight.
@@ -1829,7 +1839,9 @@ vk::ImageView TemporalUpscaler::Mirror(vk::Image image, std::vector<MirrorView>&
 bool TemporalUpscaler::RedirectColor(VideoCore::ImageId color,
                                      const VideoCore::ImageViewInfo& view_info, Target& target) {
     if (ui_phase && color == ui_color) {
-        target = {Mirror(vk::Image(ui_image), ui_views, view_info.format, {}),
+        target = {Mirror(vk::Image(ui_image), ui_views,
+                         ui_format == HdrChannel::Native16Format ? ui_format : view_info.format,
+                         {}),
                   vk::ImageLayout::eGeneral, ui_width, ui_height, true};
         return true;
     }
@@ -1837,6 +1849,7 @@ bool TemporalUpscaler::RedirectColor(VideoCore::ImageId color,
     const VAddr address = image.info.guest_address;
     if (!FrameCapture::IsDisplayBuffer(address)) {
         display_redirect = false;
+        HdrChannel::SetDisplayRedirect(false);
         return false;
     }
     std::scoped_lock lock{display_mutex};
@@ -1845,13 +1858,17 @@ bool TemporalUpscaler::RedirectColor(VideoCore::ImageId color,
         display.valid = false; // not upscaled: the presenter shows the guest buffer
         return false;
     }
-    if (!display.image || display.format != image.info.pixel_format ||
+    // bbport HDR, mode 5: the display buffer drawn as RGBA16F (vk_hdr_channel.h).
+    const vk::Format display_format =
+        HdrChannel::DisplayUpgraded(address, image.info.pixel_format) ? HdrChannel::Native16Format
+                                                                      : image.info.pixel_format;
+    if (!display.image || display.format != display_format ||
         display.width != ui_width || display.height != ui_height) {
         const auto device = instance.GetDevice();
         scheduler.Finish();
         display.views.clear();
         std::printf("Display: host buffer %ux%u (live)\n", ui_width, ui_height);
-        display.format = image.info.pixel_format;
+        display.format = display_format;
         display.width = ui_width;
         display.height = ui_height;
         display.image = VideoCore::UniqueImage(device, instance.GetAllocator());
@@ -1885,7 +1902,10 @@ bool TemporalUpscaler::RedirectColor(VideoCore::ImageId color,
         cmd.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &b});
     });
     display.valid = true;
-    target = {Mirror(vk::Image(display.image), display.views, view_info.format, {}),
+    target = {Mirror(vk::Image(display.image), display.views,
+                     display.format == HdrChannel::Native16Format ? display.format
+                                                                  : view_info.format,
+                     {}),
               vk::ImageLayout::eGeneral, ui_width, ui_height};
     return true;
 }
@@ -1921,7 +1941,9 @@ bool TemporalUpscaler::RedirectSampled(VideoCore::ImageId image,
             cmd.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &b});
         });
     }
-    view = Mirror(vk::Image(ui_image), ui_views, info.format, info.mapping);
+    view = Mirror(vk::Image(ui_image), ui_views,
+                  ui_format == HdrChannel::Native16Format ? ui_format : info.format,
+                  info.mapping);
     layout = vk::ImageLayout::eGeneral;
     return true;
 }
@@ -1945,7 +1967,7 @@ bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display) {
     if (dump && dump_remaining == 0 && std::remove(dump) == 0) {
         dump_remaining = dump_count;
     }
-    if (dump_remaining > 0) {
+    if (dump_remaining > 0 && display.format != HdrChannel::Native16Format) {
         --dump_remaining;
         scheduler.EndRendering();
         const bool bgra = display.format == vk::Format::eB8G8R8A8Unorm ||

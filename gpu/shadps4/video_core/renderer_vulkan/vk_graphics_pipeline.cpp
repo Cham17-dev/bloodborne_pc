@@ -457,22 +457,37 @@ GraphicsPipeline::GraphicsPipeline(
             }
         }
         // Two targets: the gains and reference, and the effect ratios (vk_hdr_channel.h).
+        // Mode 5 (16-bit chain): the game's own target instead, the HDR part added to it.
+        const bool delta = HdrChannel::Native16();
         const std::array hdr_formats{vk::Format::eR16G16B16A16Sfloat,
                                      vk::Format::eR16G16B16A16Sfloat};
         auto hdr_rendering = pipeline_rendering_ci;
         hdr_rendering.pNext = nullptr;
-        hdr_rendering.colorAttachmentCount = 2;
-        hdr_rendering.pColorAttachmentFormats = hdr_formats.data();
+        if (!delta) {
+            hdr_rendering.colorAttachmentCount = 2;
+            hdr_rendering.pColorAttachmentFormats = hdr_formats.data();
+        }
         const vk::PipelineColorBlendAttachmentState hdr_attachment{
             .blendEnable = false,
             .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
                               vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
         };
+        const vk::PipelineColorBlendAttachmentState delta_attachment{
+            .blendEnable = true,
+            .srcColorBlendFactor = vk::BlendFactor::eOne,
+            .dstColorBlendFactor = vk::BlendFactor::eOne,
+            .colorBlendOp = vk::BlendOp::eAdd,
+            .srcAlphaBlendFactor = vk::BlendFactor::eZero,
+            .dstAlphaBlendFactor = vk::BlendFactor::eOne,
+            .alphaBlendOp = vk::BlendOp::eAdd,
+            .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                              vk::ColorComponentFlagBits::eB,
+        };
         const std::array hdr_attachments{hdr_attachment, hdr_attachment};
         auto hdr_blending = color_blending;
         hdr_blending.logicOpEnable = false;
-        hdr_blending.attachmentCount = 2;
-        hdr_blending.pAttachments = hdr_attachments.data();
+        hdr_blending.attachmentCount = delta ? 1 : 2;
+        hdr_blending.pAttachments = delta ? &delta_attachment : hdr_attachments.data();
         auto hdr_info = pipeline_info;
         hdr_info.pNext = &hdr_rendering;
         hdr_info.stageCount = static_cast<u32>(hdr_stages.size());

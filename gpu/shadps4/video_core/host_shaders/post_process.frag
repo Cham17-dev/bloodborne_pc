@@ -44,6 +44,7 @@ layout (push_constant) uniform settings {
     uint hdr_per_channel;  // bbport: Neutwo per channel (else on luminance, hue kept)
     float hdr_bloom;       // bbport: the game's bloom, 0 none .. 1 the game's .. 2 double
     float hdr_vignette;    // bbport: the game's vignettes, 0 none .. 1 the game's .. 2 double
+    bool hdr_native16;     // bbport: the frame is the 16-bit chain's (linear, above 1 = HDR)
 } pp;
 
 const vec3 LUMA709 = vec3(0.2126390059, 0.7151686788, 0.0721923154);
@@ -175,10 +176,49 @@ vec3 test_pattern_nits(vec2 p) {
     return vec3(nits);
 }
 
+// bbport HDR, 16-bit chain (BB_HDR_TONEMAP=5): the game drew its frame in RGBA16F, linear, its
+// white at 1 and its highlights above. The SDR part is decoded like the game's SDR (sRGB or 2.2);
+// above 1 the values are the game's own, then shaped live like the side channel's.
+vec3 native16_nits(vec3 v) {
+    v = max(v, 0.0);
+    vec3 sdr = min(v, 1.0);
+    vec3 signal = clamp(gamma(sdr), 0.0, 1.0);
+    bool sdr_side = pp.hdr_compare == 1u || (pp.hdr_compare == 2u && uv.x < 0.5);
+    if (sdr_side) {
+        return sdr_to_nits(signal, vec3(1.0));
+    }
+    vec3 lin_sdr = pp.hdr_gamma22 ? pow(signal, vec3(2.2)) : degamma(signal);
+    // Above white, each channel keeps its ratio to its SDR value.
+    vec3 lin = lin_sdr * mix(vec3(1.0), v / max(sdr, 1e-6), greaterThan(v, vec3(1.0)));
+    float peak = max(pp.hdr_peak_nits / pp.hdr_paper_white, 1.0);
+    float l = dot(lin, LUMA709), l_sdr = dot(lin_sdr, LUMA709);
+    // Strength: the luminance above white raised to this power.
+    if (l > 1.0) {
+        lin *= pow(l, max(pp.hdr_strength, 0.0) - 1.0);
+    }
+    float y = clamp((l_sdr - 0.45) / 0.55, 0.0, 1.0);
+    lin *= 1.0 + clamp(pp.hdr_boost, 0.0, 1.0) * (peak - 1.0) * y * y * y;
+    vec3 t = tonemap_scene(grade_scene(max(lin, 0.0), peak), peak);
+    vec3 nits = min(max(bt709_to_bt2020(t), 0.0) * pp.hdr_paper_white, vec3(pp.hdr_peak_nits));
+    if (pp.hdr_debug == 1u) {
+        float gain = dot(t, LUMA709) / max(l_sdr, 1e-4);
+        float k = clamp((gain - 1.0) / (max(peak, 1.001) - 1.0), 0.0, 1.0);
+        nits = gain > 1.001 ? mix(vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 0.0), k) * pp.hdr_paper_white
+                            : vec3(dot(nits, vec3(0.2627, 0.6780, 0.0593)) * 0.5);
+    }
+    return nits;
+}
+
 void main() {
     vec4 color_linear = texture(texSampler, uv);
     if (pp.hdr && pp.hdr_test_pattern) {
         color = vec4(pq_encode(test_pattern_nits(uv)), 1.0);
+    } else if (pp.hdr && pp.hdr_native16) {
+        vec3 nits = native16_nits(color_linear.rgb);
+        if (pp.hdr_compare == 2u && abs(uv.x - 0.5) * float(textureSize(texSampler, 0).x) < 1.5) {
+            nits = vec3(pp.hdr_paper_white); // split line
+        }
+        color = vec4(pq_encode(nits), 1.0);
     } else if (pp.hdr) {
         // The game's frame is SDR: rebuild the SDR signal (with the user's gamma), decode it
         // as an SDR display would, place its white at paper white and encode it in HDR10.
