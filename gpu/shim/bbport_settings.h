@@ -106,6 +106,9 @@ struct Values {
     /// refresh rate (the presenter's measure, for the menu).
     std::atomic<int> frame_gen_now{0};
     std::atomic<int> frame_gen_display_hz{0};
+    /// The game's own frame rate (presenter, game frames only), shown beside the total when
+    /// frame generation adds frames.
+    std::atomic<float> game_fps{0.0f};
 
     /// Startup settings for the explicit BB_RENDER_RES compatibility patch only.
     int startup_preset = NativeAA;

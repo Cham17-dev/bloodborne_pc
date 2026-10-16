@@ -865,6 +865,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
 
 void Presenter::UpdateFrameGenLimit(bool wanted, double present_ms) {
     auto& settings = BbSettings::Get();
+    settings.game_fps = float(1000.0 / game_frame_ms.load(std::memory_order_relaxed));
     if (!wanted) {
         frame_gen_limit = 0;
         settings.frame_gen_now = 0;

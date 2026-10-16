@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cfloat>
 #include <chrono>
+#include <string>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -156,6 +157,23 @@ void Hint(const char* text) {
     }
 }
 
+/// The presented frame rate; with frame generation adding frames also the game's own rate,
+/// which is what the GPU's load (resolution, upscaler) changes. The total follows the game's
+/// FPS cap times the multiplier while the GPU keeps up.
+std::string FpsText() {
+    const auto& s = BbSettings::Get();
+    const float shown = frame_ms_avg > 0.0f ? 1000.0f / frame_ms_avg : 0.0f;
+    char text[96];
+    const int generated = s.frame_gen != BbSettings::FrameGenOff ? s.frame_gen_now.load() : 0;
+    if (generated > 0 && s.game_fps > 0.0f) {
+        std::snprintf(text, sizeof(text), "%.0f FPS (game %.0f, frame gen %dx)", shown,
+                      s.game_fps.load(), int(shown / s.game_fps + 0.5f));
+    } else {
+        std::snprintf(text, sizeof(text), "%.0f FPS  %.1f ms", shown, frame_ms_avg);
+    }
+    return text;
+}
+
 void Menu() {
     auto& s = BbSettings::Get();
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -174,8 +192,7 @@ void Menu() {
         ImGui::End();
         return;
     }
-    ImGui::Text("%.0f FPS  (%.1f ms)", frame_ms_avg > 0.0f ? 1000.0f / frame_ms_avg : 0.0f,
-                frame_ms_avg);
+    ImGui::Text("%s", FpsText().c_str());
 
     ImGui::SeparatorText("Temporal upscaling");
     static const char* upscalers[] = {"Off", "FSR 3.1", "FSR 4 (INT8)", "FSR 4.1.1 (INT8)",
@@ -483,8 +500,7 @@ void FpsCounter() {
                      ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
                      ImGuiWindowFlags_NoFocusOnAppearing);
     const auto& s = BbSettings::Get();
-    ImGui::Text("%.0f FPS  %.1f ms  %s", frame_ms_avg > 0.0f ? 1000.0f / frame_ms_avg : 0.0f,
-                frame_ms_avg,
+    ImGui::Text("%s  %s", FpsText().c_str(),
                 s.upscaler == BbSettings::UpscalerFsr3   ? "FSR 3.1"
                 : s.upscaler == BbSettings::UpscalerFsr4 ? "FSR 4"
                 : s.upscaler == BbSettings::UpscalerFsr411 ? "FSR 4.1.1"
