@@ -253,11 +253,14 @@ FRAME_CAPS = [('', ('Auto: display refresh, max 120 (recommended)', 'Авто: �
               ('60', ('60',)), ('90', ('90',)), ('120', ('120',)), ('144', ('144  ⚠',)), ('165', ('165  ⚠',)),
               ('240', ('240  ⚠',)), ('0', ('No limit  ⚠', 'Без ограничения  ⚠'))]
 FRAMES_AHEAD = [('', ('1 (default)', '1 (по умолчанию)')), ('2', ('2',)), ('0', ('Unbounded', 'Без ограничения'))]
-# bbport HDR: the game's tonemap shader replaced by bbport's (step 3; for now the same image).
+# bbport HDR: the game's tonemap shader replaced by bbport's (1-3), or the generic HDR pass over
+# every variant of the game's final composite (4, docs/HDR.md step 3c).
 HDR_TONEMAP = [('', ('Game (default)', 'Игры (по умолчанию)')), ('1', ('bbport', 'bbport')),
                ('2', ('bbport, left half tinted (check)', 'bbport, левая половина окрашена (проверка)')),
                ('3', ('bbport HDR: brighter highlights (experimental, needs HDR output)',
-                      'bbport HDR: яркие блики (эксперимент, нужен вывод HDR)'))]
+                      'bbport HDR: яркие блики (эксперимент, нужен вывод HDR)')),
+               ('4', ('bbport HDR, all areas (experimental, needs HDR output)',
+                      'bbport HDR, все локации (эксперимент, нужен вывод HDR)'))]
 # bbport HDR: peak luminance of the display, in nits (BB_HDR_PEAK_NITS).
 HDR_PEAK_NITS = [('', ('1000 nits (default)', '1000 нит (по умолчанию)')), ('400', ('400 nits', '400 нит')),
                  ('600', ('600 nits', '600 нит')), ('800', ('800 nits', '800 нит')),

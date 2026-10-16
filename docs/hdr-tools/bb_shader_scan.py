@@ -1,5 +1,5 @@
 """Find every variant of Bloodborne's final composite pixel shader (bloom + tonemap + color
-matrix + grain + gamma) in eboot.bin and regenerate bb_tonemap_variants.h.
+matrix + grain + gamma) in eboot.bin.
 
 1. On Windows (PowerShell), export the shaders embedded in eboot.bin (about 9 MB):
 
@@ -14,7 +14,8 @@ matrix + grain + gamma) in eboot.bin and regenerate bb_tonemap_variants.h.
    Each record: u64 shader_hash (shadPS4 pgm_hash), i32 offset of the OrbShdr footer, i32 code
    length, i32 window start, u32 window size, then the window (code ends at the footer).
 
-2. python -I bb_shader_scan.py eboot_shaders.bin [out.h]
+2. python -I bb_shader_scan.py eboot_shaders.bin   (lists the family; the table itself is written by
+   bb_composite_model.py eboot_shaders.bin ../../gpu/shadps4/video_core/renderer_vulkan/bb_tonemap_variants.h)
 
 A shader belongs to the family when it loads the composite's constants by literal offset: words
 616 (scene gain) and 840..851 (color matrix). Curves: see classify(). Results on 1.09
@@ -31,6 +32,17 @@ import gcn_split as gcn
 COUNT = {0x8: 1, 0x9: 2, 0xa: 4, 0xb: 8, 0xc: 16}
 
 
+def code_of(blob, info, length):
+    """The shader code before its OrbShdr footer: it starts with s_mov_b32 vcc_hi, <n> (0xBEEB03FF)
+    where the footer sits (n + 1) * 2 dwords after the start (shadPS4 SearchBinaryInfo); `length`
+    bytes long."""
+    for start in range(info - 8, -1, -4):
+        tok, n = struct.unpack('<II', blob[start:start + 8])
+        if tok == 0xBEEB03FF and start + (n + 1) * 8 == info:
+            return blob[start:start + length]
+    return blob[info - length:info]
+
+
 def read_export(path):
     data = open(path, 'rb').read()
     pos, shaders = 0, {}
@@ -40,7 +52,7 @@ def read_export(path):
         pos += 24 + size
         info = off - st
         flags = struct.unpack('<I', blob[info + 8:info + 12])[0]
-        shaders.setdefault(h, dict(type=(flags >> 2) & 0xf, code=blob[info - length:info]))
+        shaders.setdefault(h, dict(type=(flags >> 2) & 0xf, code=code_of(blob, info, length)))
     return shaders
 
 
@@ -88,45 +100,9 @@ def main():
           dict(sorted(collections.Counter(r[1] for r in rows).items())),
           '(0 exp, 1 Reinhard, 2 log, 3 none)')
     if len(sys.argv) > 2:
-        body = '\n'.join('    {0x%08x, %s},' % (r[0], ', '.join(map(str, r[1:]))) for r in rows)
-        with open(sys.argv[2], 'w') as f:
-            f.write(HEADER.format(n=len(rows), body=body))
+        print('The variant table is now written by bb_composite_model.py <export> <header>, '
+              'which checks every option set against the game\'s code.')
 
-
-HEADER = '''// SPDX-FileCopyrightText: Copyright 2026 bbport
-// SPDX-License-Identifier: GPL-2.0-or-later
-//
-// bbport HDR: the {n} variants of Bloodborne's final composite pixel shader (bloom + tonemap +
-// color matrix + grain + gamma) found in eboot.bin 1.09 by docs/hdr-tools/bb_shader_scan.py: every
-// pixel shader that reads the composite's constants (words 616 and 840..851 of its buffer).
-// Generated file, sorted by hash.
-
-#pragma once
-
-#include <array>
-
-#include "common/types.h"
-
-namespace Vulkan {{
-
-struct TonemapVariant {{
-    u32 hash;  ///< shadPS4 pgm_hash (OrbShdr shader_hash)
-    u8 curve;  ///< 0 exp (k, c at words 832-833), 1 extended Reinhard, 2 log (words 833-834), 3 none
-    u8 luminance; ///< the curve runs on luminance (color scaled), not per channel
-    u8 vignette;  ///< words 890-892
-    u8 gamma;  ///< reads word 808 (1/2.2): gamma-encoded output
-    u8 grain;  ///< reads words 809-811 (grain)
-    u8 textures;
-    u8 exps;   ///< v_exp_f32 count
-    u8 logs;   ///< v_log_f32 count
-}};
-
-inline constexpr std::array<TonemapVariant, {n}> TonemapVariants{{{{
-{body}
-}}}};
-
-}} // namespace Vulkan
-'''
 
 if __name__ == '__main__':
     main()

@@ -1,0 +1,127 @@
+// SPDX-FileCopyrightText: Copyright 2026 bbport
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// bbport HDR, generic pass (BB_HDR_TONEMAP=4, docs/HDR.md step 3c): the HDR side channel for any
+// of the 280 standard variants of Bloodborne's final composite (bb_tonemap_variants.h). The game
+// draws its composite unchanged; this shader replays the same draw into bbport's RGBA16F channel
+// image. Its interface is the game shader's: when bbport recompiles a composite variant,
+// HdrChannel copies that variant's descriptor bindings, input locations and constant-buffer slot
+// onto the decorations named bb_* here, and sets the variant's options as specialization
+// constants (vk_hdr_channel.cpp). The math is hdr/bb_composite.glsl (checked against the game's
+// code, see there).
+//
+// Output (RGBA16F), as hdr/bb_tonemap_hdr.frag: r = HDR gain (luminance of the HDR color / of the
+// game's), g = luminance of the game's encoded output (to tell the scene from the UI drawn over
+// it), b = the game's linear luminance, a = 1. Additive variants (no curve: HDR output tonemapped
+// by a later pass) and curves without a knee get a gain of 1.
+
+#version 450
+#extension GL_EXT_fragment_shader_barycentric : require
+#extension GL_GOOGLE_include_directive : require
+
+layout(constant_id = 1) const float BB_HDR_PEAK = 4.926;
+layout(constant_id = 2) const float BB_HDR_KNEE = 0.6;
+layout(constant_id = 10) const int BB_CURVE = 0;
+layout(constant_id = 11) const bool BB_LUMINANCE = false;
+layout(constant_id = 12) const int BB_PRE = 0;
+layout(constant_id = 13) const bool BB_PRE_LUM = false;
+layout(constant_id = 14) const bool BB_COS4 = false;
+layout(constant_id = 15) const bool BB_VIG888 = false;
+layout(constant_id = 16) const bool BB_GAMMA = true;
+layout(constant_id = 17) const bool BB_ADDITIVE = false;
+layout(constant_id = 18) const uint BB_BUFFER_INDEX = 0u; // index of the constant buffer in buf_offsets
+
+// The game shader's constant buffer (decorations copied from the variant).
+layout(set = 0, binding = 0, std430) readonly buffer bb_ssbo_block {
+    uint data[];
+} bb_ssbo;
+
+// The push constants of every shader bbport recompiles.
+layout(push_constant, std430) uniform AuxData {
+    float xoffset;
+    float yoffset;
+    float xscale;
+    float yscale;
+    uvec4 ud_regs0;
+    uvec4 ud_regs1;
+    uvec4 ud_regs2;
+    uvec4 ud_regs3;
+    uvec4 buf_offsets0;
+    uvec4 buf_offsets1;
+    uvec2 buf_offsets2;
+    uint motion_param;
+    uint scene_size;
+} push_data;
+
+layout(set = 0, binding = 1) uniform texture2D bb_img_scene;
+layout(set = 0, binding = 2) uniform texture2D bb_img_mult;
+layout(set = 0, binding = 3) uniform texture2D bb_img_bloom;
+layout(set = 0, binding = 4) uniform sampler bb_samp_scene;
+layout(set = 0, binding = 5) uniform sampler bb_samp_mult;
+layout(set = 0, binding = 6) uniform sampler bb_samp_bloom;
+
+layout(location = 0) pervertexEXT in vec4 bb_in_scene[3];
+layout(location = 1) pervertexEXT in vec4 bb_in_mult[3];
+layout(location = 2) pervertexEXT in vec4 bb_in_bloom[3];
+layout(location = 3) pervertexEXT in vec4 bb_in_vig[3];
+
+layout(location = 0) out vec4 frag_color0;
+
+uint buf_off;
+
+float bb_c(uint word) {
+    return uintBitsToFloat(bb_ssbo.data[word + buf_off]);
+}
+
+#include "bb_composite.glsl"
+
+// The game's interpolation, as recompiled: attribute with the barycentrics.
+vec2 interp(vec4 a0, vec4 a1, vec4 a2) {
+    vec3 b = gl_BaryCoordEXT;
+    return vec2(fma(a2.x - a0.x, b.z, fma(a1.x - a0.x, b.y, a0.x)),
+                fma(a2.y - a0.y, b.z, fma(a1.y - a0.y, b.y, a0.y)));
+}
+
+void main() {
+    // buf_offsets holds one byte per buffer binding, as the recompiler reads it:
+    // buf_offsets0 = buffers 0..15, buf_offsets1 = 16..31.
+    uvec4 offsets = BB_BUFFER_INDEX < 16u ? push_data.buf_offsets0 : push_data.buf_offsets1;
+    uint slot = BB_BUFFER_INDEX & 15u;
+    buf_off = bitfieldExtract(offsets[slot >> 2u], int((slot & 3u) * 8u), 8) >> 2u;
+
+    BbComposite o = BbComposite(BB_CURVE, BB_LUMINANCE, BB_PRE, BB_PRE_LUM, BB_COS4, BB_VIG888,
+                                BB_GAMMA, BB_ADDITIVE);
+
+    vec4 scene = textureLod(sampler2D(bb_img_scene, bb_samp_scene),
+                            interp(bb_in_scene[0], bb_in_scene[1], bb_in_scene[2]), 0.0);
+    vec3 mult = texture(sampler2D(bb_img_mult, bb_samp_mult),
+                        interp(bb_in_mult[0], bb_in_mult[1], bb_in_mult[2])).rgb;
+    vec3 bloom = textureLod(sampler2D(bb_img_bloom, bb_samp_bloom),
+                            interp(bb_in_bloom[0], bb_in_bloom[1], bb_in_bloom[2]), 0.0).rgb;
+    vec2 vig_uv = (BB_COS4 || BB_VIG888) ? interp(bb_in_vig[0], bb_in_vig[1], bb_in_vig[2])
+                                         : vec2(0.0);
+
+    // The game's output, and the same with the HDR curve.
+    vec3 ms = bb_scene_tint(mult);
+    vec3 x = bb_exposed(o, scene, ms, vig_uv);
+    vec3 base = bb_bloom_base(mult);
+    vec3 sdr_t = bb_curve(o, x);
+    vec3 hdr_t;
+    bool has_hdr = !BB_ADDITIVE && bb_curve_hdr(o, x, BB_HDR_KNEE, BB_HDR_PEAK, hdr_t);
+    vec3 glow = clamp(bb_c(617u) * (base + bloom * ms), 0.0, 1.0);
+    vec3 sdr_screen = BB_ADDITIVE ? x + bb_c(617u) * (base + bloom * ms) : sdr_t + glow - sdr_t * glow;
+    // Screen blend on the SDR part only (above 1 it would subtract).
+    vec3 hdr_screen = has_hdr ? hdr_t + glow * (1.0 - min(hdr_t, 1.0)) : sdr_screen;
+
+    // Export order is rows 840, 844, 848; the game's target holds them as BGR (row 848 first,
+    // see hdr/bb_tonemap.frag), hence .zyx before the luminance.
+    vec3 sdr_graded = bb_grade(sdr_screen).zyx;
+    vec3 hdr_graded = bb_grade(hdr_screen).zyx;
+    const vec3 luma_bgr = vec3(0.0721923154, 0.7151686788, 0.2126390059);
+    float encode = BB_GAMMA ? bb_c(808u) : 1.0 / 2.2;
+    vec3 sdr_encoded = exp2(encode * log2(clamp(sdr_graded + BB_EPS, 0.0, 1.0)));
+    float sdr_luma = dot(max(sdr_graded, 0.0), luma_bgr);
+    float hdr_luma = dot(max(hdr_graded, 0.0), luma_bgr);
+    float gain = (has_hdr && sdr_luma > 1e-4) ? max(hdr_luma / sdr_luma, 1.0) : 1.0;
+    frag_color0 = vec4(gain, dot(sdr_encoded, luma_bgr), sdr_luma, 1.0);
+}

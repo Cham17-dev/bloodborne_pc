@@ -435,16 +435,25 @@ GraphicsPipeline::GraphicsPipeline(
 
     // bbport HDR: the side channel's copy of Bloodborne's tonemap pipeline (vk_hdr_channel.h):
     // same layout, vertex input, dynamic state and vertex shader; the HDR fragment shader and an
-    // RGBA16F attachment without blending. Only for bbport's replacement of the tonemap shader,
-    // whose interface the HDR shader shares.
+    // RGBA16F attachment without blending. For bbport's replacement of the tonemap shader
+    // (BB_HDR_TONEMAP=3), whose interface the HDR shader shares, or for any composite variant
+    // whose HDR shader the generic pass built with its interface (BB_HDR_TONEMAP=4).
     const auto* fs_stage = stages[u32(Shader::SwStage::Fragment)];
-    if (fs_stage && HdrChannel::Enabled() && GameShaderReplaced(fs_stage->pgm_hash) &&
-        key.num_color_attachments == 1 && key.z_format == AmdGpu::DepthBuffer::ZFormat::Invalid &&
+    vk::ShaderModule hdr_module{};
+    if (fs_stage && HdrChannel::Enabled() && key.num_color_attachments == 1 &&
+        key.z_format == AmdGpu::DepthBuffer::ZFormat::Invalid &&
         key.stencil_format == AmdGpu::DepthBuffer::StencilFormat::Invalid) {
+        if (GameShaderReplaced(fs_stage->pgm_hash)) {
+            hdr_module = HdrChannel::Get().FragmentModule(instance);
+        } else if (HdrChannel::Generic()) {
+            hdr_module = HdrChannel::CompositeModule(instance, fs_stage->pgm_hash);
+        }
+    }
+    if (hdr_module) {
         auto hdr_stages = shader_stages;
         for (auto& hdr_stage : hdr_stages) {
             if (hdr_stage.stage == vk::ShaderStageFlagBits::eFragment) {
-                hdr_stage.module = HdrChannel::Get().FragmentModule(instance);
+                hdr_stage.module = hdr_module;
             }
         }
         const vk::Format hdr_format = vk::Format::eR16G16B16A16Sfloat;
@@ -467,7 +476,8 @@ GraphicsPipeline::GraphicsPipeline(
         auto [hdr_result, hdr_pipe] = device.createGraphicsPipelineUnique(pipeline_cache, hdr_info);
         if (hdr_result == vk::Result::eSuccess) {
             hdr_pipeline = std::move(hdr_pipe);
-            LOG_INFO(Render_Vulkan, "HDR channel: pipeline for the tonemap draw {}", debug_str);
+            LOG_INFO(Render_Vulkan, "HDR channel: pipeline for the tonemap draw {} (ps {:08x})",
+                     debug_str, u32(fs_stage->pgm_hash));
         } else {
             LOG_WARNING(Render_Vulkan, "HDR channel: cannot build the tonemap pipeline: {}",
                         vk::to_string(hdr_result));

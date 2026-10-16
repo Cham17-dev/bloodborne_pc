@@ -69,7 +69,8 @@ public:
     // Shows an HDR10 test pattern instead of the game (HDR output only).
     bool IsHdrTestPattern() { static const auto value = Flag("BB_HDR_TEST_PATTERN", false); return value; }
     // Replaces the game's tonemap shader with bbport's (BB_HDR_TONEMAP=1; =2 tints the left half
-    // of the screen to show that the replacement is active).
+    // of the screen to show that the replacement is active; =3 adds the HDR side channel). =4:
+    // the generic HDR pass over every variant of the game's final composite (vk_hdr_channel.h).
     int GetHdrTonemapMode() { static const auto value = int(Number("BB_HDR_TONEMAP", 0)); return value; }
     bool IsNullGPU() { static const auto value = Flag("BB_NULL_GPU", false); return value; }
     bool IsPatchShaders() { return false; }

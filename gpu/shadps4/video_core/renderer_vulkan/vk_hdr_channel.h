@@ -13,6 +13,7 @@
 #include <atomic>
 #include <mutex>
 #include <optional>
+#include <span>
 
 #include "common/types.h"
 #include "video_core/renderer_vulkan/vk_common.h"
@@ -27,8 +28,18 @@ class HdrChannel {
 public:
     static HdrChannel& Get();
 
-    /// BB_HDR_TONEMAP=3 with HDR output allowed (BB_HDR=1).
+    /// BB_HDR_TONEMAP=3 or 4 with HDR output allowed (BB_HDR=1).
     static bool Enabled();
+    /// BB_HDR_TONEMAP=4: the generic pass. The game's composite shaders are not replaced; every
+    /// standard variant of bb_tonemap_variants.h gets the channel draw (hdr/bb_composite_hdr.frag).
+    static bool Generic();
+
+    /// Generic pass: called with the game's SPIR-V of every shader bbport compiles or loads. For
+    /// a composite variant, builds hdr/bb_composite_hdr.frag with that variant's interface
+    /// (descriptor bindings, input locations, constant buffer) and options.
+    static void NoteGameShader(u64 pgm_hash, std::span<const u32> spv);
+    /// Generic pass: the HDR fragment shader for this composite variant (null if none).
+    static vk::ShaderModule CompositeModule(const Instance& instance, u64 pgm_hash);
     /// Peak luminance in nits (BB_HDR_PEAK_NITS, 1000 by default, 200..10000).
     static float PeakNits();
     /// Fraction of the game's white below which the game's curve is kept (BB_HDR_KNEE, 0.6).

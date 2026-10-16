@@ -10,7 +10,7 @@
 | 2 | Identifier le shader de tonemap du jeu | **Fait** — voir « Tonemap de Bloodborne » ci-dessous |
 | 3a | Remplacer le shader de tonemap (`hdr/bb_tonemap.frag`, `GameShaderCode()`, option *HDR tonemap (test)*, `BB_HDR_TONEMAP=0/1/2`) | **Validé** (15/10) : mode 2 teinte la partie gauche (environ un quart de l'écran : la cible fait plus de 1920 px de large en sortie 4K, à prendre en compte), mode 1 donne une image identique au jeu. Le cache de pipelines est contourné (remplacement aussi au chargement depuis le cache). |
 | 3b | Canal HDR : dessin fantôme du tonemap dans une image RGBA16F (gain HDR par pixel) + application du gain dans le post-process final là où l'image est encore la scène | **Fonctionne** (15/10, build hdr-15) : fenêtre de la clinique jusqu'à 916 nits, pas de plantage, interface normale. **En cours** : détection de l'interface (barreaux de fenêtre encore pris pour l'interface à cause de l'AA → correctif 3×3, build hdr-16, à tester) |
-| 3c | Couvrir toutes les variantes du composite final (300 dans `eboot.bin`, voir « Variantes du tonemap ») | **Relevé fait** (16/10). Build hdr-18 : journal des variantes utilisées en jeu. Remplacement des autres variantes : selon ce que le journal montre |
+| 3c | Passe HDR générique pour toutes les variantes du composite (`BB_HDR_TONEMAP=4`, *bbport HDR, all areas*) | **Codée et vérifiée hors jeu** (16/10, build hdr-20) : 280 variantes reproduites à l'identique (émulateur du code du jeu), shader GLSL identique au modèle. **À tester en jeu** |
 | — | PsychoV30 (tonemapper perceptif de RenoDX) porté en GLSL : `hdr/psychov30.glsl` | **Porté et vérifié hors jeu** (16/10) : identique à l'original HLSL à 1,5e-4 près. À brancher avec la passe générique (option à côté de Neutwo) |
 | 4 | Upscalers (FSR/DLSS en mode mis à l'échelle travaillent sur l'image déjà tonemappée) | À faire |
 
@@ -21,7 +21,7 @@ Options (launcher → Fenêtre, ou variables d'environnement) :
 | Allow HDR output | `BB_HDR=1` | off |
 | HDR brightness (paper white) | `BB_HDR_PAPER_WHITE=80..500` | 203 |
 | HDR test pattern | `BB_HDR_TEST_PATTERN=1` | off |
-| HDR tonemap (test) | `BB_HDR_TONEMAP=0/1/2/3` (jeu / bbport / bbport + teinte / bbport HDR) | 0 |
+| HDR tonemap (test) | `BB_HDR_TONEMAP=0/1/2/3/4` (jeu / bbport / bbport + teinte / bbport HDR / bbport HDR toutes zones) | 0 |
 | HDR peak brightness | `BB_HDR_PEAK_NITS=200..10000` | 1000 |
 | HDR debug view | `BB_HDR_DEBUG=1` gain en couleurs, `=2` pixels pris pour l'interface en rouge | off |
 | — | `BB_HDR_KNEE=0.3..0.95` : part du blanc sous laquelle la courbe du jeu est gardée | 0.6 |
@@ -31,37 +31,44 @@ Options (launcher → Fenêtre, ou variables d'environnement) :
 Le journal (`last_run.log`) contient `HDR output: on, HDR10 swapchain` quand la sortie HDR est active,
 ou `HDR output: off, the display offers no HDR10 format` quand l'écran ne propose pas le HDR10.
 
-## Reprendre le projet (point au 16/10, 9 h)
+## Reprendre le projet (point au 16/10, après-midi)
 
-Où on en est : le HDR natif marche (étape 3b). La fenêtre de la clinique monte à 916 nits au lieu de 203 en SDR.
-Il reste à affiner quels pixels sont « la scène » (amplifiés) et lesquels sont « l'interface » (laissés en SDR).
-Nouveau (16/10) : le composite final existe en 300 variantes (voir « Variantes du tonemap ») ; seule
-`5c02eaf8` est remplacée. Le build hdr-18 écrit dans `last_run.log` chaque variante que le jeu utilise.
+Où on en est : le HDR natif marche (étape 3b, `5c02eaf8` seulement). La fenêtre de la clinique monte à 916 nits
+au lieu de 203 en SDR. Nouveau (16/10) : la **passe générique** (étape 3c, `BB_HDR_TONEMAP=4`) couvre les 280
+variantes standard du composite final sans remplacer les shaders du jeu (voir « Passe HDR générique »). Elle
+réutilise la détection de l'interface de l'étape 3b.
 
 Jeu : `E:\Bloodborne\Game\CUSA03173` (dump 1.09). bbport : `E:\Bloodborne\hdr`.
 
-**Prochain test (build `bbport-windows-hdr-18`, commit `43ebf46` ; le canal HDR est celui de hdr-16, comparaison sur 3×3
-texels)** — devant la fenêtre lumineuse de la clinique (là où on se réveille), puis devant une lanterne ou un
-feu :
+**Prochain test : build `bbport-windows-hdr-20` (ou plus récent)** — extraire l'artifact par-dessus
+`E:\Bloodborne\hdr`. Launcher : *Allow HDR output* coché, *HDR peak brightness* = 1000.
 
-1. Extraire l'artifact par-dessus `E:\Bloodborne\hdr`. Launcher : *Allow HDR output* coché, *HDR tonemap (test)*
-   = **bbport HDR**, *HDR peak brightness* = 1000.
-2. *HDR debug view* = **Pixels taken as UI in red** → capture JXR (Win + Alt + Impr. écran). Attendu : seule
-   l'interface en rouge, ni les vitres ni les barreaux, ni les contours des objets et du personnage (le 15/10,
-   presque tous les bords étaient rouges : même cause, le mélange des voisins par l'AA). Une capture caméra
-   immobile, une autre en tournant la caméra : des bords rouges seulement en mouvement indiqueraient un
-   décalage d'une image entre le canal et l'image affichée, pas un problème d'AA.
-3. *HDR debug view* = **Off** → capture JXR au même endroit (mesure des nits).
-4. Même chose en *HDR tonemap (test)* = **bbport** (sans HDR) pour comparer.
-5. Envoyer les `.jxr` (dossier `Vidéos\Captures`).
-6. Ensuite jouer normalement dans plusieurs zones (rêve du chasseur, Yharnam, Cathédrale, Forêt interdite,
-   Byrgenwerth, cauchemars, donjons des calices si possible), quitter, et envoyer les lignes
-   `HDR tonemap variant` de `last_run.log`. Une ligne « NOT replaced » signale une zone restée en SDR.
+A. Détection de l'interface (*HDR tonemap (test)* = **bbport HDR**, mode 3, comme prévu ce matin), devant la
+   fenêtre lumineuse de la clinique puis devant une lanterne ou un feu :
+   1. *HDR debug view* = **Pixels taken as UI in red** → capture JXR (Win + Alt + Impr. écran). Attendu : seule
+      l'interface en rouge, ni les vitres ni les barreaux, ni les contours des objets et du personnage (le 15/10,
+      presque tous les bords étaient rouges : même cause, le mélange des voisins par l'AA). Une capture caméra
+      immobile, une autre en tournant la caméra : des bords rouges seulement en mouvement indiqueraient un
+      décalage d'une image entre le canal et l'image affichée, pas un problème d'AA.
+   2. *HDR debug view* = **Off** → capture JXR au même endroit (mesure des nits).
+B. Passe générique (*HDR tonemap (test)* = **bbport HDR, all areas**, mode 4), mêmes endroits :
+   1. *HDR debug view* = **Off** → capture JXR. Attendu : même image qu'en mode 3 (même courbe, même genou).
+   2. *HDR debug view* = **Highlight gain as colors** → capture : lampes, fenêtres et ciel colorés, le reste gris.
+   3. Jouer dans plusieurs zones (rêve du chasseur, Yharnam, Cathédrale, Forêt interdite, Byrgenwerth,
+      cauchemars, donjons des calices si possible). Si une zone paraît fausse (couleurs, contraste différents
+      du SDR), une capture JXR là, en mode 4 puis en mode **Game**.
+   4. Quitter et envoyer `last_run.log` (lignes `HDR pass:`, `HDR tonemap variant` et `HDR channel:`).
+      « HDR pass » = couvert ; « NOT covered » ou « left in SDR » = à regarder.
+C. Envoyer les `.jxr` (dossier `Vidéos\Captures`).
+
+En cas de problème en mode 4 (image fausse, plantage) : revenir au mode 3 ou 0 et envoyer `last_run.log`.
 
 Analyse des captures : `docs/hdr-tools/jxr_nits.py` (mode d'emploi en tête du fichier : compiler jxrlib, décoder
 en `-c 25`, surtout pas `-c 28` qui donne une image zoomée fausse).
 
 Ensuite, dans l'ordre :
+- passe générique validée : PsychoV30 en option à côté de Neutwo (couleur HDR par canal au lieu d'un gain de
+  luminance), puis les 16 variantes à effets (plusieurs échantillons de la scène) si le journal en montre ;
 - si des barreaux ou bords restent rouges : capturer la LUT de luminosité de la copie d'affichage (`38d65b32`)
   pour une détection exacte, ou comparer à l'image juste avant l'interface (sortie de la copie `57f3b8c2`) ;
 - régler le seuil (`BB_HDR_KNEE`, 0.6) et le pic selon le rendu (ciel, lanternes, feu) ;
@@ -98,37 +105,56 @@ Analyse hors jeu des shaders du dump 1.09 (outils dans `docs/hdr-tools/`) :
 - Le tonemap `5c02eaf8`, son vs `1ea5a07e` et la copie d'affichage `38d65b32` sont **dans `eboot.bin`**
   (5 469 shaders embarqués ; hash = `shader_hash` du pied `OrbShdr`, celui de shadPS4).
 - `bb_shader_scan.py` trouve le composite final par ses constantes (mots 616 et 840–851) : **300 variantes**,
-  générées dans `gpu/shadps4/video_core/renderer_vulkan/bb_tonemap_variants.h`. Désassemblage
-  (`gcn_disasm.py`), avec `x` = scène × gain (mot 616) × réglages 744–756, plancher 6,1e-5 :
-  - **0 exp** (40, dont `5c02eaf8`) : `y = 1 − exp(−k·x)`, `T = y·(c·(y−1)+1)²` (k = mot 832, c = 833) ;
-  - **1 Reinhard étendu** (80) : `u = a·x`, `T = u·(1 + b·u)/(1 + u)` (a = mot 833, b = 834 ; point blanc) ;
-  - **2 log** (80) : `T = a·ln(1 + b·x)` (b = mot 834, a = 833) ;
-  - **3 aucune** (100) : écrêtage.
-  Chaque courbe existe par canal ou **sur la luminance** (couleur mise à l'échelle), avec ou sans
-  **vignettage** (mots 890–892 : `pow(1/(1+(k·r)²), p)`), avec ou sans gamma 2,2 (mot 808), grain (809–811),
-  et 2 à 7 textures (bloom, etc.). Les briques Filmic / Tabled de `gxposteffect` ne sont pas dans le composite.
-  Exemples : exp `0b30a83f`, Reinhard `02fe4979`, log par canal `40ed231a`, log sur luminance `093fc8fa`.
-- Les dumps du 15/10 (clinique, rues, rêve du chasseur) n'ont vu que `5c02eaf8`. Build hdr-18 :
-  `HdrChannel::NoteDraw` écrit `HDR tonemap variant <hash> in use … replaced by bbport / NOT replaced` à la
-  première utilisation de chaque variante.
-### Plan pour couvrir les 300 variantes (étape 3c)
+  dans `gpu/shadps4/video_core/renderer_vulkan/bb_tonemap_variants.h` (régénérée par
+  `bb_composite_model.py <export> <header>` avec les options vérifiées, voir ci-dessous). Courbes, `x` = scène
+  exposée (plancher 6,1e-5) :
+  - **exp** : `y = 1 − exp(−k·x)`, `T = y·(c·(y−1)+1)²` (k = mot 832, c = 833) — dont `5c02eaf8` ;
+  - **Reinhard étendu** : `u = a·x`, `T = u·(1 + b·u)/(1 + u)` (a = mot 833, b = 834) ;
+  - **log** : `T = a·ln(1 + b·x)` (a = 833, b = 834) ;
+  - **aucune** : écrêtage.
+  Les briques Filmic / Tabled de `gxposteffect` ne sont pas dans le composite. Exemples : exp `0b30a83f`,
+  Reinhard `02fe4979`, log par canal `40ed231a`, log sur luminance `093fc8fa`.
+- Les dumps du 15/10 (clinique, rues, rêve du chasseur) n'ont vu que `5c02eaf8`. `HdrChannel::NoteDraw` écrit
+  `HDR tonemap variant <hash> in use … <état>` à la première utilisation de chaque variante.
 
-Le dessin fantôme actuel réutilise le layout de `5c02eaf8` : un shader maison par layout de variante serait
-ingérable. À la place, **une passe à nous** au moment d'un dessin de la famille (après le dessin du jeu) :
+### Passe HDR générique (étape 3c, codée le 16/10)
 
-1. Dans `DrawRecord`, si le ps est dans `TonemapVariants` : retrouver parmi les ressources liées l'image de la
-   scène (RGBA16F), le bloom (B10G11R11, s'il y en a un) et le tampon de constantes du composite (celui que le
-   shader lit aux mots 616…892).
-2. Dessiner un triangle plein écran avec un pipeline et un jeu de descripteurs à bbport (scène, bloom,
-   constantes) dans l'image du canal HDR. Le shader reçoit en push constants la courbe, `luminance`,
-   `vignette`, `gamma` de la variante, recalcule exactement la sortie SDR du jeu (courbe + bloom en écran +
-   matrice + gamma ; grain ignoré, couvert par la tolérance) et la version HDR (courbe du jeu jusqu'au genou,
-   épaule Neutwo au-dessus), puis écrit gain + luminance de référence comme aujourd'hui.
-3. Le post-process final reste identique.
+**Relevé exact des variantes.** Correction : le code d'un shader commence à `s_mov_b32 vcc_hi, n`
+(`0xBEEB03FF`), le pied `OrbShdr` étant `(n + 1) × 2` mots plus loin (shadPS4 `SearchBinaryInfo`) ; l'export
+`eboot_shaders.bin` contient assez d'octets avant le pied. `gcn_emu.py` exécute le code GCN d'une variante
+(une voie, flottants 32 bits) ; `bb_composite_model.py` est le modèle de bbport et trouve pour chaque variante
+les options qui reproduisent ce code : **280 variantes standard reproduites** (écart max 0,012 sur un pixel
+quasi noir, tous les autres < 1/255), 20 à part (16 à plusieurs échantillons de la scène : distorsions ; 4
+triviales). Structure (« uber-shader ») :
 
-Avantages : indépendant du layout de chaque variante, une seule implémentation par courbe. À vérifier : que la
-scène et le bloom se reconnaissent bien par leur format dans toutes les variantes (journal), et l'UV (le jeu
-interpole des attributs ; plein écran = `gl_FragCoord / taille`, à confirmer par la comparaison au SDR).
+- textures : scène (RGBA HDR, attribut 0), **multiplicateur 1×1** (attribut 2 ou 3) qui sert deux fois — teinte
+  de la scène `ms = tint(752, 753, 756)·c754 + c755` et base du bloom `mb = clamp(tint(744, 745, 748))·c746 + c747`
+  —, bloom (attribut 1), grain (attribut 3 ou 4) ;
+- `x = pré-exposition(scène) × c616 × vignettages × ms`, puis courbe, puis `S = T + U − T·U` avec
+  `U = clamp(c617·(mb + bloom·ms))`, matrice 3×4, gamma `c808` ou sortie linéaire, grain `c809·g + c810` ;
+- courbes : exp (40), Reinhard étendu (80), log (80), aucune (60), par canal ou sur la **moyenne RGB** (80) ;
+  en Reinhard sur luminance la valeur de la courbe n'est pas bornée, en log elle l'est ;
+- pré-expositions : `c19·(v + √(v(v + c16) + 1) − 1)` (80), `c11·(e^(c8·v) − 1)` (40), scène bornée ×
+  `c12·(c14·a² + 1)` (alpha de la scène, 20) ; par canal ou sur la moyenne ;
+- vignettages : `(1 − r²)⁴` (112) et objectif `smoothstep(c888·r + c889)·(1/(1 + (c890·r)²))^c892` (56), sur
+  l'attribut 2 ;
+- 20 variantes **additives** (sans courbe ni borne, bloom ajouté, sortie flottante) : HDR passé à une passe
+  suivante ; la passe générique les laisse (gain 1).
+
+**Implémentation** (`BB_HDR_TONEMAP=4`, launcher *bbport HDR, all areas*) :
+
+- `hdr/bb_composite.glsl` : le composite (sortie SDR identique au modèle, vérifié par
+  `docs/hdr-tools/bb_composite_check/run.sh` : écart 1,4e-5 sur 71 680 pixels × 280 variantes) et sa version HDR :
+  courbe du jeu sous le genou, épaule Neutwo de même pente au-dessus ; pour un Reinhard convexe, genou au point où
+  la courbe atteint le blanc ; sur luminance, borne au pic par le canal le plus fort ; jamais sous la valeur SDR.
+- `hdr/bb_composite_hdr.frag` : même sortie que `bb_tonemap_hdr.frag` (gain, luminance encodée, linéaire).
+- Les shaders du jeu ne sont pas remplacés. `GameShaderCode` passe le SPIR-V de chaque shader à
+  `HdrChannel::NoteGameShader` : pour une variante de la table, bbport lit dans ce SPIR-V les liaisons de
+  `fs_img*` / `fs_samp*`, l'emplacement de `fs_in_attr*_p` et le tampon `ssbo_N`, les recopie sur les
+  décorations `bb_*` du shader HDR et fixe les options en constantes de spécialisation. Le pipeline du canal est
+  ensuite créé comme en mode 3 (`vk_graphics_pipeline.cpp`), le dessin fantôme et le post-process sont inchangés.
+- Refus (journal `HDR pass: … left in SDR`) : plusieurs tampons, nombre d'images ≠ nombre de samplers, entrées
+  non interpolées par sommet, permutations d'interfaces différentes.
 
 ## PsychoV30 (porté le 16/10)
 

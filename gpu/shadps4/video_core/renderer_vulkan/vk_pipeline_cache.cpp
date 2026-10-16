@@ -25,6 +25,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/motion_history.h"
 #include "video_core/renderer_vulkan/vk_draw_prep.h"
+#include "video_core/renderer_vulkan/vk_hdr_channel.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_serialization.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -81,6 +82,12 @@ bool GameShaderReplaced(u64 pgm_hash) {
 
 std::span<const u32> GameShaderCode(u64 pgm_hash, std::span<const u32> original) {
     static const int mode = EmulatorSettings.GetHdrTonemapMode();
+    if (mode == 4) {
+        // Generic HDR pass: the game's shaders stay as they are; the composite variants get
+        // their HDR shader built from this SPIR-V (vk_hdr_channel.h).
+        HdrChannel::NoteGameShader(pgm_hash, original);
+        return original;
+    }
     if (mode <= 0 || pgm_hash != TonemapPgmHash) {
         return original;
     }
