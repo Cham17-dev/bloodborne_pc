@@ -1167,8 +1167,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                 .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
                 .loadOp = vk::AttachmentLoadOp::eClear,
                 .storeOp = vk::AttachmentStoreOp::eStore,
+                // Gains 1 (r, b, a) where the draw writes nothing; g (reference) unused there.
                 .clearValue = vk::ClearValue{.color = vk::ClearColorValue{
-                                                 std::array{1.0f, 0.0f, 0.0f, 1.0f}}},
+                                                 std::array{1.0f, 0.0f, 1.0f, 1.0f}}},
             };
             cmdbuf.beginRendering({
                 .renderArea = {{0, 0}, {game_state.width, game_state.height}},

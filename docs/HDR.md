@@ -11,7 +11,7 @@
 | 3a | Remplacer le shader de tonemap (`hdr/bb_tonemap.frag`, `GameShaderCode()`, option *HDR tonemap (test)*, `BB_HDR_TONEMAP=0/1/2`) | **Validé** (15/10) : mode 2 teinte la partie gauche (environ un quart de l'écran : la cible fait plus de 1920 px de large en sortie 4K, à prendre en compte), mode 1 donne une image identique au jeu. Le cache de pipelines est contourné (remplacement aussi au chargement depuis le cache). |
 | 3b | Canal HDR : dessin fantôme du tonemap dans une image RGBA16F (gain HDR par pixel) + application du gain dans le post-process final là où l'image est encore la scène | **Fonctionne** (15/10, build hdr-15) : fenêtre de la clinique jusqu'à 916 nits, pas de plantage, interface normale. **En cours** : détection de l'interface (barreaux de fenêtre encore pris pour l'interface à cause de l'AA → correctif 3×3, build hdr-16, à tester) |
 | 3c | Passe HDR générique pour toutes les variantes du composite (`BB_HDR_TONEMAP=4`, *bbport HDR, all areas*) | **Codée et vérifiée hors jeu** (16/10, build hdr-20) : 280 variantes reproduites à l'identique (émulateur du code du jeu), shader GLSL identique au modèle. **À tester en jeu** |
-| — | PsychoV30 (tonemapper perceptif de RenoDX) porté en GLSL : `hdr/psychov30.glsl` | **Porté et vérifié hors jeu** (16/10) : identique à l'original HLSL à 1,5e-4 près. À brancher avec la passe générique (option à côté de Neutwo) |
+| — | PsychoV30 (tonemapper perceptif de RenoDX) porté en GLSL : `hdr/psychov30.glsl` | **Branché** (16/10, build hdr-21) en option de la passe générique (*HDR highlights* = PsychoV30), calé sur la courbe du jeu au gris moyen ; vérifié hors jeu. **À tester en jeu** |
 | 4 | Upscalers (FSR/DLSS en mode mis à l'échelle travaillent sur l'image déjà tonemappée) | À faire |
 
 Options (launcher → Fenêtre, ou variables d'environnement) :
@@ -22,6 +22,7 @@ Options (launcher → Fenêtre, ou variables d'environnement) :
 | HDR brightness (paper white) | `BB_HDR_PAPER_WHITE=80..500` | 203 |
 | HDR test pattern | `BB_HDR_TEST_PATTERN=1` | off |
 | HDR tonemap (test) | `BB_HDR_TONEMAP=0/1/2/3/4` (jeu / bbport / bbport + teinte / bbport HDR / bbport HDR toutes zones) | 0 |
+| HDR highlights (all areas) | `BB_HDR_TONEMAPPER=0/1` (épaule Neutwo / PsychoV30), passe générique seulement | 0 |
 | HDR peak brightness | `BB_HDR_PEAK_NITS=200..10000` | 1000 |
 | HDR debug view | `BB_HDR_DEBUG=1` gain en couleurs, `=2` pixels pris pour l'interface en rouge | off |
 | — | `BB_HDR_KNEE=0.3..0.95` : part du blanc sous laquelle la courbe du jeu est gardée | 0.6 |
@@ -40,7 +41,7 @@ réutilise la détection de l'interface de l'étape 3b.
 
 Jeu : `E:\Bloodborne\Game\CUSA03173` (dump 1.09). bbport : `E:\Bloodborne\hdr`.
 
-**Prochain test : build `bbport-windows-hdr-20` (ou plus récent)** — extraire l'artifact par-dessus
+**Prochain test : build `bbport-windows-hdr-21` (ou plus récent)** — extraire l'artifact par-dessus
 `E:\Bloodborne\hdr`. Launcher : *Allow HDR output* coché, *HDR peak brightness* = 1000.
 
 A. Détection de l'interface (*HDR tonemap (test)* = **bbport HDR**, mode 3, comme prévu ce matin), devant la
@@ -59,7 +60,10 @@ B. Passe générique (*HDR tonemap (test)* = **bbport HDR, all areas**, mode 4),
       du SDR), une capture JXR là, en mode 4 puis en mode **Game**.
    4. Quitter et envoyer `last_run.log` (lignes `HDR pass:`, `HDR tonemap variant` et `HDR channel:`).
       « HDR pass » = couvert ; « NOT covered » ou « left in SDR » = à regarder.
-C. Envoyer les `.jxr` (dossier `Vidéos\Captures`).
+C. PsychoV30 (mode 4 et *HDR highlights (all areas)* = **PsychoV30**), aux mêmes endroits que B :
+   capture JXR en *HDR debug view* = Off. À comparer avec B.1 : couleurs des lumières (flammes, lampes),
+   contraste et teinte générale (PsychoV refait toute la courbe, pas seulement les hautes lumières).
+D. Envoyer les `.jxr` (dossier `Vidéos\Captures`).
 
 En cas de problème en mode 4 (image fausse, plantage) : revenir au mode 3 ou 0 et envoyer `last_run.log`.
 
@@ -172,9 +176,15 @@ hautes lumières là où un gain de luminance les laisse délavées.
   très hors gamut en source AP1, mode non utilisé). Compilation aussi vérifiée en CI (`psychov30_check.frag`).
 - Points de repère (défauts, pic 4,93) : gris 0,215 → 0,215 ; 1,67 → 1,36 ; 10 → 3,5 ; 1000 → 4,91 ;
   rouge pur 7,4 → (5,41 0,15 0,07) ; rouge pur 1000 → (5,16 4,55 4,44), il tend vers le blanc.
-- Branchement : dans la passe générique (étape 3c), sur la couleur de la scène, avant l'étalonnage du jeu.
-  Ancrage sur la courbe du jeu : sortie au gris moyen et pente calculées avec les formules exactes des 4
-  courbes (méthode RenoDX `anchor-output-midgray` + `slope-analytic`).
+- Branchement (16/10) : passe générique, `BB_HDR_TONEMAPPER=1`. PsychoV remplace la courbe du jeu sur la scène
+  exposée `x`, avant bloom et matrice ; ancrage `anchor-output-midgray` + `slope-analytic` : l'entrée où la
+  courbe du jeu donne 0,18 (`bb_knee(…, 0.18)`) donne 0,18, contraste = pente log-log du jeu à ce point (borné
+  0,3–3), cube BT.709 (sortie sans canal négatif). Vérifié par `bb_composite_check` (gris conservé, croissant,
+  sous le pic, 0 écart sur 50 304 pixels × variantes).
+- Format du canal (16/10) : r, b, a = gains du rouge, du vert, du bleu, g = luminance de référence. Neutwo écrit
+  le même gain trois fois ; PsychoV un gain par canal (rangées de la matrice ; luminance là où le canal du jeu
+  est presque nul ; borné 0–64). Le post-process les applique en BT.709 linéaire avant BT.2020. Effacement du
+  canal à (1, 0, 1, 1).
 
 ## Plan de l'étape 3b (rédigé le 15/10 au soir)
 

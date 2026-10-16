@@ -202,7 +202,7 @@ INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': 
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'), 'user_dir': '', 'dlc_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
                 'voice_language': 'auto',
-                'player_name': '', 'fullscreen': False, 'hdr': False, 'hdr_paper_white': '', 'hdr_test_pattern': False, 'hdr_probe': False, 'hdr_tonemap': '', 'hdr_peak_nits': '', 'hdr_debug': '', 'present_mode': 'Mailbox',
+                'player_name': '', 'fullscreen': False, 'hdr': False, 'hdr_paper_white': '', 'hdr_test_pattern': False, 'hdr_probe': False, 'hdr_tonemap': '', 'hdr_tonemapper': '', 'hdr_peak_nits': '', 'hdr_debug': '', 'present_mode': 'Mailbox',
                 'fps_mode': 'uncap', 'frame_cap': '', 'draw_pipe': '', 'readbacks': '',
                 'frames_ahead': '', 'frame_stats': False, 'gpu_profile': False,
                 'vk_validation': False, 'extra_env': '', 'close_on_play': False,
@@ -265,6 +265,11 @@ HDR_TONEMAP = [('', ('Game (default)', 'Игры (по умолчанию)')), (
 HDR_PEAK_NITS = [('', ('1000 nits (default)', '1000 нит (по умолчанию)')), ('400', ('400 nits', '400 нит')),
                  ('600', ('600 nits', '600 нит')), ('800', ('800 nits', '800 нит')),
                  ('1500', ('1500 nits', '1500 нит')), ('2000', ('2000 nits', '2000 нит'))]
+# bbport HDR: the highlight curve of the all-areas HDR pass (BB_HDR_TONEMAPPER).
+HDR_TONEMAPPER = [('', ('Neutwo: the game\'s look, brighter highlights (default)',
+                        'Neutwo: вид игры, более яркие блики (по умолчанию)')),
+                  ('1', ('PsychoV30 (RenoDX): perceptual, truer colors in bright lights',
+                         'PsychoV30 (RenoDX): перцептивный, более точные цвета ярких источников'))]
 # bbport HDR: debug views of the HDR highlights (BB_HDR_DEBUG).
 HDR_DEBUG = [('', ('Off', 'Выкл.')), ('1', ('Highlight gain as colors', 'Усиление бликов цветом')),
              ('2', ('Pixels taken as UI in red', 'Пиксели интерфейса красным'))]
@@ -486,6 +491,8 @@ def game_environment(s):
             env['BB_HDR_TEST_PATTERN'] = '1'
     if s.get('hdr_tonemap', ''):
         env['BB_HDR_TONEMAP'] = s['hdr_tonemap']
+    if s.get('hdr_tonemapper', ''):
+        env['BB_HDR_TONEMAPPER'] = s['hdr_tonemapper']
     if s.get('hdr_peak_nits', ''):
         env['BB_HDR_PEAK_NITS'] = s['hdr_peak_nits']
     if s.get('hdr_debug', ''):
@@ -1042,6 +1049,10 @@ class Launcher:
                    'half of the screen magenta to show that it is active.',
                    'Заменяет шейдер тонмаппинга игры шейдером bbport. Режим проверки окрашивает '
                    'левую половину экрана в пурпурный.'))
+        self.row(f, _('HDR highlights (all areas)', 'Блики HDR (все локации)'),
+                 self.choice(f, 'hdr_tonemapper', 'app', HDR_TONEMAPPER),
+                 _('With "bbport HDR, all areas": how the highlights above the game\'s white are drawn.',
+                   'С «bbport HDR, все локации»: как рисуются блики выше белого игры.'))
         self.row(f, _('HDR peak brightness', 'Пиковая яркость HDR'),
                  self.choice(f, 'hdr_peak_nits', 'app', HDR_PEAK_NITS),
                  _('The brightest your display can show (with the bbport HDR tonemap).',

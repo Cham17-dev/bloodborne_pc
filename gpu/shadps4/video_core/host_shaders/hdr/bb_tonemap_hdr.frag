@@ -24,10 +24,10 @@
 //   - above, a Neutwo shoulder (hdr/renodx.glsl) with the same slope at the knee, rising to
 //     BB_HDR_PEAK (peak luminance / paper white) instead of the game's white.
 // Output (RGBA16F):
-//   r = HDR gain: luminance of the HDR color / luminance of the game's color (1 below the knee);
+//   r, b, a = HDR gain of the red, green and blue channels, all the same here: luminance of the
+//       HDR color / luminance of the game's color (1 below the knee);
 //   g = luminance of the game's own output (gamma 2.2 encoded, no grain), so the final pass can
-//       tell the scene from the UI drawn over it;
-//   b = luminance of the game's color (linear), for the debug views; a = 1.
+//       tell the scene from the UI drawn over it.
 // The final pass multiplies the game's finished image (UI, AA, grain and brightness setting
 // included) by the gain where the pixel is still the scene: the SDR image is kept as it is and
 // only its highlights are raised, so the channel order of the targets does not matter.
@@ -163,5 +163,6 @@ void main() {
     float sdr_luma = dot(max(sdr_graded, 0.0), luma_bgr);
     float hdr_luma = dot(max(hdr_graded, 0.0), luma_bgr);
     float gain = sdr_luma > 1e-4 ? max(hdr_luma / sdr_luma, 1.0) : 1.0;
-    frag_color0 = vec4(gain, dot(sdr_encoded, luma_bgr), sdr_luma, 1.0);
+    // r, b, a: the gain of each channel (the same here), g: the reference luminance.
+    frag_color0 = vec4(gain, dot(sdr_encoded, luma_bgr), gain, gain);
 }

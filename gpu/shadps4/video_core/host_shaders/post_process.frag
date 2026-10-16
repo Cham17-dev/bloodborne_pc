@@ -7,8 +7,9 @@ layout (location = 0) in vec2 uv;
 layout (location = 0) out vec4 color;
 
 layout (binding = 0) uniform sampler2D texSampler;
-// bbport HDR side channel (vk_hdr_channel.h): r = HDR gain, g = the game's output luminance
-// (gamma 2.2 encoded) where the gain was computed, b = the game's linear luminance.
+// bbport HDR side channel (vk_hdr_channel.h): r, b, a = HDR gains of the red, green and blue
+// channels (equal with the Neutwo shoulder; per channel with PsychoV30, which also moves hue and
+// saturation), g = the game's output luminance (gamma 2.2 encoded) where they were computed.
 layout (binding = 1) uniform sampler2D hdrChannel;
 
 layout (push_constant) uniform settings {
@@ -56,10 +57,11 @@ vec3 pq_encode(vec3 nits) {
     return pow((c1 + c2 * y) / (1.0 + c3 * y), vec3(m2));
 }
 
-// An SDR signal (sRGB-encoded, 0..1) as an SDR display shows it, in Rec.2020 nits.
-vec3 sdr_to_nits(vec3 signal) {
+// An SDR signal (sRGB-encoded, 0..1) as an SDR display shows it, in Rec.2020 nits, each Rec.709
+// channel first multiplied by `gains` (the HDR side channel's; 1 for plain SDR).
+vec3 sdr_to_nits(vec3 signal, vec3 gains) {
     vec3 lin = pp.hdr_gamma22 ? pow(signal, vec3(2.2)) : degamma(signal);
-    return max(bt709_to_bt2020(lin), 0.0) * pp.hdr_paper_white;
+    return max(bt709_to_bt2020(lin * gains), 0.0) * pp.hdr_paper_white;
 }
 
 // bbport HDR test pattern, four rows from the top:
@@ -75,13 +77,13 @@ vec3 test_pattern_nits(vec2 p) {
         return vec3(0.0);
     }
     if (row == 0) {
-        return sdr_to_nits(vec3(min(floor(p.x * 32.0), 31.0) / 31.0));
+        return sdr_to_nits(vec3(min(floor(p.x * 32.0), 31.0) / 31.0), vec3(1.0));
     }
     if (row == 3) {
         const vec3 bars[8] = vec3[](vec3(1.0), vec3(1.0, 1.0, 0.0), vec3(0.0, 1.0, 1.0),
                                     vec3(0.0, 1.0, 0.0), vec3(1.0, 0.0, 1.0), vec3(1.0, 0.0, 0.0),
                                     vec3(0.0, 0.0, 1.0), vec3(0.0));
-        return sdr_to_nits(bars[int(min(floor(p.x * 8.0), 7.0))]);
+        return sdr_to_nits(bars[int(min(floor(p.x * 8.0), 7.0))], vec3(1.0));
     }
     const float low[10] = float[](0.1, 1.0, 10.0, 50.0, 100.0, -1.0, 300.0, 400.0, 600.0, 800.0);
     const float high[10] = float[](1000.0, 1200.0, 1500.0, 2000.0, 2500.0, 3000.0, 4000.0,
@@ -104,7 +106,7 @@ void main() {
         // as an SDR display would, place its white at paper white and encode it in HDR10.
         if (pp.srgb_input) color_linear.rgb = degamma(color_linear.rgb);
         vec3 signal = clamp(gamma(clamp(color_linear.rgb, 0.0, 1.0)), 0.0, 1.0);
-        vec3 nits = sdr_to_nits(signal);
+        vec3 nits = sdr_to_nits(signal, vec3(1.0));
         if (pp.hdr_channel) {
             // Where the finished frame is still what the tonemap wrote (same luminance, give or
             // take the game's AA, grain and brightness setting), it is the scene: its highlights
@@ -133,8 +135,9 @@ void main() {
             // far more than that.
             float tolerance = 0.04 + 0.22 * g_max * g_max;
             float scene = 1.0 - smoothstep(tolerance, tolerance + 0.10, miss);
-            float gain = mix(1.0, max(channel.r, 1.0), scene);
-            nits = min(nits * gain, vec3(pp.hdr_peak_nits));
+            vec3 gains = mix(vec3(1.0), max(vec3(channel.r, channel.b, channel.a), 0.0), scene);
+            nits = min(sdr_to_nits(signal, gains), vec3(pp.hdr_peak_nits));
+            float gain = dot(gains, vec3(0.2126390059, 0.7151686788, 0.0721923154));
             if (pp.hdr_debug == 1u) {
                 // Gain heat map: grey = 1 (SDR), blue to red = up to the peak.
                 float peak_gain = max(pp.hdr_peak_nits / pp.hdr_paper_white, 1.001);

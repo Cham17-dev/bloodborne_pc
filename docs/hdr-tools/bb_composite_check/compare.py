@@ -48,16 +48,23 @@ def write(path):
 def check(path_out):
     data = open(path_out, 'rb').read()
     worst, bad_hdr, n, pos = 0.0, 0, 0, 0
+    psy_checked, psy_bad = [0], [0]
     for h, o, cb, pixels in cases():
-        res = struct.unpack_from('<768f', data, pos)
-        pos += 768 * 4
+        res = struct.unpack_from('<1280f', data, pos)
+        pos += 1280 * 4
         for k, (vals, uv) in enumerate(pixels):
-            mine = res[12 * k:12 * k + 3]
+            mine = res[20 * k:20 * k + 3]
             ref = M.composite(vals['scene'], vals['mult'][:3], vals['bloom'][:3], 0.0, uv, cb,
                               dict(o, grain=0))[:3]
             for a, b in zip(mine, ref):
                 worst = max(worst, abs(a - b) / max(1.0, abs(b)))
-            sdr_t, ok, hdr_t = res[12 * k + 4:12 * k + 7], res[12 * k + 7], res[12 * k + 8:12 * k + 11]
+            sdr_t, ok, hdr_t = res[20 * k + 4:20 * k + 7], res[20 * k + 7], res[20 * k + 8:20 * k + 11]
+            grey_out, pk = res[20 * k + 12:20 * k + 15], res[20 * k + 15]
+            lum_x, lum_4x, max_x = res[20 * k + 16:20 * k + 19]
+            if pk and not o['additive']:
+                psy_checked[0] += 1
+                if any(abs(g - 0.18) > 2e-3 for g in grey_out) or lum_4x < lum_x - 1e-4 or max_x > 4.94:
+                    psy_bad[0] += 1
             n += 1
             if ok and not o['additive']:
                 for s, t in zip(sdr_t, hdr_t):
@@ -66,8 +73,9 @@ def check(path_out):
                     if (s < 0.55 and abs(s - t) > 2e-3 and not o['luminance']) or t < s - 2e-3 or t > 4.94:
                         bad_hdr += 1
                         break
-    print(f'{n} pixels: SDR max difference with the model {worst:.2e}; HDR curve violations {bad_hdr}')
-    return worst < 5e-3 and bad_hdr == 0
+    print(f'{n} pixels: SDR max difference with the model {worst:.2e}; HDR curve violations {bad_hdr}; '
+          f'PsychoV30 (grey kept, rising, under the peak) violations {psy_bad[0]} of {psy_checked[0]}')
+    return worst < 5e-3 and bad_hdr == 0 and psy_bad[0] == 0
 
 
 if __name__ == '__main__':

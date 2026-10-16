@@ -243,6 +243,7 @@ std::optional<std::vector<u32>> BuildComposite(const TonemapVariant& v, std::spa
     SetSpecBool(spv, 16, v.gamma);
     SetSpecBool(spv, 17, v.additive);
     SetSpirvSpecConstant(spv, 18, *buffer_index);
+    SetSpirvSpecConstant(spv, 19, HdrChannel::Tonemapper());
     return spv;
 }
 
@@ -271,8 +272,9 @@ void HdrChannel::NoteGameShader(u64 pgm_hash, std::span<const u32> spv) {
     }
     if (fresh) {
         it->second.spv = std::move(*built);
-        LOG_INFO(Render_Vulkan, "HDR pass: composite variant {:08x} ready ({}{})", u32(pgm_hash),
-                 CurveNames[v->curve < 4 ? v->curve : 3], v->luminance ? " on luminance" : "");
+        LOG_INFO(Render_Vulkan, "HDR pass: composite variant {:08x} ready ({}{}, {})",
+                 u32(pgm_hash), CurveNames[v->curve < 4 ? v->curve : 3],
+                 v->luminance ? " on luminance" : "", Tonemapper() == 1 ? "PsychoV30" : "Neutwo");
     } else if (!it->second.conflicting && it->second.spv != *built) {
         it->second.conflicting = true;
         LOG_WARNING(Render_Vulkan,
@@ -322,6 +324,11 @@ float HdrChannel::PeakNits() {
 float HdrChannel::Knee() {
     static const float knee = EnvFloat("BB_HDR_KNEE", 0.6f, 0.3f, 0.95f);
     return knee;
+}
+
+u32 HdrChannel::Tonemapper() {
+    static const u32 tonemapper = u32(EnvFloat("BB_HDR_TONEMAPPER", 0.0f, 0.0f, 1.0f));
+    return tonemapper;
 }
 
 u32 HdrChannel::Debug() {

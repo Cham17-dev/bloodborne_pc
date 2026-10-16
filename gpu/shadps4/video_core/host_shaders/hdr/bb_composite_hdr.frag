@@ -10,10 +10,10 @@
 // constants (vk_hdr_channel.cpp). The math is hdr/bb_composite.glsl (checked against the game's
 // code, see there).
 //
-// Output (RGBA16F), as hdr/bb_tonemap_hdr.frag: r = HDR gain (luminance of the HDR color / of the
-// game's), g = luminance of the game's encoded output (to tell the scene from the UI drawn over
-// it), b = the game's linear luminance, a = 1. Additive variants (no curve: HDR output tonemapped
-// by a later pass) and curves without a knee get a gain of 1.
+// Output (RGBA16F), as hdr/bb_tonemap_hdr.frag: r, b, a = HDR gains of red, green and blue (equal
+// with the Neutwo shoulder, per channel with PsychoV30), g = luminance of the game's encoded output
+// (to tell the scene from the UI drawn over it). Additive variants (no curve: HDR output
+// tonemapped by a later pass) and curves without a knee get gains of 1.
 
 #version 450
 #extension GL_EXT_fragment_shader_barycentric : require
@@ -30,6 +30,7 @@ layout(constant_id = 15) const bool BB_VIG888 = false;
 layout(constant_id = 16) const bool BB_GAMMA = true;
 layout(constant_id = 17) const bool BB_ADDITIVE = false;
 layout(constant_id = 18) const uint BB_BUFFER_INDEX = 0u; // index of the constant buffer in buf_offsets
+layout(constant_id = 19) const int BB_TONEMAPPER = 0;     // 0 Neutwo shoulder, 1 PsychoV30
 
 // The game shader's constant buffer (decorations copied from the variant).
 layout(set = 0, binding = 0, std430) readonly buffer bb_ssbo_block {
@@ -74,6 +75,26 @@ float bb_c(uint word) {
 }
 
 #include "bb_composite.glsl"
+#include "psychov30.glsl"
+
+// PsychoV30 (hdr/psychov30.glsl) in place of the game's curve, matched to it as RenoDX advises
+// (anchor-output-midgray, slope-analytic): the scene value where the game's curve gives mid grey
+// (0.18) maps to 0.18, with the game's log-log slope there as contrast. False: no HDR.
+bool bb_curve_psychov(BbComposite o, vec3 x, float peak, out vec3 t) {
+    float grey_in, slope;
+    if (!bb_knee(o.curve, 0.18, grey_in, slope)) {
+        t = bb_curve(o, x);
+        return false;
+    }
+    float contrast = clamp(grey_in * slope / 0.18, 0.3, 3.0);
+    if (o.curve != 3) {
+        x = max(x, BB_FLOOR);
+    }
+    t = rd_psychov30(x, peak, 1.0, 1.0, 1.0, contrast, 1.0, 1.0, vec3(grey_in), vec3(0.18), 1.0,
+                     0, 1.0, RD_PSY30_SOURCE_BOUNDARY_BT709);
+    t = max(t, 0.0);
+    return true;
+}
 
 // The game's interpolation, as recompiled: attribute with the barycentrics.
 vec2 interp(vec4 a0, vec4 a1, vec4 a2) {
@@ -107,7 +128,9 @@ void main() {
     vec3 base = bb_bloom_base(mult);
     vec3 sdr_t = bb_curve(o, x);
     vec3 hdr_t;
-    bool has_hdr = !BB_ADDITIVE && bb_curve_hdr(o, x, BB_HDR_KNEE, BB_HDR_PEAK, hdr_t);
+    bool has_hdr = !BB_ADDITIVE && (BB_TONEMAPPER == 1
+                                        ? bb_curve_psychov(o, x, BB_HDR_PEAK, hdr_t)
+                                        : bb_curve_hdr(o, x, BB_HDR_KNEE, BB_HDR_PEAK, hdr_t));
     vec3 glow = clamp(bb_c(617u) * (base + bloom * ms), 0.0, 1.0);
     vec3 sdr_screen = BB_ADDITIVE ? x + bb_c(617u) * (base + bloom * ms) : sdr_t + glow - sdr_t * glow;
     // Screen blend on the SDR part only (above 1 it would subtract).
@@ -122,6 +145,19 @@ void main() {
     vec3 sdr_encoded = exp2(encode * log2(clamp(sdr_graded + BB_EPS, 0.0, 1.0)));
     float sdr_luma = dot(max(sdr_graded, 0.0), luma_bgr);
     float hdr_luma = dot(max(hdr_graded, 0.0), luma_bgr);
-    float gain = (has_hdr && sdr_luma > 1e-4) ? max(hdr_luma / sdr_luma, 1.0) : 1.0;
-    frag_color0 = vec4(gain, dot(sdr_encoded, luma_bgr), sdr_luma, 1.0);
+    // Neutwo: one gain (>= 1) for the three channels. PsychoV30: a gain per channel (it moves hue
+    // and saturation too, and may darken), from the color matrix's rows (red, green, blue);
+    // where the game's channel is near zero, the luminance gain.
+    float gain = (has_hdr && sdr_luma > 1e-4) ? hdr_luma / sdr_luma : 1.0;
+    vec3 gains = vec3(max(gain, 1.0));
+    if (BB_TONEMAPPER == 1 && has_hdr) {
+        vec3 sdr_rows = max(bb_grade(sdr_screen), 0.0);
+        vec3 hdr_rows = max(bb_grade(hdr_screen), 0.0);
+        for (int i = 0; i < 3; ++i) {
+            gains[i] = sdr_rows[i] > 0.02 ? hdr_rows[i] / sdr_rows[i] : gain;
+        }
+        gains = clamp(gains, 0.0, 64.0);
+    }
+    // r, b, a: gains of red, green, blue; g: the reference luminance (scene / UI test).
+    frag_color0 = vec4(gains.r, dot(sdr_encoded, luma_bgr), gains.g, gains.b);
 }

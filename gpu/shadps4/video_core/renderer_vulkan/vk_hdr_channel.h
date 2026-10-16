@@ -44,6 +44,8 @@ public:
     static float PeakNits();
     /// Fraction of the game's white below which the game's curve is kept (BB_HDR_KNEE, 0.6).
     static float Knee();
+    /// Generic pass: BB_HDR_TONEMAPPER, 0 the Neutwo shoulder (default), 1 PsychoV30.
+    static u32 Tonemapper();
     /// BB_HDR_DEBUG: 0 off, 1 the gain as a heat map, 2 the pixels taken as UI in red.
     static u32 Debug();
 
