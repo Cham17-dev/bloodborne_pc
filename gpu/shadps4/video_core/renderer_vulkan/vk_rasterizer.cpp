@@ -1228,6 +1228,10 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     }
     if (const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)]) {
         HdrChannel::NoteDraw(ps->pgm_hash);
+        if (num_indices <= 6 && num_instances == 1 && HdrChannel::Enabled()) {
+            HdrChannel::NoteFullscreen(vs_info.pgm_hash, ps->pgm_hash, state.width, state.height,
+                                       state.num_color_attachments);
+        }
     }
     if (FrameCapture::Active()) {
         const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];

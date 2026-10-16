@@ -7,6 +7,7 @@
 #include <cstring>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <fmt/format.h>
@@ -18,6 +19,8 @@
 #include "video_core/host_shaders/bb_tonemap_hdr_frag.h"
 #include "video_core/renderer_vulkan/bb_tonemap_variants.h"
 #include "video_core/renderer_vulkan/vk_hdr_channel.h"
+
+#include <unordered_set>
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
@@ -439,12 +442,37 @@ HdrChannel::Slot HdrChannel::Acquire(const Instance& instance, Scheduler& schedu
 
 void HdrChannel::Published(u32 index) {
     latest.store(s32(index), std::memory_order_release);
+    publishes.fetch_add(1, std::memory_order_release);
+}
+
+void HdrChannel::NoteFullscreen(u64 vs_hash, u64 ps_hash, u32 w, u32 h, u32 targets) {
+    // GPU thread only.
+    static std::unordered_set<u64> seen;
+    if (seen.size() >= 400) {
+        return;
+    }
+    const u64 key = (vs_hash << 32) ^ (ps_hash & 0xffffffffu);
+    if (!seen.insert(key).second) {
+        return;
+    }
+    LOG_INFO(Render_Vulkan, "HDR scan: full-screen pass vs {:08x} ps {:08x} into {}x{} ({} targets){}",
+             vs_hash, ps_hash, w, h, targets, FindVariant(ps_hash) ? ", composite variant" : "");
 }
 
 std::optional<HdrChannel::Latest> HdrChannel::LatestImage() const {
     std::scoped_lock lock{mutex};
     const s32 index = latest.load(std::memory_order_acquire);
-    if (index < 0 || !images[index].view) {
+    // Called once per presented frame. When the game stops drawing a known composite (an area
+    // whose composite is not covered), the last image would be stale: gains and the scene / UI
+    // test of another place. After two frames without a new one, no channel (SDR).
+    const u32 count = publishes.load(std::memory_order_acquire);
+    if (count != seen_publishes) {
+        seen_publishes = count;
+        stale_frames = 0;
+    } else if (stale_frames < 1000) {
+        ++stale_frames;
+    }
+    if (stale_frames > 2 || index < 0 || !images[index].view) {
         return std::nullopt;
     }
     return Latest{*images[index].view, width, height};

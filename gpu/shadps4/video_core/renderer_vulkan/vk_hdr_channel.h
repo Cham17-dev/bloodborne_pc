@@ -52,6 +52,9 @@ public:
     /// GPU thread, every draw: logs once per shader the variants of the game's final composite
     /// (bb_tonemap_variants.h) that the game uses, with their curve and whether bbport replaces it.
     static void NoteDraw(u64 ps_hash);
+    /// GPU thread, every draw of 6 indices or fewer (full-screen passes): logs each new
+    /// (vs, ps) pair once, with the target size, to find the composite of areas not covered.
+    static void NoteFullscreen(u64 vs_hash, u64 ps_hash, u32 width, u32 height, u32 targets);
 
     /// The HDR tonemap fragment shader, with its specialization constants set (peak, knee).
     vk::ShaderModule FragmentModule(const Instance& instance);
@@ -86,6 +89,9 @@ private:
     u32 width = 0, height = 0;
     u32 next = 0;
     std::atomic<s32> latest{-1};
+    std::atomic<u32> publishes{0};
+    mutable u32 seen_publishes = 0; ///< presenter: publish count at the last LatestImage()
+    mutable u32 stale_frames = 0;   ///< presenter: frames since a new publish
     vk::UniqueShaderModule fragment;
 };
 
