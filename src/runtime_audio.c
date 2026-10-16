@@ -236,24 +236,13 @@ static int32_t output_port(int32_t handle, const void *data, int pace) {
                 else { int16_t v; memcpy(&v,(const char *)data+from*2,2); v=(int16_t)((float)v*gain); memcpy(converted+to*2,&v,2); }
             }
         }
-        if (p==&ports[0]) {
-            /* The main port (sound effects, not the music) drives the DualSense's haptics:
-             * each frame folded to its left and right side, as heard. */
-            static const int from_std[8]={0,1,2,3,6,7,4,5};
-            static float stereo[2048*2];
-            const float k=0.70710678f;
-            for (size_t f=0;f<(size_t)p->frames;++f) {
-                float in[8]={0};
-                for (int s=0;s<p->channels && s<8;++s) {
-                    int guest=p->channels==8 && p->std_layout ? from_std[s] : s;
-                    in[s]=take(data,p->is_float,f*(size_t)p->channels+(size_t)guest,
-                               (float)p->volume[guest]/VOLUME_0DB*gain_all);
-                }
-                if (p->channels==1) in[1]=in[0];
-                stereo[f*2]=in[0]+k*in[2]+in[3]+k*(in[4]+in[6]);
-                stereo[f*2+1]=in[1]+k*in[2]+in[3]+k*(in[5]+in[7]);
-            }
-            runtime_haptics_feed(stereo,p->frames);
+        if (p==&ports[0] && p->channels==8) {
+            /* The main port's centre channel (the player's own sounds) drives the DualSense's
+             * haptics; the same index in both 8-channel layouts. */
+            static float centre[2048];
+            const float gain=(float)p->volume[2]/VOLUME_0DB*gain_all;
+            for (size_t f=0;f<(size_t)p->frames;++f) centre[f]=take(data,p->is_float,f*8+2,gain);
+            runtime_haptics_feed(centre,p->frames);
         }
         if (p->dump) fwrite(converted,1,out_bytes,p->dump);
         if (p->stats) {

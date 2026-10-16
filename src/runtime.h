@@ -22,9 +22,9 @@ void runtime_quit_on_save_done(void);
 int runtime_savedata_mounted(void);
 #define ABI __attribute__((sysv_abi))
 typedef void (ABI *GuestCallback)(void);
-/* DualSense haptics (runtime_haptics.c): the main audio port's sound, folded to stereo, and the
- * game's vibration; rumble returns 1 when the haptics play it (no SDL rumble then). */
-void runtime_haptics_feed(const float *stereo, int frames);
+/* DualSense haptics (runtime_haptics.c): the main audio port's centre channel and the game's
+ * vibration; rumble returns 1 when the haptics play it (no SDL rumble then). */
+void runtime_haptics_feed(const float *centre, int frames);
 int runtime_haptics_rumble(int dualsense, uint8_t large);
 void runtime_start(uint64_t capabilities);
 uintptr_t runtime_resolve(const char *name, int is_data);
