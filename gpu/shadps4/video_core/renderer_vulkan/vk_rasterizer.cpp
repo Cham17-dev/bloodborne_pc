@@ -1119,8 +1119,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         }
         // The chain probe (in-game menu, test): which stage shows itself in color.
         if (const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
-            ps && (ps->pgm_hash == HdrChannel::ColorGradingHash || ps->pgm_hash == 0x38d65b32)) {
-            push_data.ud_regs[14] = u32(std::clamp(BbSettings::Get().hdr_native16_probe.load(), 0, 4));
+            ps && (ps->pgm_hash == HdrChannel::ColorGradingHash || ps->pgm_hash == 0x38d65b32 ||
+                   ps->pgm_hash == 0xf7229091)) {
+            push_data.ud_regs[14] = u32(std::clamp(BbSettings::Get().hdr_native16_probe.load(), 0, 5));
         }
     }
     pipeline->BindResources(set_writes, push_data);
@@ -1168,7 +1169,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         const bool dynamic_masks = instance.IsDynamicColorWriteMaskSupported();
         const ColorWriteMasks game_masks = scheduler.GetDynamicState().color_write_masks;
         // The chain probe (test): ud_regs3.z for this draw only (bbport's shader alone reads it).
-        const u32 probe = u32(std::clamp(BbSettings::Get().hdr_native16_probe.load(), 0, 4));
+        const u32 probe = u32(std::clamp(BbSettings::Get().hdr_native16_probe.load(), 0, 5));
         const u32 game_reg = push_data.ud_regs[14];
         const vk::PipelineLayout layout = pipeline->GetLayout();
         constexpr u32 reg_offset = u32(offsetof(Shader::PushData, ud_regs)) + 14u * 4u;

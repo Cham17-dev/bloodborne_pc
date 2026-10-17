@@ -58,7 +58,10 @@ void main() {
     // Chain probe (in-game menu, test; ud_regs3.z): 3 magenta where the input is above white,
     // 4 green where this pass draws.
     uint probe = push_data.ud_regs3.z;
-    if ((probe == 3u && max(max(v.x, v.y), v.z) > 1.001) || probe == 4u) {
+    float top = max(max(c.x, c.y), c.z);
+    if ((probe == 3u && top > 1.001) || probe == 4u) {
         frag_color0 = probe == 4u ? vec4(0.0, 1.0, 0.0, 1.0) : vec4(1.0, 0.0, 1.0, 1.0);
+    } else if (probe == 3u && top > 0.99) {
+        frag_color0 = vec4(0.0, 1.0, 1.0, 1.0); // cyan: at the game's white, not above
     }
 }

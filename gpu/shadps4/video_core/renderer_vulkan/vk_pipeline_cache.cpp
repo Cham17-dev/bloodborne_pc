@@ -90,7 +90,8 @@ std::span<const u32> GameShaderCode(u64 pgm_hash, std::span<const u32> original)
         HdrChannel::NoteGameShader(pgm_hash, original);
         // (The glow source 57f3b8c2 stays the game's: its copy is what the next color grading
         // reads, so a clamp there removed the HDR part; the glow's 960x540 targets stay 8-bit.)
-        if (mode == 5 && (pgm_hash == 0x38d65b32 || pgm_hash == HdrChannel::ColorGradingHash)) {
+        if (mode == 5 && (pgm_hash == 0x38d65b32 || pgm_hash == HdrChannel::ColorGradingHash ||
+                          pgm_hash == 0xf7229091)) {
             // The 16-bit chain: bbport's version of the glow source and the display copy. Kept
             // per hash and per game SPIR-V (permutations), never freed (spans returned).
             static std::mutex mutex;

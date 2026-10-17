@@ -216,10 +216,11 @@ void main() {
             }
         }
         frag_color0 = vec4(max(delta, 0.0), 0.0);
-        // Chain probe (in-game menu, test; ud_regs3.z set for this draw by bbport): magenta
-        // where this draw adds light above the game's white.
+        // Chain probe (in-game menu, test; ud_regs3.z set for this draw by bbport): green
+        // where this draw adds light above the game's white (red and blue pushed far below 0,
+        // so the green stays whatever is added later).
         if (push_data.ud_regs3.z == 1u && max(max(delta.x, delta.y), delta.z) > 0.01) {
-            frag_color0 = vec4(4.0, 0.0, 4.0, 0.0);
+            frag_color0 = vec4(-64.0, 8.0, -64.0, 0.0);
         }
     }
 }
