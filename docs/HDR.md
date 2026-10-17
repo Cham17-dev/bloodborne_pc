@@ -149,6 +149,11 @@ flottant + 1), écrit par le rasterizer pour ce draw seulement.
 depuis son proxy RGBA16F. Sonde de test dans le menu (« 16-bit probe ») : 1 composite (part HDR ajoutée), 2 image
 finale au-dessus du blanc (copie écran), 3 entrée de ColorGrading au-dessus du blanc, 4 zone dessinée par ColorGrading
 (valeur dans `ud_regs3.z`, poussée par bbport pour ces draws ; les VS concernés ne lisent pas les registres).
+Sonde du 17/10 (Yharnam, soleil) : ColorGrading couvre tout l'écran (4) et ne reçoit rien au-dessus du blanc (3) ;
+la part HDR du composite existe (1) mais n'atteint pas l'écran (2). ColorGrading lit `508e0000`, dont le dernier
+écrivain est la copie `57f3b8c2` (EmissiveToGlow) : notre version l'écrêtait à 1. Elle n'est plus remplacée (copie
+du jeu, sans écrêtage) ; le glow reste SDR car ses cibles 960x540 restent 8 bits. Reste vu par la sonde 2 : quelques
+traits du HUD dépassent 1 (mélanges additifs de l'interface sur la cible 16 bits).
 
 **Chantier 16 bits : la chaîne après le composite (diagnostic du 16/10 au soir, hdr-32, 4K sans upscaler).**
 Relevé (`user/shader/dumps/frames`, adresses invitées, cibles 1920x1080 côté jeu, proxys 4K côté bbport) :
