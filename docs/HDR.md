@@ -61,6 +61,9 @@ remplissage entre proxy et image 8 bits.
 **résolution de couleur** du jeu (`Rasterizer::Resolve`, CB resolve) faite entre les images invitées 8 bits :
 le proxy 16 bits y était résolu (écrêté), puis le proxy de `508e0000` rempli depuis l'image 8 bits. Corrigé :
 entre deux cibles de la chaîne, la copie se fait de proxy à proxy (`SceneTargets::CopyProxies`).
+Correction du 17/10 soir : la trace de hdr-45 ne montre pas `Resolve` ; la copie est un **compute** que le port
+reconnaît comme copie d'image (`Rasterizer::IsComputeImageCopy`, puis `CopyColorAndDepth` entre images 8 bits).
+Même traitement : de proxy à proxy entre deux cibles de la chaîne.
 
 Ajouts du 17/10 midi : curseur **Black floor** (Color grading, modes 4 et 5, `hdr_black_floor` en nits, 0 par
 défaut) : le noir du jeu (~0,4 nit avec la luminosité 5, mesuré sur les JXR) ramené à 0, de moins en moins jusqu'au

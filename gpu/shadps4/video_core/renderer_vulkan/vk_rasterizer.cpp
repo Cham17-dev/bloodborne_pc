@@ -2172,6 +2172,26 @@ bool Rasterizer::IsComputeImageCopy(const Pipeline* pipeline) {
     // Perform image copy
     VideoCore::Image& src_image = desc0.is_written ? image1 : image0;
     VideoCore::Image& dst_image = desc0.is_written ? image0 : image1;
+    // bbport HDR, mode 5: the game copies its finished image (the composite's target) into the
+    // copy its color grading reads with such a compute copy. Between two targets of the 16-bit
+    // chain it is done between their RGBA16F proxies: through the 8-bit images it clipped the
+    // HDR part at white (found with the chain trace, docs/HDR.md).
+    const auto src_id = desc0.is_written ? image1_id : image0_id;
+    const auto dst_id = desc0.is_written ? image0_id : image1_id;
+    const auto chain = [](const VideoCore::Image& image) {
+        return HdrChannel::ChainImage(image.info.guest_address, image.info.size.width,
+                                      image.info.size.height, image.info.pixel_format);
+    };
+    if (chain(src_image) && chain(dst_image) && src_image.info.num_samples == 1 &&
+        dst_image.info.num_samples == 1 && scene_targets->CopyProxies(src_id, dst_id)) {
+        dst_image.flags |= VideoCore::ImageFlagBits::GpuModified;
+        dst_image.flags &= ~VideoCore::ImageFlagBits::Dirty;
+        return true;
+    }
+    if (HdrChannel::Trace() && (chain(src_image) || chain(dst_image))) {
+        LOG_INFO(Render_Vulkan, "HDR trace: compute copy {:#x} -> {:#x} through the 8-bit images",
+                 src_image.info.guest_address, dst_image.info.guest_address);
+    }
     runtime.CopyColorAndDepth(&src_image, &dst_image);
     return true;
 }
