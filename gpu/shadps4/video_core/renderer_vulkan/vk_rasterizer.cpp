@@ -960,6 +960,11 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         scheduler.PopPendingOperations();
     }
     const auto& regs = Regs();
+    // bbport HDR, mode 5 test: the traced frame runs from a display copy to the next.
+    if (HdrChannel::Native16() && regs.color_buffers[0] &&
+        FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address())) {
+        HdrChannel::OnDisplayCopy();
+    }
     // bbport: the pass copying a finished frame to a display buffer; the previous draw's
     // target is that frame.
     if (camera_motion->Enabled() && regs.color_buffers[0] &&
@@ -2585,6 +2590,19 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
 
             // bbport: a proxied scene image sampled with normalized coordinates reads the proxy:
             // no resample to the native size (the native image is not touched).
+            if (HdrChannel::Trace() &&
+                HdrChannel::ChainImage(image.info.guest_address, image.info.size.width,
+                                       image.info.size.height, image.info.pixel_format)) {
+                const bool redirect = upscaler->Enabled() && upscaler->RedirectsSampled(image_id);
+                const bool current = scene_targets->ProxyCurrent(
+                    image, desc.view_info.range.base.level, desc.view_info.range.extent.levels);
+                LOG_INFO(Render_Vulkan,
+                         "HDR trace: ps {:08x} samples {:#x}: proxy ok {}, storage {}, general {}, "
+                         "target {}, upscaler redirect {}, proxy current {}",
+                         stage.pgm_hash, image.info.guest_address,
+                         bool(binding_proxy_ok[binding_index]), bool(is_storage),
+                         u32(binding.force_general), u32(binding.is_target), redirect, current);
+            }
             if (binding_proxy_ok[binding_index] && !is_storage && !binding.force_general &&
                 !binding.is_target &&
                 !(upscaler->Enabled() && upscaler->RedirectsSampled(image_id))) {
@@ -3013,6 +3031,19 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
             const auto target = scene_targets->Attachment(image_id, desc.view_info);
             attachment.image_view = target.view;
             attachment.image_layout = target.layout;
+        }
+        if (HdrChannel::Trace() &&
+            HdrChannel::ChainImage(image->info.guest_address, image->info.size.width,
+                                   image->info.size.height, image->info.pixel_format)) {
+            const auto& cbk = key.color_buffers[cb];
+            LOG_INFO(Render_Vulkan,
+                     "HDR trace: draw ps {:08x} writes {:#x} as {} (key format {} {}, "
+                     "scene started {}, raster scaling {}, bound {}, rebind {})",
+                     key.mrt_mask ? pipeline->GetStage(Shader::SwStage::Fragment).pgm_hash : 0,
+                     image->info.guest_address, reduced ? "its proxy" : "the NATIVE 8-bit image",
+                     u32(cbk.data_format), u32(cbk.num_format), scene_started,
+                     upscaler->RasterScaling(), u32(image->binding.is_bound),
+                     u32(image->binding.needs_rebind));
         }
         image->usage.render_target = 1u;
         if (cb == 0 && upscaler->Enabled()) {

@@ -108,6 +108,7 @@ struct Values {
     std::atomic<bool> hdr_test_pattern{false};
     std::atomic<int> hdr_native16_decode{0}; ///< mode 5 test: 0 auto, 1 linear, 2 sRGB signal
     std::atomic<int> hdr_native16_probe{0};  ///< mode 5 test: chain stage shown in magenta
+    std::atomic<bool> hdr_chain_trace{false}; ///< mode 5 test: log one frame of the 16-bit chain
     // Set by the renderer, shown by the menu.
     std::atomic<bool> hdr_channel_live{false};   ///< this frame has HDR highlights
     std::atomic<bool> hdr_native16_live{false}; ///< this frame is the 16-bit chain's

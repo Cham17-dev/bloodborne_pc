@@ -409,6 +409,29 @@ std::vector<u32> HdrChannel::ChainReplacement(u64 pgm_hash, std::span<const u32>
     return spv;
 }
 
+namespace {
+std::atomic<bool> trace_active{false};
+} // namespace
+
+bool HdrChannel::Trace() {
+    return trace_active.load(std::memory_order_relaxed);
+}
+
+void HdrChannel::OnDisplayCopy() {
+    if (trace_active.exchange(false)) {
+        LOG_INFO(Render_Vulkan, "HDR trace: end of the traced frame");
+    }
+    if (Native16() && BbSettings::Get().hdr_chain_trace.exchange(false)) {
+        trace_active = true;
+        LOG_INFO(Render_Vulkan, "HDR trace: frame start (16-bit chain active {})",
+                 Native16Active());
+    }
+}
+
+bool HdrChannel::ChainImage(VAddr address, u32 width, u32 height, vk::Format format) {
+    return Upgraded(address, width, height, format);
+}
+
 bool HdrChannel::Native16() {
     static const bool native =
         EmulatorSettings.GetHdrTonemapMode() == 5 && EmulatorSettings.IsHdrAllowed();

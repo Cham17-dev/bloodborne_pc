@@ -65,6 +65,13 @@ public:
     /// Mode 5: bbport's version of a game shader of the chain (glow source, display copy) with
     /// the game shader's bindings and locations, or empty to keep the game's.
     static std::vector<u32> ChainReplacement(u64 pgm_hash, std::span<const u32> game);
+    /// Mode 5 test (in-game menu, "Log the 16-bit chain"): one frame, from a display copy to the
+    /// next, where every access to the chain's targets is logged (HDR trace lines).
+    static bool Trace();
+    /// GPU thread, at each display copy: starts or ends the traced frame.
+    static void OnDisplayCopy();
+    /// Whether a texture cache image is one of the chain's 16-bit targets.
+    static bool ChainImage(VAddr address, u32 width, u32 height, vk::Format format);
 
     /// Generic pass: called with the game's SPIR-V of every shader bbport compiles or loads. For
     /// a composite variant, builds hdr/bb_composite_hdr.frag with that variant's interface

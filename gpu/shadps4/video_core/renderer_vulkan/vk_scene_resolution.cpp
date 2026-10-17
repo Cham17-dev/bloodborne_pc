@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "video_core/renderer_vulkan/vk_scene_resolution.h"
 #include "video_core/renderer_vulkan/vk_hdr_channel.h"
+#include "common/logging/log.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -123,6 +124,18 @@ void SceneTargets::ResolveAll() {
 }
 void SceneTargets::NativeAccess(VideoCore::Image& image, vk::AccessFlags2 access) {
     if (copying || !image.scene_proxy) return; // most images never had a proxy
+    if (HdrChannel::Trace() &&
+        HdrChannel::ChainImage(image.info.guest_address, image.info.size.width,
+                               image.info.size.height, image.info.pixel_format)) {
+        constexpr auto any_write =
+            vk::AccessFlagBits2::eShaderWrite | vk::AccessFlagBits2::eTransferWrite |
+            vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eMemoryWrite;
+        LOG_INFO(Render_Vulkan,
+                 "HDR trace: native access to {:#x} (access {:#x}): the proxy is resolved into "
+                 "the 8-bit image{}",
+                 image.info.guest_address, u64(VkAccessFlags2(access)),
+                 (access & any_write) ? ", and the 8-bit image becomes the source" : "");
+    }
     constexpr auto writes = vk::AccessFlagBits2::eShaderWrite | vk::AccessFlagBits2::eTransferWrite |
         vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentWrite |
         vk::AccessFlagBits2::eMemoryWrite;
@@ -155,6 +168,13 @@ void SceneTargets::Copy(Entry& e, VideoCore::Image& original, bool to_native) {
     scheduler.EndRendering();
     const Runtime::TransferMark mark{runtime, to_native ? "scene proxy resolve" : "scene proxy fill",
                                      original};
+    if (HdrChannel::Trace() &&
+        HdrChannel::ChainImage(original.info.guest_address, original.info.size.width,
+                               original.info.size.height, original.info.pixel_format)) {
+        LOG_INFO(Render_Vulkan, "HDR trace: {:#x} {} (proxy {})", original.info.guest_address,
+                 to_native ? "resolved into its 8-bit image" : "PROXY FILLED FROM ITS 8-BIT IMAGE",
+                 vk::to_string(e.image.image_ci.format));
+    }
     if (debug) {
         std::printf("Scene %s: %s %ux%u level %u\n", to_native ? "resolve" : "fill",
                     vk::to_string(original.info.pixel_format).c_str(), original.info.size.width,
