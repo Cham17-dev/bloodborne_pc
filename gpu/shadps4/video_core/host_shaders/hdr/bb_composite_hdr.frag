@@ -205,17 +205,32 @@ void main() {
     frag_aux = aux;
 
     if (BB_OUTPUT_DELTA) {
+        // The game's bloom, live (in-game menu; ud_regs3.w set for this draw by bbport: the
+        // strength's bits plus one, 0 = the game's): the target is the composite with its glow
+        // scaled, so the difference can also take light away.
+        uint bloom_bits = push_data.ud_regs3.w;
+        float k = (bloom_bits == 0u || BB_ADDITIVE) ? 1.0
+                                                    : clamp(uintBitsToFloat(bloom_bits - 1u), 0.0, 4.0);
+        bool scaled = abs(k - 1.0) > 1e-3;
+        vec3 target = has_hdr ? hdr_graded : clamp(sdr_graded, 0.0, 1.0);
+        if (scaled) {
+            vec3 glow_k = clamp(g * k, 0.0, 1.0);
+            vec3 sdr_screen_k = sdr_t + glow_k - sdr_t * glow_k;
+            vec3 hdr_screen_k = has_hdr ? hdr_t + glow_k * (1.0 - min(hdr_t, 1.0)) : sdr_screen_k;
+            target = has_hdr ? bb_grade(o, hdr_screen_k).zyx
+                             : clamp(bb_grade(o, sdr_screen_k).zyx, 0.0, 1.0);
+        }
         vec3 delta = vec3(0.0);
-        if (has_hdr) {
+        if (has_hdr || scaled) {
             if (BB_GAMMA) {
-                vec3 hdr_encoded = exp2(bb_c(808u) * log2(max(hdr_graded, 0.0) + BB_EPS));
+                vec3 hdr_encoded = exp2(bb_c(808u) * log2(max(target, 0.0) + BB_EPS));
                 vec3 sdr_game = exp2(bb_c(808u) * log2(clamp(sdr_graded + BB_EPS, 0.0, 1.0)));
                 delta = hdr_encoded - sdr_game;
             } else {
-                delta = max(hdr_graded, 0.0) - clamp(sdr_graded, 0.0, 1.0);
+                delta = max(target, 0.0) - clamp(sdr_graded, 0.0, 1.0);
             }
         }
-        frag_color0 = vec4(max(delta, 0.0), 0.0);
+        frag_color0 = vec4(scaled ? delta : max(delta, 0.0), 0.0);
         // Chain probe (in-game menu, test; ud_regs3.z set for this draw by bbport): green
         // where this draw adds light above the game's white (red and blue pushed far below 0,
         // so the green stays whatever is added later).

@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include <array>
 #include <chrono>
 #include <memory>
@@ -122,6 +124,9 @@ public:
         vk::Format guest_format{}; ///< the guest buffer's format (the game's attachment)
     };
     bool DisplayOverride(VAddr address, Display& display);
+    /// bbport HDR, mode 5: the scene of this frame before its UI (RGBA16F, output size, General
+    /// layout), copied when the UI composition starts; null view if none since the last call.
+    vk::ImageView TakeSceneSnapshot(vk::Image& image);
 
 private:
     /// bbport: views of guest images the upscaler reads, kept across frames: FSR 4 registers
@@ -239,6 +244,11 @@ private:
     vk::ImageView Mirror(vk::Image image, std::vector<MirrorView>& views, vk::Format format,
                          vk::ComponentMapping mapping);
     std::vector<MirrorView> ui_views;
+    // bbport HDR, mode 5: the scene before the UI (TakeSceneSnapshot).
+    VideoCore::UniqueImage scene_snapshot;
+    vk::UniqueImageView scene_snapshot_view;
+    u32 snapshot_width = 0, snapshot_height = 0;
+    std::atomic<bool> snapshot_ready{false};
     struct DisplayImage {
         VideoCore::UniqueImage image;
         std::vector<MirrorView> views;

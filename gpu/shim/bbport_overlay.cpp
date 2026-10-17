@@ -262,7 +262,7 @@ void HdrSection(BbSettings::Values& s) {
             ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
                                "HDR 16-bit chain: not active (needs an output other than 1080p)");
         }
-        Hint("Experimental mode: the game draws its image in 16 bits after its tone mapping, so its highlights reach the final pass without a mask. HUD brightness and Game effects do not apply; the grading also touches the HUD.");
+        Hint("Experimental mode: the game draws its image in 16 bits after its tone mapping, so its highlights reach the final pass without a mask. The HUD is found by comparing the image with the scene before the UI (HUD brightness; Debug view, Pixels taken as UI). Bloom applies to the composite's bloom; Vignette does not apply yet.");
     } else if (s.hdr_channel_live) {
         ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.45f, 1.0f), "HDR highlights: active here");
         ImGui::SameLine();

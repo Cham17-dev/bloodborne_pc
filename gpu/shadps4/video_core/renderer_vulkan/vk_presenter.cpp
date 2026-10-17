@@ -531,6 +531,29 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     }
     pp_settings.hdr_black_floor = std::clamp(BbSettings::Get().hdr_black_floor.load(), 0.0f, 2.0f) /
                                   std::max(pp_settings.hdr_paper_white, 1.0f);
+    // bbport HDR, mode 5: the scene before the UI, for the HUD brightness (the final pass takes
+    // the pixels the UI changed as the HUD's). Bound where the side channel goes in mode 4.
+    if (pp_settings.hdr_native16 != 0) {
+        vk::Image snapshot_image{};
+        if (const auto snapshot = rasterizer->GetUpscaler().TakeSceneSnapshot(snapshot_image)) {
+            const vk::ImageMemoryBarrier2 to_read{
+                .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+                .dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader,
+                .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+                .oldLayout = vk::ImageLayout::eGeneral,
+                .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+                .image = snapshot_image,
+                .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+            };
+            cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &to_read});
+            hdr_channel = snapshot;
+            hdr_aux = snapshot;
+            pp_settings.hdr_channel = 1;
+        } else {
+            pp_settings.hdr_channel = 0;
+        }
+    }
     // The in-game menu shows its HDR section when the frame is sent in HDR10.
     BbSettings::Get().hdr_output = bool(frame->is_hdr);
     BbSettings::Get().hdr_highlights = frame->is_hdr && HdrChannel::Enabled();

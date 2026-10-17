@@ -1564,12 +1564,84 @@ void TemporalUpscaler::RunUiOnly(VideoCore::ImageId color_id, VideoCore::ImageId
     cmd.blitImage(source, source_layout,
                   vk::Image(ui_image), vk::ImageLayout::eTransferDstOptimal, region,
                   vk::Filter::eLinear);
+    auto ui_layout = vk::ImageLayout::eTransferDstOptimal;
+    // bbport HDR, mode 5: the scene before the UI, for the final pass's HUD brightness (the
+    // pixels the UI changed are the HUD's).
+    if (ui_format == HdrChannel::Native16Format) {
+        if (!scene_snapshot || snapshot_width != ui_width || snapshot_height != ui_height) {
+            scheduler.Finish();
+            snapshot_ready = false;
+            scene_snapshot_view.reset();
+            scene_snapshot = VideoCore::UniqueImage(instance.GetDevice(), instance.GetAllocator());
+            scene_snapshot.Create(vk::ImageCreateInfo{
+                .imageType = vk::ImageType::e2D,
+                .format = HdrChannel::Native16Format,
+                .extent = {ui_width, ui_height, 1},
+                .mipLevels = 1,
+                .arrayLayers = 1,
+                .samples = vk::SampleCountFlagBits::e1,
+                .tiling = vk::ImageTiling::eOptimal,
+                .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+                .initialLayout = vk::ImageLayout::eUndefined,
+            });
+            scene_snapshot_view = Check(instance.GetDevice().createImageViewUnique({
+                .image = vk::Image(scene_snapshot),
+                .viewType = vk::ImageViewType::e2D,
+                .format = HdrChannel::Native16Format,
+                .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+            }));
+            snapshot_width = ui_width;
+            snapshot_height = ui_height;
+        }
+        const std::array to_copy{
+            vk::ImageMemoryBarrier2{
+                .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+                .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+                .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+                .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+                .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+                .newLayout = vk::ImageLayout::eTransferSrcOptimal,
+                .image = vk::Image(ui_image),
+                .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+            },
+            vk::ImageMemoryBarrier2{
+                .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                .srcAccessMask = vk::AccessFlagBits2::eShaderRead,
+                .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+                .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+                .oldLayout = vk::ImageLayout::eUndefined,
+                .newLayout = vk::ImageLayout::eTransferDstOptimal,
+                .image = vk::Image(scene_snapshot),
+                .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+            }};
+        cmd.pipelineBarrier2({.imageMemoryBarrierCount = 2, .pImageMemoryBarriers = to_copy.data()});
+        cmd.copyImage(vk::Image(ui_image), vk::ImageLayout::eTransferSrcOptimal,
+                      vk::Image(scene_snapshot), vk::ImageLayout::eTransferDstOptimal,
+                      vk::ImageCopy{
+                          .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                          .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                          .extent = {ui_width, ui_height, 1},
+                      });
+        const vk::ImageMemoryBarrier2 to_general{
+            .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+            .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+            .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+            .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+            .newLayout = vk::ImageLayout::eGeneral,
+            .image = vk::Image(scene_snapshot),
+            .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+        };
+        cmd.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &to_general});
+        ui_layout = vk::ImageLayout::eTransferSrcOptimal;
+        snapshot_ready = true;
+    }
     barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
-    barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+    barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite | vk::AccessFlagBits2::eTransferRead;
     barrier.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
     barrier.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentRead |
                             vk::AccessFlagBits2::eColorAttachmentWrite;
-    barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+    barrier.oldLayout = ui_layout;
     barrier.newLayout = vk::ImageLayout::eGeneral;
     cmd.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
     reset = true; // returning to 3D must not reuse history from before a menu/loading screen
@@ -1953,6 +2025,14 @@ bool TemporalUpscaler::RedirectSampled(VideoCore::ImageId image,
                   info.mapping);
     layout = vk::ImageLayout::eGeneral;
     return true;
+}
+
+vk::ImageView TemporalUpscaler::TakeSceneSnapshot(vk::Image& image) {
+    if (!snapshot_ready.exchange(false) || !scene_snapshot_view) {
+        return {};
+    }
+    image = vk::Image(scene_snapshot);
+    return *scene_snapshot_view;
 }
 
 bool TemporalUpscaler::DisplayOverride(VAddr address, Display& display) {

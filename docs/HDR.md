@@ -67,6 +67,13 @@ Même traitement : de proxy à proxy entre deux cibles de la chaîne.
 **Validé le 17/10 à 18 h (build local `16bde6e`)** : trace « copy ebf8000 -> 508e0000 between their proxies »,
 ColorGrading lit son proxy à jour ; soleil de Yharnam jusqu'à ~860 nits avec boost 0 et ses détails, comme le
 mode 4. Le mode 5 donne enfin du HDR.
+Ajouts du 17/10 soir (mode 5) : **HUD brightness** — au début de la composition de l'interface (`RunUiOnly`),
+l'image de la scène (RGBA16F) est copiée (`TakeSceneSnapshot`) ; la passe finale la reçoit à la place du canal et
+traite comme HUD les pixels qui en diffèrent (tolérance croissante avec la luminosité, à cause de la courbe de
+luminosité du jeu appliquée après), affichés en SDR à la luminosité HUD (règle aussi les traits du HUD au-dessus
+de 1). **Bloom** — la passe delta du composite vise le composite avec son glow multiplié par le curseur (poussé
+dans `ud_regs3.w` pour ce draw) et peut donc retirer de la lumière (sortie signée). Le glow ajouté après
+(`8c08444c`) n'est pas encore réglable.
 
 Ajouts du 17/10 midi : curseur **Black floor** (Color grading, modes 4 et 5, `hdr_black_floor` en nits, 0 par
 défaut) : le noir du jeu (~0,4 nit avec la luminosité 5, mesuré sur les JXR) ramené à 0, de moins en moins jusqu'au

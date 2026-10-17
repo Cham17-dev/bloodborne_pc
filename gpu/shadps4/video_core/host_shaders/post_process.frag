@@ -213,11 +213,27 @@ vec3 native16_nits(vec3 v) {
     lin *= 1.0 + clamp(pp.hdr_boost, 0.0, 1.0) * (peak - 1.0) * y * y * y;
     vec3 t = tonemap_scene(grade_scene(max(lin, 0.0), peak), peak);
     vec3 nits = min(max(bt709_to_bt2020(t), 0.0) * pp.hdr_paper_white, vec3(pp.hdr_peak_nits));
+    // The HUD: the pixels the UI changed since the scene's snapshot (bound as hdrChannel in
+    // mode 5), shown as the game's SDR at the HUD brightness. The game's brightness curve comes
+    // after the snapshot, so the tolerance widens with brightness (as in mode 4).
+    float scene = 1.0;
+    if (pp.hdr_channel) {
+        vec3 s = max(texture(hdrChannel, uv).rgb, 0.0);
+        float l_snap = dot(min(s, 1.0), LUMA709);
+        float l_now = dot(signal, LUMA709);
+        float tolerance = 0.04 + 0.22 * l_snap * l_snap;
+        float miss = abs(l_now - l_snap);
+        scene = 1.0 - smoothstep(tolerance, tolerance + 0.10, miss);
+        vec3 ui = sdr_to_nits(signal, vec3(1.0)) * (pp.hdr_ui_nits / pp.hdr_paper_white);
+        nits = mix(ui, nits, scene);
+    }
     if (pp.hdr_debug == 1u) {
         float gain = dot(t, LUMA709) / max(l_sdr, 1e-4);
         float k = clamp((gain - 1.0) / (max(peak, 1.001) - 1.0), 0.0, 1.0);
         nits = gain > 1.001 ? mix(vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 0.0), k) * pp.hdr_paper_white
                             : vec3(dot(nits, vec3(0.2627, 0.6780, 0.0593)) * 0.5);
+    } else if (pp.hdr_debug == 2u && scene < 0.5) {
+        nits = mix(nits, vec3(pp.hdr_paper_white, 0.0, 0.0), 0.6); // taken as UI
     }
     return nits;
 }
