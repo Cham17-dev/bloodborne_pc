@@ -698,6 +698,31 @@ static void replay_sample(PadData *d) {
 /* After the menu or the text dialog closes, buttons still held (the Cross that accepted a
  * name) stay hidden until released: the game would take them as a new press. */
 static int hold_after_capture;
+/* Touches numbered as a DualShock 4 reports them: each new touch gets the next ID (1..127),
+ * kept while it stays down, and touch_held_time counts the microseconds since a touch began.
+ * With constant IDs (0 for every click, the finger index on a DualSense) the game took the
+ * clicks for one endless touch: the touchpad halves (gestures, message rating) did nothing on
+ * keyboards and Xbox pads, and a DualSense needed several presses. As upstream shadPS4. */
+static void number_touches(PadData *d) {
+    static int was_down[2];
+    static uint8_t ids[2], next_id=1;
+    static uint64_t down_since;
+    for (int i=0;i<2;++i) {
+        const int down=i<d->touch_count;
+        if (down && !was_down[i]) {
+            ids[i]=next_id;
+            next_id=next_id==127 ? 1 : next_id+1;
+        }
+        if (down) d->touches[i].id=ids[i];
+        was_down[i]=down;
+    }
+    if (d->touch_count) {
+        if (!down_since) down_since=now_us();
+        d->touch_held_time=(uint32_t)(now_us()-down_since);
+    } else {
+        down_since=0;
+    }
+}
 static void sample(PadData *d) {
     reload_config_if_requested();
     sample_host(d);
@@ -716,6 +741,7 @@ static void sample(PadData *d) {
         if (d->buttons) d->buttons=0;
         else hold_after_capture=0;
     }
+    number_touches(d);
 }
 
 static ABI int32_t pad_init(void) { pthread_mutex_lock(&lock); initialized=1; pthread_mutex_unlock(&lock); return 0; }
