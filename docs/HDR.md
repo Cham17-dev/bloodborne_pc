@@ -78,6 +78,9 @@ dans `ud_regs3.w` pour ce draw) et peut donc retirer de la lumière (sortie sign
 n'était composée à la taille de sortie que pour une sortie ≠ 1080p (`Scaled()`), donc pas d'image UI ni d'image
 d'affichage 16 bits. `UiComposed()` = `Scaled()` ou (mode 5 sans upscaler actif) remplace `Scaled()` pour la
 composition de l'interface (`OnDraw`). Non testé en jeu au moment du commit.
+**Highlight range** (mode 5, `hdr_knee`, % du blanc du jeu, 60 par défaut, 10–95) : le genou de la courbe
+« dépliée » du composite, en direct (`ud_regs3.y` pour le draw delta). Sonde 1 dans le Rêve (17/10) : seules de
+petites taches de la lune dépassent le blanc au genou 0,6 ; un genou plus bas met plus de la lune en HDR.
 
 Ajouts du 17/10 midi : curseur **Black floor** (Color grading, modes 4 et 5, `hdr_black_floor` en nits, 0 par
 défaut) : le noir du jeu (~0,4 nit avec la luminosité 5, mesuré sur les JXR) ramené à 0, de moins en moins jusqu'au

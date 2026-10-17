@@ -330,6 +330,10 @@ void HdrSection(BbSettings::Values& s) {
     ImGui::EndDisabled();
     SliderReset("Highlight strength", s.hdr_strength, 0.0f, 3.0f, 1.0f, "%.2f",
                 "How much of the light the game computed above its white is shown (the moon, the clinic window, fires): 0 is the SDR look, 1 is bbport's default, more is brighter.");
+    ImGui::BeginDisabled(s.hdr_mode != 5);
+    SliderReset("Highlight range", s.hdr_knee, 10.0f, 95.0f, 60.0f, "from %.0f %% of white",
+                "Where the game's own light starts to go above white: the game's curve is kept below, continued above instead of flattening. Lower lets more of the bright parts reach HDR, with their detail (the Hunter's Dream moon: try 30-40); higher keeps more of the SDR look. HDR 16-bit mode only.");
+    ImGui::EndDisabled();
     SliderReset("Highlight boost", s.hdr_boost, 0.0f, 1.0f, 0.0f, "%.2f",
                 "Raises the bright parts the game drew close to its white toward the peak, for scenes lit for SDR (Hunter's Dream): 0 is off, 1 takes the game's white to the peak. Midtones and the HUD do not change.");
     ImGui::TextUnformatted("Presets:");
@@ -438,6 +442,7 @@ void HdrSection(BbSettings::Values& s) {
         Store(s.hdr_strength, 1.0f, true);
         Store(s.hdr_boost, 0.0f, true);
         Store(s.hdr_ui_nits, 203.0f, true);
+        Store(s.hdr_knee, 60.0f, true);
         Store(s.hdr_bloom, 50.0f, true);
         Store(s.hdr_vignette, 50.0f, true);
         s.hdr_compare = 0;

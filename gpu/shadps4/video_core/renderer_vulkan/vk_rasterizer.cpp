@@ -1179,14 +1179,18 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         // The chain probe (test): ud_regs3.z for this draw only (bbport's shader alone reads it).
         // ud_regs3.w: the game's bloom (in-game menu, 50 = the game's), the float's bits + 1.
         const float bloom = std::clamp(BbSettings::Get().hdr_bloom.load(), 0.0f, 100.0f) / 50.0f;
-        const std::array<u32, 2> probe{
+        // ud_regs3.y: the knee (Highlight range, % of the game's white), the float's bits + 1.
+        const float knee = std::clamp(BbSettings::Get().hdr_knee.load(), 10.0f, 95.0f) / 100.0f;
+        const std::array<u32, 3> probe{
+            std::bit_cast<u32>(knee) + 1u,
             u32(std::clamp(BbSettings::Get().hdr_native16_probe.load(), 0, 5)),
             std::bit_cast<u32>(bloom) + 1u};
-        const std::array<u32, 2> game_reg{push_data.ud_regs[14], push_data.ud_regs[15]};
+        const std::array<u32, 3> game_reg{push_data.ud_regs[13], push_data.ud_regs[14],
+                                          push_data.ud_regs[15]};
         const vk::PipelineLayout layout = pipeline->GetLayout();
-        constexpr u32 reg_offset = u32(offsetof(Shader::PushData, ud_regs)) + 14u * 4u;
+        constexpr u32 reg_offset = u32(offsetof(Shader::PushData, ud_regs)) + 13u * 4u;
         scheduler.Record([=](vk::CommandBuffer cmdbuf) {
-            cmdbuf.pushConstants(layout, AllGraphicsStageBits, reg_offset, 8u, probe.data());
+            cmdbuf.pushConstants(layout, AllGraphicsStageBits, reg_offset, 12u, probe.data());
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, hdr_handle);
             if (dynamic_masks) {
                 const std::array rgb{vk::ColorComponentFlags{vk::ColorComponentFlagBits::eR |
@@ -1204,7 +1208,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
             if (dynamic_masks) {
                 cmdbuf.setColorWriteMaskEXT(0, game_masks);
             }
-            cmdbuf.pushConstants(layout, AllGraphicsStageBits, reg_offset, 8u, game_reg.data());
+            cmdbuf.pushConstants(layout, AllGraphicsStageBits, reg_offset, 12u, game_reg.data());
         });
     }
     if (hdr_slot) {

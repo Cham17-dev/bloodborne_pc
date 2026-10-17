@@ -144,9 +144,15 @@ void main() {
     vec3 base = bb_bloom_base(mult);
     vec3 sdr_t = bb_curve(o, x);
     vec3 hdr_t;
+    // Mode 5: the knee live (in-game menu, Highlight range; ud_regs3.y set for this draw by
+    // bbport, the fraction's bits plus one; 0 = the default).
+    float knee = BB_HDR_KNEE;
+    if (BB_OUTPUT_DELTA && push_data.ud_regs3.y != 0u) {
+        knee = clamp(uintBitsToFloat(push_data.ud_regs3.y - 1u), 0.1, 0.95);
+    }
     bool has_hdr = !BB_ADDITIVE && (BB_TONEMAPPER == 1
                                         ? bb_curve_psychov(o, x, BB_HDR_PEAK, hdr_t)
-                                        : bb_curve_hdr(o, x, BB_HDR_KNEE, BB_HDR_PEAK, hdr_t));
+                                        : bb_curve_hdr(o, x, knee, BB_HDR_PEAK, hdr_t));
     vec3 g = bb_glow(o, base, bloom, ms);
     vec3 glow = clamp(g, 0.0, 1.0);
     vec3 sdr_screen = BB_ADDITIVE ? x + g : sdr_t + glow - sdr_t * glow;

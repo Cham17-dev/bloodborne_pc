@@ -97,6 +97,7 @@ struct Values {
     std::atomic<float> hdr_scene_grading{100.0f}; ///< the game's color table, 0..100 % (mode 5)
     std::atomic<float> hdr_vignette{50.0f}; ///< the game's vignettes, 0..100, 50 as drawn
     std::atomic<float> hdr_black_floor{0.0f}; ///< nits of the game's black taken down to 0 (0..2)
+    std::atomic<float> hdr_knee{60.0f}; ///< mode 5: % of the game's white where HDR starts
     /// Set by the presenter: the frame is sent in HDR10 (the menu shows the HDR section).
     std::atomic<bool> hdr_output{false};
     /// Set by the presenter: the all-areas HDR highlights are on (strength and boost apply).
