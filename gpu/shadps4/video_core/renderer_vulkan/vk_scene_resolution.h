@@ -44,6 +44,9 @@ public:
                 vk::PipelineStageFlags2 = vk::PipelineStageFlagBits2::eComputeShader,
                 vk::AccessFlags2 = vk::AccessFlagBits2::eShaderRead);
     void NativeAccess(VideoCore::Image&, vk::AccessFlags2);
+    /// bbport HDR, mode 5: a guest copy (a color resolve) between two proxied targets of the
+    /// same proxy size and format, done between their proxies; false (nothing done) otherwise.
+    bool CopyProxies(VideoCore::ImageId src, VideoCore::ImageId dst);
     /// The proxy of `image` for sampling when it holds the current content (else nullopt: the
     /// native image is current). Transitions only after other use (attachment, copy).
     /// Mipmapped targets have one proxy per level: views of one level only.

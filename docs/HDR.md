@@ -57,7 +57,12 @@ invitée 8 bits (résolution du proxy dans l'image 8 bits, ou proxy rempli depui
 écrivent les cibles 16 bits (proxy ou image 8 bits native), comment elles sont lues, et chaque résolution ou
 remplissage entre proxy et image 8 bits.
 
-Ensuite : corriger l'écrêtage ; traits du HUD au-dessus de 1 en mode 5 (sonde 2) ; noirs plus profonds ;
+**Trace du 17/10 (11 h 39) :** la copie `ebf8000` → `508e0000` que lit ColorGrading n'est pas un draw mais une
+**résolution de couleur** du jeu (`Rasterizer::Resolve`, CB resolve) faite entre les images invitées 8 bits :
+le proxy 16 bits y était résolu (écrêté), puis le proxy de `508e0000` rempli depuis l'image 8 bits. Corrigé :
+entre deux cibles de la chaîne, la copie se fait de proxy à proxy (`SceneTargets::CopyProxies`).
+
+Ensuite : vérifier la correction (soleil au-dessus de 203 nits, Highlight strength actif) ; traits du HUD au-dessus de 1 en mode 5 (sonde 2) ; noirs plus profonds ;
 curseur Scene grading pour le mode 4 ; grain ; variantes non couvertes ; franges colorées en 4K (bug du port,
 hors HDR).
 

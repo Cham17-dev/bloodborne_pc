@@ -148,6 +148,42 @@ void SceneTargets::NativeAccess(VideoCore::Image& image, vk::AccessFlags2 access
         if (access & writes) entry.state.NativeWrite();
     }
 }
+bool SceneTargets::CopyProxies(VideoCore::ImageId src_id, VideoCore::ImageId dst_id) {
+    auto& src = *lookup(src_id, 0);
+    auto& dst = *lookup(dst_id, 0);
+    if (src.info.props.is_depth || dst.info.props.is_depth || !Eligible(src) || !Eligible(dst) ||
+        !ProxyCurrent(src, 0, 1) || ProxySize(src, 0) != ProxySize(dst, 0)) {
+        return false;
+    }
+    auto& s = Get(src_id, 0);
+    auto& d = Get(dst_id, 0);
+    if (s.image.image_ci.format != d.image.image_ci.format) {
+        return false;
+    }
+    scheduler.EndRendering();
+    Transition(s, src.aspect_mask, vk::ImageLayout::eTransferSrcOptimal,
+               vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferRead);
+    Transition(d, dst.aspect_mask, vk::ImageLayout::eTransferDstOptimal,
+               vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite);
+    const auto extent = s.image.image_ci.extent;
+    const vk::ImageCopy region{
+        .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+        .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+        .extent = {extent.width, extent.height, 1},
+    };
+    const vk::Image from = s.image, to = d.image;
+    scheduler.Record([from, to, region](vk::CommandBuffer cmd) {
+        cmd.copyImage(from, vk::ImageLayout::eTransferSrcOptimal, to,
+                      vk::ImageLayout::eTransferDstOptimal, region);
+    });
+    d.state.ProxyWrite();
+    if (HdrChannel::Trace()) {
+        LOG_INFO(Render_Vulkan, "HDR trace: copy {:#x} -> {:#x} between their proxies ({})",
+                 src.info.guest_address, dst.info.guest_address,
+                 vk::to_string(s.image.image_ci.format));
+    }
+    return true;
+}
 void SceneTargets::Transition(Entry& e, vk::ImageAspectFlags aspect, vk::ImageLayout layout,
                                vk::PipelineStageFlags2 stages, vk::AccessFlags2 access) {
     scheduler.EndRendering();

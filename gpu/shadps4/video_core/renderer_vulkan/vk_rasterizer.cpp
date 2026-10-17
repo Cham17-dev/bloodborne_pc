@@ -3224,14 +3224,39 @@ void Rasterizer::Resolve() {
     const auto& mrt1_hint = CbExtent(1);
     VideoCore::TextureCache::ImageDesc mrt0_desc{Regs().color_buffers[0], mrt0_hint};
     VideoCore::TextureCache::ImageDesc mrt1_desc{Regs().color_buffers[1], mrt1_hint};
-    auto& mrt0_image = texture_cache.GetImage(texture_cache.FindImage(mrt0_desc, true));
-    auto& mrt1_image = texture_cache.GetImage(texture_cache.FindImage(mrt1_desc, true));
+    const auto mrt0_image_id = texture_cache.FindImage(mrt0_desc, true);
+    const auto mrt1_image_id = texture_cache.FindImage(mrt1_desc, true);
+    auto& mrt0_image = texture_cache.GetImage(mrt0_image_id);
+    auto& mrt1_image = texture_cache.GetImage(mrt1_image_id);
 
     ScopeMarkerBegin(fmt::format("Resolve:MRT0={:#x}:MRT1={:#x}",
                                  Regs().color_buffers[0].Address(),
                                  Regs().color_buffers[1].Address()));
-    runtime.ResolveImage(&mrt0_image, &mrt1_image, mrt0_desc.view_info.range,
-                         mrt1_desc.view_info.range);
+    // bbport HDR, mode 5: the game copies its finished image (the composite's target) into the
+    // copy the color grading reads with a color resolve. Between two targets of the 16-bit chain
+    // it is done between their RGBA16F proxies: through the 8-bit images it clipped the HDR part
+    // at white (found with the chain trace, docs/HDR.md).
+    const auto chain = [](const VideoCore::Image& image) {
+        return HdrChannel::ChainImage(image.info.guest_address, image.info.size.width,
+                                      image.info.size.height, image.info.pixel_format);
+    };
+    const bool proxied = mrt0_image.backing && mrt0_image.backing->num_samples == 1 &&
+                         chain(mrt0_image) && chain(mrt1_image) &&
+                         mrt0_desc.view_info.range.base.level == 0 &&
+                         mrt1_desc.view_info.range.base.level == 0 &&
+                         scene_targets->CopyProxies(mrt0_image_id, mrt1_image_id);
+    if (proxied) {
+        mrt1_image.flags |= VideoCore::ImageFlagBits::GpuModified;
+        mrt1_image.flags &= ~VideoCore::ImageFlagBits::Dirty;
+    } else {
+        if (HdrChannel::Trace() && (chain(mrt0_image) || chain(mrt1_image))) {
+            LOG_INFO(Render_Vulkan, "HDR trace: color resolve {:#x} -> {:#x} through the 8-bit "
+                                    "images", mrt0_image.info.guest_address,
+                     mrt1_image.info.guest_address);
+        }
+        runtime.ResolveImage(&mrt0_image, &mrt1_image, mrt0_desc.view_info.range,
+                             mrt1_desc.view_info.range);
+    }
     ScopeMarkerEnd();
 }
 
