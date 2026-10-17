@@ -35,7 +35,33 @@ Le journal (`user\last_run.log`, lignes GPU au niveau info : `BB_GPU_LOG=info`, 
 depuis hdr-22 quand un mode « HDR tonemap » est choisi) contient `HDR output: on, HDR10 swapchain` quand la sortie HDR est active,
 ou `HDR output: off, the display offers no HDR10 format` quand l'écran ne propose pas le HDR10.
 
-## Reprendre le projet (point au 16/10, après-midi)
+## Reprendre le projet (point au 17/10, fin de matinée)
+
+**État.** Le mode 4 (« bbport HDR, all areas », build hdr-32, sauvegarde `hdr-30-stable` pour hdr-30) est le mode
+qui marche : réglages en direct dans le menu (Insert), soleil de Yharnam ~860 nits avec ses détails (mieux que le
+mod RenoDX early access sur shadPS4, qui écrête le soleil à 992 nits sans détail ; nos noirs ~0,5 nit contre <1
+pour RenoDX : à améliorer). Le **mode 5 (chaîne 16 bits)** est en cours : image juste (couleurs, sRGB), Scene
+grading actif, mais rien au-dessus du blanc à l'écran (Highlight strength sans effet ; seul le boost agit).
+
+**Compilation locale** (plus de builds GitHub à attendre) : MSYS2 CLANG64, clone `E:\bloodborne_pc`, puis
+`git pull && bash build.sh && bash packaging/windows/package.sh`, copier `out\stage\bbport-windows` sur
+`E:\Bloodborne\hdr`. Le launcher affiche « local <commit> <date> ».
+
+**Diagnostic du mode 5 (sondes du menu, 17/10, Yharnam devant le soleil, boost 0) :** 1 (composite) le soleil
+est vert : la part HDR est bien ajoutée ; 5 (copies du jeu) rien au-dessus de 1 ; 3 (entrée de ColorGrading) le
+soleil est exactement au blanc (affiché jaune = cyan avec l'inversion des canaux) ; 4 ColorGrading couvre tout
+l'écran. Donc la lumière ajoutée est écrêtée à 1 entre le composite et les copies : un accès passe par l'image
+invitée 8 bits (résolution du proxy dans l'image 8 bits, ou proxy rempli depuis elle, ou passe non réduite).
+**Prochain test :** build `dfc5cf6` ou plus récent, mode 5, devant le soleil : menu HDR → bouton **« Log the
+16-bit chain (one frame) »**, quitter, envoyer `last_run.log` (lignes `HDR trace:`). Elles disent quelles passes
+écrivent les cibles 16 bits (proxy ou image 8 bits native), comment elles sont lues, et chaque résolution ou
+remplissage entre proxy et image 8 bits.
+
+Ensuite : corriger l'écrêtage ; traits du HUD au-dessus de 1 en mode 5 (sonde 2) ; noirs plus profonds ;
+curseur Scene grading pour le mode 4 ; grain ; variantes non couvertes ; franges colorées en 4K (bug du port,
+hors HDR).
+
+## Point précédent (16/10, après-midi)
 
 Où on en est : le HDR natif marche (étape 3b, `5c02eaf8` seulement). La fenêtre de la clinique monte à 916 nits
 au lieu de 203 en SDR. Nouveau (16/10) : la **passe générique** (étape 3c, `BB_HDR_TONEMAP=4`) couvre les 280
