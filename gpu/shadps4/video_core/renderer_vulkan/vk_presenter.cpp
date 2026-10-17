@@ -914,7 +914,9 @@ void Presenter::UpdateFrameGenLimit(bool wanted, double present_ms) {
     // The share of the game's frame interval spent presenting its images: paced, about
     // count / (count + 1). Near one the presentation holds the game back (FIFO on a display
     // slower than measured, a GPU too slow for generation): off for a while, longer each time.
-    present_busy += (present_ms / interval - present_busy) * 0.1;
+    // Each frame counts at most 1.2: one long hitch (a load, a shader compile) is not a
+    // display that cannot keep up; about ten overloaded frames in a row are.
+    present_busy += (std::min(present_ms / interval, 1.2) - present_busy) * 0.1;
     if (before && present_busy > 0.97) {
         frame_gen_hold_seconds =
             now - frame_gen_hold_until > std::chrono::seconds(60)
