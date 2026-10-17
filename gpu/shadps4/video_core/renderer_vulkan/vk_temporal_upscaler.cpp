@@ -1292,6 +1292,10 @@ bool TemporalUpscaler::Scaled() const {
     return scaled_session || target_width != 1920 || target_height != 1080;
 }
 
+bool TemporalUpscaler::UiComposed() const {
+    return Scaled() || (HdrChannel::Native16() && !Active());
+}
+
 void TemporalUpscaler::OnColorTarget(VideoCore::ImageId color) {
     if (ui_phase || !camera_motion.Depth()) {
         return;
@@ -1307,7 +1311,7 @@ void TemporalUpscaler::OnColorTarget(VideoCore::ImageId color) {
 
 void TemporalUpscaler::OnDraw(u64 vs_hash, VideoCore::ImageId color,
                               VideoCore::ImageId depth, bool native_viewport) {
-    if (!Scaled() && vs_hash == ui_trigger_vs) done_this_frame = true;
+    if (!UiComposed() && vs_hash == ui_trigger_vs) done_this_frame = true;
     // bbport: a UI draw without a color target (a Scaleform mask: color writes off) writes the
     // stencil the next UI draws test, so it belongs in the UI's output-size depth like them. In
     // the guest depth its mask was lost when the next UI draw switched depths (PrepareUiDepth
@@ -1325,7 +1329,7 @@ void TemporalUpscaler::OnDraw(u64 vs_hash, VideoCore::ImageId color,
         }
         return;
     }
-    if (!Scaled() || !color) {
+    if (!UiComposed() || !color) {
         return;
     }
     if (ui_phase) {
@@ -1346,7 +1350,7 @@ void TemporalUpscaler::OnDraw(u64 vs_hash, VideoCore::ImageId color,
          image.info.pixel_format == vk::Format::eR8G8B8A8Srgb) &&
         RenderTarget(image.info.size.width, image.info.size.height) &&
         !FrameCapture::IsDisplayBuffer(image.info.guest_address);
-    switch (UiComposition::Choose(Scaled(), ui_draw,
+    switch (UiComposition::Choose(UiComposed(), ui_draw,
                                   camera_motion.Ready() && ldr_target == color,
                                   Active() && !failed)) {
     case UiComposition::Background::None:

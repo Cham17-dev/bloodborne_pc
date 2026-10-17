@@ -275,8 +275,8 @@ HDR_TONEMAP = [('', ('Game (default)', 'Игры (по умолчанию)')), (
                       'bbport HDR: яркие блики (эксперимент, нужен вывод HDR)')),
                ('4', ('bbport HDR, all areas (experimental, needs HDR output)',
                       'bbport HDR, все локации (эксперимент, нужен вывод HDR)')),
-               ('5', ('bbport HDR 16-bit (experimental, needs HDR output above 1080p)',
-                      'bbport HDR 16 бит (эксперимент, нужен вывод HDR выше 1080p)'))]
+               ('5', ('bbport HDR 16-bit (experimental, needs HDR output)',
+                      'bbport HDR 16 бит (эксперимент, нужен вывод HDR)'))]
 # bbport HDR: peak luminance of the display, in nits (BB_HDR_PEAK_NITS).
 # bbport.ini keys since hdr-27 (the in-game menu changes them live; other values show as they are).
 HDR_PEAK_NITS = [('1000', ('1000 nits (default)', '1000 нит (по умолчанию)')), ('400', ('400 nits', '400 нит')),

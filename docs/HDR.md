@@ -74,6 +74,10 @@ luminosité du jeu appliquée après), affichés en SDR à la luminosité HUD (r
 de 1). **Bloom** — la passe delta du composite vise le composite avec son glow multiplié par le curseur (poussé
 dans `ud_regs3.w` pour ce draw) et peut donc retirer de la lumière (sortie signée). Le glow ajouté après
 (`8c08444c`) n'est pas encore réglable.
+**1080p** : les proxys existent aussi en 1080p (taille de scène 1920x1080, `Reduced()` vrai), mais l'interface
+n'était composée à la taille de sortie que pour une sortie ≠ 1080p (`Scaled()`), donc pas d'image UI ni d'image
+d'affichage 16 bits. `UiComposed()` = `Scaled()` ou (mode 5 sans upscaler actif) remplace `Scaled()` pour la
+composition de l'interface (`OnDraw`). Non testé en jeu au moment du commit.
 
 Ajouts du 17/10 midi : curseur **Black floor** (Color grading, modes 4 et 5, `hdr_black_floor` en nits, 0 par
 défaut) : le noir du jeu (~0,4 nit avec la luminosité 5, mesuré sur les JXR) ramené à 0, de moins en moins jusqu'au

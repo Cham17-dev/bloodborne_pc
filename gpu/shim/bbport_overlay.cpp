@@ -260,7 +260,7 @@ void HdrSection(BbSettings::Values& s) {
             ImGui::TextDisabled("(experimental, composite %08x)", s.hdr_variant.load());
         } else {
             ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
-                               "HDR 16-bit chain: not active (needs an output other than 1080p)");
+                               "HDR 16-bit chain: not active here (no 16-bit image this frame)");
         }
         Hint("Experimental mode: the game draws its image in 16 bits after its tone mapping, so its highlights reach the final pass without a mask. The HUD is found by comparing the image with the scene before the UI (HUD brightness; Debug view, Pixels taken as UI). Bloom applies to the composite's bloom; Vignette does not apply yet.");
     } else if (s.hdr_channel_live) {
