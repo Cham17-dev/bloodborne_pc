@@ -529,6 +529,8 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         pp_settings.hdr_bloom = std::clamp(bb.hdr_bloom.load(), 0.0f, 100.0f) / 50.0f;
         pp_settings.hdr_vignette = std::clamp(bb.hdr_vignette.load(), 0.0f, 100.0f) / 50.0f;
     }
+    pp_settings.hdr_black_floor = std::clamp(BbSettings::Get().hdr_black_floor.load(), 0.0f, 2.0f) /
+                                  std::max(pp_settings.hdr_paper_white, 1.0f);
     // The in-game menu shows its HDR section when the frame is sent in HDR10.
     BbSettings::Get().hdr_output = bool(frame->is_hdr);
     BbSettings::Get().hdr_highlights = frame->is_hdr && HdrChannel::Enabled();

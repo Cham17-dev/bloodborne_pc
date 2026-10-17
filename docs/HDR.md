@@ -62,7 +62,11 @@ remplissage entre proxy et image 8 bits.
 le proxy 16 bits y était résolu (écrêté), puis le proxy de `508e0000` rempli depuis l'image 8 bits. Corrigé :
 entre deux cibles de la chaîne, la copie se fait de proxy à proxy (`SceneTargets::CopyProxies`).
 
-Ensuite : vérifier la correction (soleil au-dessus de 203 nits, Highlight strength actif) ; traits du HUD au-dessus de 1 en mode 5 (sonde 2) ; noirs plus profonds ;
+Ajouts du 17/10 midi : curseur **Black floor** (Color grading, modes 4 et 5, `hdr_black_floor` en nits, 0 par
+défaut) : le noir du jeu (~0,4 nit avec la luminosité 5, mesuré sur les JXR) ramené à 0, de moins en moins jusqu'au
+blanc (`black_floor()` dans `post_process.frag`) ; statut du mode 5 avec le composite en cours.
+
+Ensuite : vérifier la correction (soleil au-dessus de 203 nits, Highlight strength actif) ; tester Black floor à 0,4 ; traits du HUD au-dessus de 1 en mode 5 (sonde 2) ; noirs plus profonds ;
 curseur Scene grading pour le mode 4 ; grain ; variantes non couvertes ; franges colorées en 4K (bug du port,
 hors HDR).
 

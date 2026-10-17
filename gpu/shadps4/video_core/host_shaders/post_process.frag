@@ -45,6 +45,7 @@ layout (push_constant) uniform settings {
     float hdr_bloom;       // bbport: the game's bloom, 0 none .. 1 the game's .. 2 double
     float hdr_vignette;    // bbport: the game's vignettes, 0 none .. 1 the game's .. 2 double
     uint hdr_native16;     // bbport: the 16-bit chain's frame: 1 linear, 2 sRGB encoded (HDR > 1)
+    float hdr_black_floor; // bbport: the game's black level taken to 0 (units of paper white)
 } pp;
 
 const vec3 LUMA709 = vec3(0.2126390059, 0.7151686788, 0.0721923154);
@@ -78,6 +79,17 @@ vec3 tonemap_scene(vec3 v, float peak) {
     return m > peak ? v * (peak / m) : v;
 }
 
+
+// The game's black level (its darkest grey, lifted by its brightness curve) taken down to 0, less
+// and less up to white; above white unchanged.
+vec3 black_floor(vec3 v) {
+    float f = clamp(pp.hdr_black_floor, 0.0, 0.5);
+    if (f <= 0.0) {
+        return v;
+    }
+    vec3 lowered = max(v - f, 0.0) / (1.0 - f);
+    return mix(lowered, v, greaterThan(v, vec3(1.0)));
+}
 
 // The scene's grading (linear BT.709, 1 = paper white), around mid grey 0.18: exposure, then
 // contrast (a power around mid grey, 0.5 .. 2), highlights (above mid grey) and shadows (below,
@@ -190,7 +202,7 @@ vec3 native16_nits(vec3 v) {
     }
     vec3 lin_sdr = pp.hdr_gamma22 ? pow(signal, vec3(2.2)) : degamma(signal);
     // Above white the chain's values are gamma encoded (the composite's output, a 2.2 power).
-    vec3 lin = lin_sdr * mix(vec3(1.0), pow(v, vec3(2.2)), greaterThan(v, vec3(1.0)));
+    vec3 lin = black_floor(lin_sdr * mix(vec3(1.0), pow(v, vec3(2.2)), greaterThan(v, vec3(1.0))));
     float peak = max(pp.hdr_peak_nits / pp.hdr_paper_white, 1.0);
     float l = dot(lin, LUMA709), l_sdr = dot(lin_sdr, LUMA709);
     // Strength: the luminance above white raised to this power.
@@ -267,7 +279,7 @@ void main() {
             vec3 gains = pow(max(vec3(channel.r, channel.b, channel.a), 0.0),
                              vec3(max(pp.hdr_strength, 0.0)));
             gains = mix(vec3(1.0), gains, scene);
-            vec3 lin = pp.hdr_gamma22 ? pow(signal, vec3(2.2)) : degamma(signal);
+            vec3 lin = black_floor(pp.hdr_gamma22 ? pow(signal, vec3(2.2)) : degamma(signal));
             float l_sdr = dot(lin, luma709);
             float y = clamp((l_sdr - 0.45) / 0.55, 0.0, 1.0);
             float boost = 1.0 + scene * clamp(pp.hdr_boost, 0.0, 1.0) * (peak - 1.0) * y * y * y;

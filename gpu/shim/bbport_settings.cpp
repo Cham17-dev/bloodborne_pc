@@ -84,6 +84,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         if (!value.empty()) v.hdr_bloom = Clamp(f, 0.0f, 100.0f);
     } else if (key == "hdr_scene_grading") {
         if (!value.empty()) v.hdr_scene_grading = Clamp(f, 0.0f, 100.0f);
+    } else if (key == "hdr_black_floor") {
+        if (!value.empty()) v.hdr_black_floor = Clamp(f, 0.0f, 2.0f);
     } else if (key == "hdr_vignette") {
         if (!value.empty()) v.hdr_vignette = Clamp(f, 0.0f, 100.0f);
     } else if (key == "show_fps") {
@@ -262,12 +264,13 @@ void Save() {
                  "hdr_ui_nits=%.0f\nhdr_gamma=%s\nhdr_exposure=%.2f\nhdr_contrast=%.0f\n"
                  "hdr_highlights=%.0f\nhdr_shadows=%.0f\nhdr_saturation=%.0f\n"
                  "hdr_highlight_saturation=%.0f\nhdr_blowout=%.0f\nhdr_bloom=%.0f\n"
-                 "hdr_vignette=%.0f\nhdr_scene_grading=%.0f\n",
+                 "hdr_vignette=%.0f\nhdr_scene_grading=%.0f\nhdr_black_floor=%.2f\n",
                  v.hdr_tonemapper.load(), v.hdr_per_channel ? "per_channel" : "luminance",
                  v.hdr_ui_nits.load(), v.hdr_gamma22 ? "2.2" : "srgb", v.hdr_exposure.load(),
                  v.hdr_contrast.load(), v.hdr_grade_highlights.load(), v.hdr_shadows.load(),
                  v.hdr_saturation.load(), v.hdr_highlight_saturation.load(), v.hdr_blowout.load(),
-                 v.hdr_bloom.load(), v.hdr_vignette.load(), v.hdr_scene_grading.load());
+                 v.hdr_bloom.load(), v.hdr_vignette.load(), v.hdr_scene_grading.load(),
+                 v.hdr_black_floor.load());
     std::fprintf(file, "model_lod=%d\noutput_res=%dx%d\n", v.model_lod.load(),
                  OutputWidths[v.output_res], OutputHeights[v.output_res]);
     // Read by run.py at start (hud_layout.py).

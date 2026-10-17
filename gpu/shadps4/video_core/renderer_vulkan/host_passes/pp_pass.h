@@ -51,6 +51,8 @@ public:
         // bbport HDR, mode 5: the frame is the 16-bit chain's RGBA16F: 1 linear, 2 sRGB encoded
         // (both HDR above 1, in the chain's gamma encoding there).
         u32 hdr_native16 = 0;
+        // bbport HDR, live: the game's black level taken down to 0, in units of paper white.
+        float hdr_black_floor = 0.0f;
     };
 
     void Create(vk::Device device, vk::Format surface_format);

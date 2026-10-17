@@ -1171,6 +1171,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // bbport HDR, mode 5 (16-bit chain): the HDR part of the composite, added to the game's
     // own (RGBA16F) target in the same pass; color writes only, then the game's state again.
     if (hdr_handle && HdrChannel::Native16()) {
+        if (const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)]) {
+            BbSettings::Get().hdr_variant = u32(ps->pgm_hash); // the in-game menu's status
+        }
         const bool dynamic_masks = instance.IsDynamicColorWriteMaskSupported();
         const ColorWriteMasks game_masks = scheduler.GetDynamicState().color_write_masks;
         // The chain probe (test): ud_regs3.z for this draw only (bbport's shader alone reads it).

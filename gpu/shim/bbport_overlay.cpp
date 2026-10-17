@@ -354,6 +354,8 @@ void HdrSection(BbSettings::Values& s) {
                                 const char* hint) {
             SliderReset(label, value, 0.0f, 100.0f, reset, "%.0f", hint);
         };
+        SliderReset("Black floor", s.hdr_black_floor, 0.0f, 2.0f, 0.0f, "%.2f nits",
+                    "Takes the game's darkest grey down to true black (OLED): the nits removed at black, less and less up to white. The game's black sits near 0.4 nits (brightness 5): try 0.4. 0 is the game's.");
         percent("Contrast", s.hdr_contrast, 50.0f, "Around mid grey: 50 is the game's, more deepens shadows and raises light.");
         percent("Highlights", s.hdr_grade_highlights, 50.0f, "Brightness above mid grey: 50 is the game's.");
         percent("Shadows", s.hdr_shadows, 50.0f, "Brightness below mid grey: 50 is the game's, more lifts the shadows.");
@@ -369,6 +371,7 @@ void HdrSection(BbSettings::Values& s) {
             Store(s.hdr_highlight_saturation, 50.0f, true);
             Store(s.hdr_blowout, 0.0f, true);
             Store(s.hdr_scene_grading, 100.0f, true);
+            Store(s.hdr_black_floor, 0.0f, true);
         }
         ImGui::TreePop();
     }
