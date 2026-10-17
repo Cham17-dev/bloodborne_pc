@@ -64,6 +64,9 @@ entre deux cibles de la chaîne, la copie se fait de proxy à proxy (`SceneTarge
 Correction du 17/10 soir : la trace de hdr-45 ne montre pas `Resolve` ; la copie est un **compute** que le port
 reconnaît comme copie d'image (`Rasterizer::IsComputeImageCopy`, puis `CopyColorAndDepth` entre images 8 bits).
 Même traitement : de proxy à proxy entre deux cibles de la chaîne.
+**Validé le 17/10 à 18 h (build local `16bde6e`)** : trace « copy ebf8000 -> 508e0000 between their proxies »,
+ColorGrading lit son proxy à jour ; soleil de Yharnam jusqu'à ~860 nits avec boost 0 et ses détails, comme le
+mode 4. Le mode 5 donne enfin du HDR.
 
 Ajouts du 17/10 midi : curseur **Black floor** (Color grading, modes 4 et 5, `hdr_black_floor` en nits, 0 par
 défaut) : le noir du jeu (~0,4 nit avec la luminosité 5, mesuré sur les JXR) ramené à 0, de moins en moins jusqu'au
