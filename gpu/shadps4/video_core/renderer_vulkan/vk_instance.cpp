@@ -725,17 +725,8 @@ void Instance::CreateAllocator() {
         .vkGetDeviceProcAddr = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr,
     };
 
-    // bbport: with VK_EXT_memory_budget VMA's budget checks (WITHIN_BUDGET) use the driver's
-    // usage, which counts the buffer cache's guest memory backing (allocated directly, not
-    // through VMA). Without it VMA only counted its own allocations against 80% of VRAM: on
-    // 4 GB cards textures filled VRAM next to 2-3 GB of backing, and the next area's backing
-    // found no room ("ErrorOutOfDeviceMemory"; on NVIDIA it can only be in VRAM).
-    VmaAllocatorCreateFlags allocator_flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-    if (supports_memory_budget) {
-        allocator_flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
-    }
     const VmaAllocatorCreateInfo allocator_info = {
-        .flags = allocator_flags,
+        .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
         .physicalDevice = physical_device,
         .device = *device,
         .pVulkanFunctions = &functions,

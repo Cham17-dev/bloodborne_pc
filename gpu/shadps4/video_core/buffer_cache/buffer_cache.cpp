@@ -116,6 +116,28 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
                        reqs.memoryTypeBits)
             .value();
     arena_memory_type_bits = reqs.memoryTypeBits;
+    // bbport: discrete GPUs keep a reserve of VRAM for the guest memory backing (EnsureResident).
+    // It only grows as areas load and, on NVIDIA, cannot be outside VRAM (sparse buffers accept
+    // VRAM types only): on 4 GB cards textures filled VRAM and the next area stopped the game
+    // with ErrorOutOfDeviceMemory. Textures keep their own placement (a reserve made by moving
+    // them to system memory cost FPS after every area load in 1.9).
+    if (!instance.IsIntegrated()) {
+        const auto& props = instance.GetMemoryProperties();
+        const u64 heap = props.memoryHeaps[props.memoryTypes[arena_memory_type_index].heapIndex].size;
+        const u64 size = Common::AlignDown(std::min<u64>(512_MB, heap / 8), block_size);
+        const vk::MemoryAllocateFlagsInfo reserve_flags = {
+            .flags = vk::MemoryAllocateFlagBits::eDeviceAddress,
+        };
+        const auto [result, memory] = device.allocateMemory({
+            .pNext = &reserve_flags,
+            .allocationSize = size,
+            .memoryTypeIndex = arena_memory_type_index,
+        });
+        if (result == vk::Result::eSuccess) {
+            reserve_memory = memory;
+            reserve_size = size;
+        }
+    }
 
     const u64 bda_pagetable_size =
         (blocks_per_arena_page * num_arena_pages) * sizeof(vk::DeviceAddress);
@@ -595,7 +617,21 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
         .allocationSize = resident_blocks << block_shift,
         .memoryTypeIndex = arena_memory_type_index,
     };
-    auto [alloc_result, device_memory] = instance.GetDevice().allocateMemory(alloc_info);
+    // BB_ARENA_LIMIT_MB=N: VRAM counts as full once N MiB are backed here (tests the reserve).
+    static const u64 arena_limit = [] {
+        const char* env = std::getenv("BB_ARENA_LIMIT_MB");
+        return env ? std::strtoull(env, nullptr, 10) << 20 : 0;
+    }();
+    static u64 arena_allocated = 0;
+    vk::Result alloc_result = vk::Result::eErrorOutOfDeviceMemory;
+    vk::DeviceMemory device_memory{};
+    if (!arena_limit || arena_allocated + alloc_info.allocationSize <= arena_limit) {
+        std::tie(alloc_result, device_memory) = instance.GetDevice().allocateMemory(alloc_info);
+        if (alloc_result == vk::Result::eSuccess) {
+            arena_allocated += alloc_info.allocationSize;
+        }
+    }
+    u64 memory_base{}; ///< the backing's offset in `device_memory` (non-zero in the reserve)
     if (alloc_result == vk::Result::eErrorOutOfDeviceMemory) {
         // bbport: VRAM full. The guest memory the GPU uses is backed here and only grows as areas
         // load; on 4-8 GB cards it ran out ("ErrorOutOfDeviceMemory" stopped the game). Another
@@ -612,6 +648,20 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
         }
         if (alloc_result == vk::Result::eSuccess) {
             Vulkan::NoteOverBudget("buffer");
+        } else if (reserve_memory && reserve_size - reserve_used >= alloc_info.allocationSize) {
+            // The reserve kept at start for this (no other memory type on NVIDIA).
+            device_memory = reserve_memory;
+            memory_base = reserve_used;
+            const u64 quarter_before = reserve_used * 4 / reserve_size;
+            reserve_used += alloc_info.allocationSize;
+            alloc_result = vk::Result::eSuccess;
+            if (memory_base == 0 || reserve_used * 4 / reserve_size != quarter_before) {
+                std::printf("GPU: video memory full: game memory from its reserve (%llu of %llu "
+                            "MiB used)\n",
+                            static_cast<unsigned long long>(reserve_used >> 20),
+                            static_cast<unsigned long long>(reserve_size >> 20));
+                std::fflush(stdout);
+            }
         } else {
             std::printf("GPU: video memory full: no room for %llu MiB of game memory (only VRAM "
                         "can hold it on this GPU). A lower output resolution or upscaler preset "
@@ -626,7 +676,7 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
     const auto staging =
         staging_pool.Request(resident_blocks * sizeof(vk::DeviceAddress), MemoryType::HostUncached);
 
-    u64 memory_offset{};
+    u64 memory_offset{memory_base};
     ArenaBinds* binds = BindsForArena(arena);
     auto* bda_addrs = reinterpret_cast<vk::DeviceAddress*>(staging.mapped);
     u64 offset = staging.offset;
