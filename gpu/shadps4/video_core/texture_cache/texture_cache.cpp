@@ -68,6 +68,18 @@ TextureCache::TextureCache(const Vulkan::Instance& instance_, Vulkan::Scheduler&
     critical_gc_memory = static_cast<u64>(
         std::max<s64>(std::min(device_local_memory - min_vacancy_critical, min_spacing_critical),
                       min_critical_floor));
+    // bbport: below 8 GB the pressure mark was 40% of the budget (1.9 GB on a 6 GB card), under
+    // what the game holds outside textures (~2.2 GB: its memory's backing, upscaler, swapchain):
+    // such cards were under pressure all session, evicting textures unused for 5 s and uploading
+    // them again. 60% (BB_GC_PRESSURE_PERCENT) leaves the textures of an area room first.
+    if (device_local_memory < TARGET_GC_THRESHOLD) {
+        static const s64 percent = [] {
+            const char* env = std::getenv("BB_GC_PRESSURE_PERCENT");
+            return std::clamp<s64>(env ? std::strtoll(env, nullptr, 10) : 60, 10, 75);
+        }();
+        pressure_gc_memory = std::max<u64>(pressure_gc_memory,
+                                           static_cast<u64>(device_local_memory / 100 * percent));
+    }
     trigger_gc_memory = static_cast<u64>((device_local_memory - mem_threshold) / 2);
 }
 
@@ -1018,6 +1030,7 @@ void TextureCache::RegisterImage(ImageId image_id) {
     total_used_memory += Common::AlignUp(image.SizeBytes(), 1024);
     ++image_count;
     image_bytes += image.info.guest_size;
+    image_host_bytes += Common::AlignUp(image.SizeBytes(), 1024);
     image_lru_cache.Insert(image, gc_tick);
     image.lru_touched_tick = gc_tick;
     const auto& info = image.info;
@@ -1042,6 +1055,7 @@ void TextureCache::UnregisterImage(ImageId image_id) {
     total_used_memory -= Common::AlignUp(image.SizeBytes(), 1024);
     --image_count;
     image_bytes -= image.info.guest_size;
+    image_host_bytes -= Common::AlignUp(image.SizeBytes(), 1024);
     ForEachPage(image.info.guest_address, image.info.guest_size, [this, image_id](u64 page) {
         const auto page_it = page_table.find(page);
         ASSERT_MSG(page_it, "Unregistering unregistered page={:#x}", page << Traits::PAGE_BITS);
@@ -1162,11 +1176,17 @@ void TextureCache::ReportMemory() {
     }
     const u64 vram = instance.CanReportMemoryUsage() ? instance.GetDeviceMemoryUsage() : 0;
     const auto process = BbProcessMemory::Get();
-    std::printf("Memory: VRAM %llu MiB; textures %llu (%llu MiB), unused for a minute %llu "
-                "(%llu MiB), of them GPU-written tiled %llu (%llu MiB); process %llu MiB "
+    std::printf("Memory: VRAM %llu MiB; textures %llu (%llu MiB, %llu MiB on the GPU), game "
+                "memory backing %llu MiB (reserve %llu of %llu MiB used), unused for a minute "
+                "%llu (%llu MiB), of them GPU-written tiled %llu (%llu MiB); process %llu MiB "
                 "committed, %llu MiB in RAM\n",
                 (unsigned long long)(vram >> 20), (unsigned long long)image_count,
-                (unsigned long long)(image_bytes >> 20), (unsigned long long)idle,
+                (unsigned long long)(image_bytes >> 20),
+                (unsigned long long)(image_host_bytes >> 20),
+                (unsigned long long)(buffer_cache.ArenaBackedBytes() >> 20),
+                (unsigned long long)(buffer_cache.ArenaReserveUsedBytes() >> 20),
+                (unsigned long long)(buffer_cache.ArenaReserveBytes() >> 20),
+                (unsigned long long)idle,
                 (unsigned long long)(idle_bytes >> 20), (unsigned long long)kept,
                 (unsigned long long)(kept_bytes >> 20),
                 (unsigned long long)(process.private_bytes >> 20),
@@ -1177,6 +1197,12 @@ void TextureCache::ReportMemory() {
 void TextureCache::GarbageCollectImages() {
     if (instance.CanReportMemoryUsage()) {
         total_used_memory = instance.GetDeviceMemoryUsage();
+        // bbport: the buffer cache's reserve (512 MiB of VRAM allocated at start for the game's
+        // memory once VRAM is full) is not in use until then: counted, it put 6 GB cards half a
+        // gigabyte closer to the marks than textures make them.
+        const u64 reserve_free =
+            buffer_cache.ArenaReserveBytes() - buffer_cache.ArenaReserveUsedBytes();
+        total_used_memory -= std::min(total_used_memory, reserve_free);
         // bbport: on integrated GPUs (Steam Deck) the usage covers system-memory heaps holding
         // much more than images (buffers backing guest memory), and the startup budget left
         // ~1 GB after its 8 GB system reserve: usage stayed above the critical mark, so the
