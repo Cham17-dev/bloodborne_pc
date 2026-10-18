@@ -362,7 +362,9 @@ bool TemporalUpscaler::OnFrameStart() {
 }
 
 void TemporalUpscaler::OnDispatch(u64 cs_hash) {
-    if (cs_hash != trigger_hash || done_this_frame || failed || Scaled()) {
+    // bbport HDR, mode 5 without an upscaler (UiComposed): the scene is not done here, the
+    // composite and the chain after it still draw into the 16-bit proxies (1080p output).
+    if (cs_hash != trigger_hash || done_this_frame || failed || UiComposed()) {
         return;
     }
     done_this_frame = true;
