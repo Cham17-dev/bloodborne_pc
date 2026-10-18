@@ -1125,8 +1125,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // bbport HDR, mode 5: the strength of the game's color table (Scene grading), for bbport's
     // version of its pass (hdr/bb_color_grading.frag): the float's bits plus one.
     if (HdrChannel::Native16()) {
+        // Vanilla: left unset (0), the game's grading.
         if (const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
-            ps && ps->pgm_hash == HdrChannel::ColorGradingHash) {
+            ps && ps->pgm_hash == HdrChannel::ColorGradingHash && !HdrChannel::VanillaChain()) {
             const float strength =
                 std::clamp(BbSettings::Get().hdr_scene_grading.load(), 0.0f, 100.0f) / 100.0f;
             push_data.bb_hdr[3] = std::bit_cast<u32>(strength) + 1u;
@@ -1179,7 +1180,8 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // continues (its attachments loaded, not cleared again).
     // bbport HDR, mode 5 (16-bit chain): the HDR part of the composite, added to the game's
     // own (RGBA16F) target in the same pass; color writes only, then the game's state again.
-    if (hdr_handle && HdrChannel::Native16()) {
+    // Vanilla (preset Off, ...): not drawn, the composite stays the game's own.
+    if (hdr_handle && HdrChannel::Native16() && !HdrChannel::VanillaChain()) {
         if (const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)]) {
             BbSettings::Get().hdr_variant = u32(ps->pgm_hash); // the in-game menu's status
         }
@@ -3815,8 +3817,10 @@ void Rasterizer::UpdateColorBlendingState(const GraphicsPipeline* pipeline) cons
     auto& dynamic_state = scheduler.GetDynamicState();
     if (pipeline->ScaledGlow()) {
         // bbport HDR, mode 5: the game's second glow, weighted by the in-game Bloom slider
-        // (50 = the game's: 1).
-        const float k = std::clamp(BbSettings::Get().hdr_bloom.load(), 0.0f, 100.0f) / 50.0f;
+        // (50 = the game's: 1). Vanilla: the game's.
+        const float k = HdrChannel::VanillaChain()
+                            ? 1.0f
+                            : std::clamp(BbSettings::Get().hdr_bloom.load(), 0.0f, 100.0f) / 50.0f;
         dynamic_state.SetBlendConstants({k, k, k, 1.0f});
     } else {
         dynamic_state.SetBlendConstants(regs.blend_constants);

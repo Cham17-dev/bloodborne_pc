@@ -88,6 +88,10 @@ public:
     static float Knee();
     /// Generic pass: BB_HDR_TONEMAPPER, 0 the Neutwo shoulder (default), 1 PsychoV30.
     static u32 Tonemapper();
+    /// Mode 5 showing the game's own picture (the menu's preset Off, tone mapper Vanilla, or
+    /// Compare on SDR full screen): the chain's HDR changes are left out (no composite delta,
+    /// the game's bloom, second glow and color table) so the 16-bit chain draws the game's own.
+    static bool VanillaChain();
     /// BB_HDR_DEBUG: 0 off, 1 the gain as a heat map, 2 the pixels taken as UI in red.
     static u32 Debug();
 

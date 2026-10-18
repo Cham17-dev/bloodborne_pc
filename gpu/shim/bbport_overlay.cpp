@@ -472,7 +472,7 @@ void HdrSection(BbSettings::Values& s) {
         static constexpr const char* compares[] = {"HDR", "SDR (the game's image)",
                                                    "Split: SDR left | HDR right"};
         s.hdr_compare = ComboIndex("Compare", s.hdr_compare, compares, 0);
-        Hint("F9 switches it with the menu closed. Not saved.");
+        Hint("F9 switches it with the menu closed. SDR draws the game's own picture (HDR 16-bit: the chain without bbport's changes). Split is approximate: its SDR half is the HDR picture clipped at white. Not saved.");
         static constexpr const char* debug_views[] = {"Off", "Highlight gain as colors",
                                                       "Pixels taken as UI in red"};
         s.hdr_debug = ComboIndex("Debug view", s.hdr_debug, debug_views, 0);

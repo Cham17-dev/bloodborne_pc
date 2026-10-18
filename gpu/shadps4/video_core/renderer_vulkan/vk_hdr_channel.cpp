@@ -525,6 +525,15 @@ u32 HdrChannel::Tonemapper() {
     return u32(std::clamp(s.hdr_tonemapper.load(), 0, BbSettings::HdrToneMapperVanilla));
 }
 
+bool HdrChannel::VanillaChain() {
+    if (!Native16()) {
+        return false;
+    }
+    const auto& s = BbSettings::Get();
+    return s.hdr_preset == 0 || s.hdr_tonemapper == BbSettings::HdrToneMapperVanilla ||
+           s.hdr_compare == BbSettings::Values::HdrCompareSdr;
+}
+
 u32 HdrChannel::Debug() {
     // BB_HDR_DEBUG at start; the in-game menu changes it live.
     return u32(std::clamp(BbSettings::Get().hdr_debug.load(), 0, 2));
