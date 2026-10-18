@@ -67,7 +67,16 @@ upscaler. Outils de diagnostic du mode 5 dans le menu HDR : sondes « 16-bit pro
   Neutwo = SDR à ±2 % (0–0,2 nit : 0,030 → 0,038) ; PsychoV30 un peu plus sombre (−10 à −13 % entre 0,2 et 3 nits).
   L'écart « 0,34 contre 0,09 nit » n'est pas reproduit en mode 5 (mesure d'origine : mode et référence inconnus).
 
-**Ensuite :** noirs du mode 4 à mesurer de la même façon si besoin ; glow final `8c08444c` réglable ; Vignette (aucune scène vue
+- **Glow final `8c08444c` réglable** (`f80fe9b`, validé : Yharnam, halo de la lanterne et du soleil, médiane
+  6,6 nits à Bloom 50, 4,7 à 0, 7,2 à 100) : en mode 5, facteur de source du mélange = constante de mélange,
+  réglée par draw sur `hdr_bloom` (`GraphicsPipeline::ScaledGlow`).
+- **Upscaler en mode 5** (FSR 3.1, 4K Quality) : bandes magenta sur le haut de l'image. `RunScaled` lisait le
+  proxy RGBA16F avec une vue au format 8 bits du jeu. Corrigé (`e6e7053`, **à tester**) : vue RGBA16F pour
+  FSR 3/FSR 4/DLSS/TAA, FSR 3 en entrée HDR avec sortie RGBA16F, copie de la scène pour HUD brightness
+  (`SnapshotScene`) aussi sur ce chemin.
+- Réglages du menu : enregistrés une seconde après le dernier changement, même menu ouvert (`1d088cf`).
+
+**Ensuite :** noirs du mode 4 à mesurer de la même façon si besoin ; Vignette (aucune scène vue
 n'en a) ; Scene grading et Highlight range en mode 4 ; grain ; variantes de composite non couvertes ; franges
 colorées en 4K (bug du port, hors HDR).
 
