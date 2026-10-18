@@ -124,6 +124,30 @@ Fusion devenue la branche `hdr` (avance rapide jusqu'à `c022624`, 18/10) ; trav
 **Prochaines étapes RenoDX :** UI Visibility (cacher le HUD), Flare et Hue Emulation (tonemappers RenoDX),
 Chromatic Aberration en direct, grain, puis fiabilité du mode 5 dans toutes les zones, génération d'images en HDR.
 
+**Revue indépendante (ChatGPT, 18/10, commit `b7c067f`) et suites.** Confirmé dans le code :
+- **Référence SDR / Vanilla / preset Off inexacts** : le delta du composite commence dès 0,6 du blanc (courbe
+  HDR au-dessus de celle du jeu entre 0,6 et 1), puis `min(v, 1)` ; Bloom et Color Grade Strength restaient
+  appliqués. Corrigé (`da19ce4`) : `HdrChannel::VanillaChain()` (mode 5 et preset Off, tone mapper Vanilla ou
+  Compare SDR) supprime le dessin du delta, garde la LUT du jeu à 100 % et le second glow à 1. Le split reste
+  approximatif (sa moitié SDR est l'image HDR écrêtée).
+  **Mesure (build `da19ce4`, atelier du Rêve, sans upscaler, JXR, `hdr-tools/jxr_compare.py`)** : mode 0 contre
+  preset Off : tons moyens 2-50 nits +2 à +3 %, 50-150 nits -2 %, ombres < 2 nits +6 à +11 % ; preset Off contre
+  F9 SDR (même lancement) : 1 à 3 %, teinte 0,01. Écart du même ordre que la variation d'une capture à l'autre
+  (lanterne qui vacille) ; ombres un peu plus claires que le jeu (précision 16 bits ?). Pas « exact » : quasi.
+  Scènes extérieures (brouillard) inutilisables pour cette mesure.
+- **PsychoV30 coupé à 0 avant BT.2020** (`post_process.frag`, sortie BT.709 d'un volume BT.2020) : corrigé
+  (`9d0d705`), coupure après la conversion comme le mod FromSoftware de RenoDX. Mesure sur un feu : 0 pixel hors
+  BT.709 avant, 3 après : effet négligeable sur les flammes, à revoir sur des lumières saturées (bleu, magie).
+- **Choix de rendu, à décrire comme tels** : Neutwo est une adaptation (identité jusqu'à 0,6 du pic, épaule
+  Neutwo au-dessus : 883 nits contre 707 pour un Neutwo standard à pic 1000 / blanc 203) ; PsychoV30 est
+  hybride (il reçoit la courbe du jeu prolongée, `vk_hdr_channel.cpp` spec 19 = 0, et nos curseurs passent avant
+  lui, alors que le mod FromSoftware de RenoDX lui donne la scène linéaire et lui passe exposition, highlights,
+  shadows, contrast, flare, saturation, blowout) ; la LUT au-dessus du blanc est prolongée canal par canal
+  (RenoDX : compression par le canal max, LUT, décompression). Le rendu hybride actuel reste la référence avant
+  tout essai d'intégration sur scène linéaire.
+- **Tests** : `shader-check.yml` ne fait que compiler ; le test du composite vérifie `bb_curve_psychov`, chemin
+  que les modes 4 et 5 n'utilisent plus. Détection du HUD : heuristique (11 captures : HUD ≤ 203 nits).
+
 **Ensuite :** noirs du mode 4 à mesurer de la même façon si besoin ; Vignette (aucune scène vue
 n'en a) ; Scene grading et Highlight range en mode 4 ; grain ; variantes de composite non couvertes ; franges
 colorées en 4K (bug du port, hors HDR).
