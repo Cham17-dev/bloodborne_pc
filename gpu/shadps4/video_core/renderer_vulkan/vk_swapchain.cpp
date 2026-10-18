@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <limits>
 #include "bbport_settings.h"
+#include "display_peak.h"
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
@@ -172,6 +173,10 @@ void Swapchain::FindPresentFormat() {
     // bbport: Bloodborne never asks for HDR itself, so BB_HDR=1 means "present in HDR10": the
     // swapchain is HDR from the start, and the post-process pass encodes the SDR frame in PQ.
     needs_hdr = supports_hdr;
+    // bbport HDR: the display's peak Windows reports, as RenoDX's default Peak Brightness.
+    if (supports_hdr) {
+        BbSettings::SetDisplayPeak(BbDisplay::PeakNits(window.GetWindowInfo().render_surface));
+    }
     if (EmulatorSettings.IsHdrAllowed()) {
         LOG_INFO(Render_Vulkan, "HDR output: {} (paper white {} nits)",
                  supports_hdr ? "on, HDR10 swapchain" : "off, the display offers no HDR10 format",

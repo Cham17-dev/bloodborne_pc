@@ -327,10 +327,22 @@ void HdrSection(BbSettings::Values& s) {
         Store(s.hdr_tonemapper, stored[chosen], true);
     }
     Hint("Vanilla: the game's own look (no HDR highlights). Neutwo: the game's image, its light above white rolled off near your display's peak. PsychoV30: models the eye's response, truer colors in bright lights.");
-    SliderReset("Peak Brightness", s.hdr_peak_nits, 400.0f, 4000.0f, 1000.0f, "%.0f nits",
-                "The brightest your display can show (1000 on a QD-OLED in its HDR 1000 mode).");
-    SliderReset("Game Brightness", s.hdr_paper_white, 80.0f, 500.0f, 203.0f, "%.0f nits",
-                "Brightness of the game's white. 203 is the HDR reference.");
+    // Defaults as RenoDX's: the display's peak Windows reports, and the reference white for it.
+    const float display_peak = BbSettings::DisplayPeak();
+    char peak_hint[160];
+    if (display_peak > 0.0f) {
+        std::snprintf(peak_hint, sizeof(peak_hint),
+                      "The brightest your display can show. Windows reports %.0f nits for it: the "
+                      "default.", display_peak);
+    } else {
+        std::snprintf(peak_hint, sizeof(peak_hint),
+                      "The brightest your display can show (Windows does not report it: 1000 by "
+                      "default).");
+    }
+    SliderReset("Peak Brightness", s.hdr_peak_nits, 400.0f, 4000.0f, BbSettings::DefaultPeakNits(),
+                "%.0f nits", peak_hint);
+    SliderReset("Game Brightness", s.hdr_paper_white, 80.0f, 500.0f, BbSettings::DefaultGameNits(),
+                "%.0f nits", "Brightness of the game's white: by default the HDR reference for your display's peak (203 nits at 1000).");
     SliderReset("UI Brightness", s.hdr_ui_nits, 48.0f, 500.0f, 203.0f, "%.0f nits",
                 "Brightness of the HUD and menus.");
     if (level >= 1) {

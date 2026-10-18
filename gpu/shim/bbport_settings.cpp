@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -19,6 +21,9 @@ namespace {
 std::mutex hdr_slot_mutex;
 std::array<std::string, HdrPresetCount - 1> hdr_slots;
 bool loaded_hdr_preset = false;
+// The display's peak (SetDisplayPeak), and whether bbport.ini set the peak and the game's white.
+std::atomic<float> display_peak{0.0f};
+bool loaded_peak = false, loaded_paper_white = false;
 
 const char* Path() {
     const char* env = std::getenv("BB_CONFIG");
@@ -70,8 +75,10 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.debug_view = std::clamp(i, 0, DebugViewCount - 1);
     } else if (key == "hdr_paper_white") {
         if (!value.empty()) v.hdr_paper_white = Clamp(f, 80.0f, 500.0f);
+        loaded_paper_white = loaded_paper_white || !value.empty();
     } else if (key == "hdr_peak_nits") {
         if (!value.empty()) v.hdr_peak_nits = Clamp(f, 200.0f, 10000.0f);
+        loaded_peak = loaded_peak || !value.empty();
     } else if (key == "hdr_strength") {
         if (!value.empty()) v.hdr_strength = Clamp(f, 0.0f, 3.0f);
     } else if (key == "hdr_boost") {
@@ -202,8 +209,8 @@ void ApplyHdrText(Values& v, const std::string& text) {
 }
 
 void ResetHdr(Values& v) {
-    v.hdr_paper_white = 203.0f;
-    v.hdr_peak_nits = 1000.0f;
+    v.hdr_paper_white = DefaultGameNits();
+    v.hdr_peak_nits = DefaultPeakNits();
     v.hdr_strength = 1.0f;
     v.hdr_boost = 0.0f;
     v.hdr_tonemapper = 0;
@@ -254,6 +261,40 @@ void ResetHdr() {
     ResetHdr(Get());
 }
 
+float DisplayPeak() {
+    return display_peak.load();
+}
+
+float DefaultPeakNits() {
+    const float peak = display_peak.load();
+    return peak > 0.0f ? std::clamp(std::round(peak), 200.0f, 10000.0f) : 1000.0f;
+}
+
+float DefaultGameNits() {
+    // RenoDX (utils/swapchain.hpp ComputeReferenceWhite): BT.2100 HLG reference white, 75 % HLG
+    // through the HLG OOTF for this peak (203 nits at 1000), here at most 203 as RenoDX's default.
+    const double peak = DefaultPeakNits();
+    const double hlg_at_75_percent = 0.26496256042100718;
+    const double gamma = 1.2 + 0.42 * std::log10(peak / 1000.0);
+    const double white = peak * std::pow(hlg_at_75_percent, gamma - 1.0) * hlg_at_75_percent;
+    return std::min(std::clamp(std::round(float(white)), 100.0f, 300.0f), 203.0f);
+}
+
+void SetDisplayPeak(float nits) {
+    display_peak = nits > 0.0f ? nits : 0.0f;
+    auto& v = Get();
+    // No choice in bbport.ini yet (a first start): the display's own values.
+    if (!loaded_peak) {
+        v.hdr_peak_nits = DefaultPeakNits();
+    }
+    if (!loaded_paper_white) {
+        v.hdr_paper_white = DefaultGameNits();
+    }
+    std::printf("HDR: the display reports a peak of %.0f nits (Windows); defaults: peak %.0f, game "
+                "brightness %.0f nits\n",
+                display_peak.load(), DefaultPeakNits(), DefaultGameNits());
+}
+
 Values& Get() {
     static Values values;
     return values;
@@ -265,6 +306,7 @@ void Load() {
         v.effects[e] = Effects[e].default_on;
     }
     loaded_hdr_preset = false;
+    loaded_peak = loaded_paper_white = false;
     if (FILE* file = std::fopen(Path(), "r")) {
         char line[2048]; // the HDR presets' lines are long
         while (std::fgets(line, sizeof(line), file)) {

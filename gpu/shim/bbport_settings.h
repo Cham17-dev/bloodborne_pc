@@ -218,6 +218,15 @@ inline constexpr int HdrPresetCount = 4; ///< Off and three of the player's
 void SelectHdrPreset(int preset);
 /// The HDR settings back to bbport's defaults (the menu's Reset all).
 void ResetHdr();
+/// The display's peak luminance Windows reports (vk_swapchain, HDR output; 0 when unknown). It
+/// becomes the default Peak Brightness, and the setting itself while bbport.ini has none.
+void SetDisplayPeak(float nits);
+/// The display's peak, 0 when unknown.
+float DisplayPeak();
+/// The HDR defaults, as RenoDX's: Peak Brightness the display's peak (1000 when unknown), Game
+/// Brightness the BT.2100 reference white for it (203 nits at 1000), at most 203.
+float DefaultPeakNits();
+float DefaultGameNits();
 
 /// Render resolution divisor of a preset (1.0 native, 1.5 quality, ...).
 float PresetScale(int preset);

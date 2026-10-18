@@ -215,8 +215,8 @@ INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': 
                 'live_resolution': 'auto', 'hud_position': '100', 'fov': '43', 'mute_unfocused': '0',
                 'button_prompts': 'auto',
                 'frame_gen': 'off', 'frame_gen_multiplier': '2', 'frame_gen_fit_display': '0',
-                'hdr_paper_white': '203', 'hdr_peak_nits': '1000', 'hdr_strength': '1.00', 'hdr_boost': '0.00',
-                'hdr_tonemapper': '0',
+                # The HDR settings are the in-game menu's: not written here (a first start takes
+                # the display's peak, as RenoDX's default).
                 **{key: '1' if on else '0' for key, _t, on in EFFECTS + EXTRAS + CHEATS + TWEAKS}}
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'), 'user_dir': '', 'dlc_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
@@ -2182,12 +2182,13 @@ class Launcher:
                 self.ini_shown[key] = current.get(key, text)
             else:
                 self.app[key] = value
+        values = {key: current[key] for key in INI_DEFAULTS if key in current}
         for key in ('hdr_paper_white', 'hdr_peak_nits', 'hdr_tonemapper'):  # migrated ones
             if key not in present and key in self.ini:
-                current[key] = self.ini[key]
+                values[key] = self.ini[key]
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         CONFIG_FILE.write_text(json.dumps(self.app, indent=2, ensure_ascii=False), encoding='utf-8')
-        save_ini({key: current[key] for key in INI_DEFAULTS if key in current}, lines)
+        save_ini(values, lines)
         self.ini, self.ini_lines = load_ini()
         if self.remap_edits:
             save_input_ini(self.remap_ini_path, {key: [v for v in values if v]
