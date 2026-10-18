@@ -738,7 +738,22 @@ void PollerMain(std::uint64_t generation) {
         std::string err;
         // The read waits past the server's wait: a shorter one made every empty poll an error.
         const int timeout_ms = wait_ms > 0 ? wait_ms + 5000 : 4000;
-        if (NpPost("/np/events/poll", body, reply, err, timeout_ms)) {
+        // BB_THD_POLL_LOG=1: each poll's wait, time to its answer and result (diagnosis).
+        static const bool poll_log = [] {
+            const char* env = std::getenv("BB_THD_POLL_LOG");
+            return env && env[0] == '1';
+        }();
+        const auto poll_start = std::chrono::steady_clock::now();
+        const bool answered = NpPost("/np/events/poll", body, reply, err, timeout_ms);
+        if (poll_log) {
+            const long long took = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                       std::chrono::steady_clock::now() - poll_start)
+                                       .count();
+            Log("np: poll WaitMs %d -> %s in %lld ms (WaitMaxMs %lld, HasEvent %lld)", wait_ms,
+                answered ? "answer" : err.c_str(), took, IntOf(reply, "WaitMaxMs", 0),
+                IntOf(reply, "HasEvent", 0));
+        }
+        if (answered) {
             if (!current()) break; // stopped or restarted while this poll waited
             backoff_ms = 0;
             const long long max_wait = IntOf(reply, "WaitMaxMs", 0);
