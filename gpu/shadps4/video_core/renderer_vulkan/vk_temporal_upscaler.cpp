@@ -1570,12 +1570,33 @@ void TemporalUpscaler::RunUiOnly(VideoCore::ImageId color_id, VideoCore::ImageId
     cmd.blitImage(source, source_layout,
                   vk::Image(ui_image), vk::ImageLayout::eTransferDstOptimal, region,
                   vk::Filter::eLinear);
-    auto ui_layout = vk::ImageLayout::eTransferDstOptimal;
+    auto cmd_now = cmd;
+    const auto ui_layout =
+        SnapshotScene(cmd_now, vk::ImageLayout::eTransferDstOptimal,
+                      vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite);
+    barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+    barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite | vk::AccessFlagBits2::eTransferRead;
+    barrier.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+    barrier.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentRead |
+                            vk::AccessFlagBits2::eColorAttachmentWrite;
+    barrier.oldLayout = ui_layout;
+    barrier.newLayout = vk::ImageLayout::eGeneral;
+    cmd_now.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
+    reset = true; // returning to 3D must not reuse history from before a menu/loading screen
+    done_this_frame = ui_phase = true;
+    ui_color = color_id;
+    ui_depth = depth_id;
+}
+
+vk::ImageLayout TemporalUpscaler::SnapshotScene(vk::CommandBuffer& cmd, vk::ImageLayout ui_layout,
+                                                vk::PipelineStageFlags2 stage,
+                                                vk::AccessFlags2 access) {
     // bbport HDR, mode 5: the scene before the UI, for the final pass's HUD brightness (the
-    // pixels the UI changed are the HUD's).
+    // pixels the UI changed are the HUD's). Returns the UI image's layout afterwards.
     if (ui_format == HdrChannel::Native16Format) {
         if (!scene_snapshot || snapshot_width != ui_width || snapshot_height != ui_height) {
             scheduler.Finish();
+            cmd = scheduler.CommandBuffer();
             snapshot_ready = false;
             scene_snapshot_view.reset();
             scene_snapshot = VideoCore::UniqueImage(instance.GetDevice(), instance.GetAllocator());
@@ -1601,11 +1622,11 @@ void TemporalUpscaler::RunUiOnly(VideoCore::ImageId color_id, VideoCore::ImageId
         }
         const std::array to_copy{
             vk::ImageMemoryBarrier2{
-                .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
-                .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+                .srcStageMask = stage,
+                .srcAccessMask = access,
                 .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
                 .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
-                .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+                .oldLayout = ui_layout,
                 .newLayout = vk::ImageLayout::eTransferSrcOptimal,
                 .image = vk::Image(ui_image),
                 .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
@@ -1642,18 +1663,7 @@ void TemporalUpscaler::RunUiOnly(VideoCore::ImageId color_id, VideoCore::ImageId
         ui_layout = vk::ImageLayout::eTransferSrcOptimal;
         snapshot_ready = true;
     }
-    barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
-    barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite | vk::AccessFlagBits2::eTransferRead;
-    barrier.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
-    barrier.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentRead |
-                            vk::AccessFlagBits2::eColorAttachmentWrite;
-    barrier.oldLayout = ui_layout;
-    barrier.newLayout = vk::ImageLayout::eGeneral;
-    cmd.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
-    reset = true; // returning to 3D must not reuse history from before a menu/loading screen
-    done_this_frame = ui_phase = true;
-    ui_color = color_id;
-    ui_depth = depth_id;
+    return ui_layout;
 }
 
 void TemporalUpscaler::RunScaled() {
@@ -1672,11 +1682,16 @@ void TemporalUpscaler::RunScaled() {
     if (depth.info.size.width != iw || depth.info.size.height != ih || w > ow || h > oh) {
         return;
     }
-    if (!EnsureResources(w, h, ow, oh, false)) {
+    // bbport HDR, mode 5: the frame is the 16-bit chain's, read from its RGBA16F proxy (values
+    // above white): the upscaler takes it as HDR input and writes the RGBA16F UI image.
+    const vk::Format ui_color_format = UiColorFormat(color);
+    const bool native16 = ui_color_format == HdrChannel::Native16Format;
+    const vk::Format color_format = native16 ? HdrChannel::Native16Format : color.info.pixel_format;
+    if (!EnsureResources(w, h, ow, oh, native16)) {
         failed = true;
         return;
     }
-    EnsureUiResources(ow, oh, UiColorFormat(color), depth.info.pixel_format);
+    EnsureUiResources(ow, oh, ui_color_format, depth.info.pixel_format);
     PrepareUiDepth(camera_motion.Depth());
     const auto depth_format = depth.info.pixel_format;
     // Views kept across frames: FSR 4 registers images by view in a registry of eight.
@@ -1685,7 +1700,7 @@ void TemporalUpscaler::RunScaled() {
     u32 source_width = iw, source_height = ih;
     if (!scaled_session) {
         VideoCore::ImageViewInfo ci, di;
-        ci.format = color.info.pixel_format;
+        ci.format = color_format;
         di.format = depth_format;
         const auto cp = scene_targets.Read(ldr_target, ci);
         const auto dp = scene_targets.Read(camera_motion.Depth(), di);
@@ -1706,7 +1721,7 @@ void TemporalUpscaler::RunScaled() {
     }
 
     scheduler.EndRendering();
-    const auto cmdbuf = scheduler.CommandBuffer();
+    auto cmdbuf = scheduler.CommandBuffer(); // SnapshotScene may move it to a new one
     const auto barrier = [&](vk::Image image, vk::ImageAspectFlags aspect,
                              vk::ImageLayout old_layout, vk::PipelineStageFlags2 src_stage,
                              vk::AccessFlags2 src_access, vk::ImageLayout new_layout,
@@ -1755,11 +1770,11 @@ void TemporalUpscaler::RunScaled() {
             RecordTaa(cmdbuf, color_view, depth_view);
         } else if (UseDlss()) {
             ok4 = RecordDlss(cmdbuf,
-                             {color_image, color_view, color.info.pixel_format,
+                             {color_image, color_view, color_format,
                               vk::ImageAspectFlagBits::eColor, source_width, source_height},
                              {depth_image, depth_view, depth_format, vk::ImageAspectFlagBits::eDepth,
                               source_width, source_height},
-                             w, h, ow, oh, frame_ms, false);
+                             w, h, ow, oh, frame_ms, native16);
         } else {
             ok4 = RecordFsr4(cmdbuf, {color_image, color_view, source_width, source_height},
                             {depth_image, depth_view, source_width, source_height}, w, h, ow,
@@ -1786,9 +1801,12 @@ void TemporalUpscaler::RunScaled() {
             cmdbuf.blitImage(vk::Image(output_image), vk::ImageLayout::eGeneral,
                              vk::Image(ui_image), vk::ImageLayout::eGeneral, region,
                              vk::Filter::eNearest);
-            barrier(vk::Image(ui_image), vk::ImageAspectFlagBits::eColor,
-                    vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eBlit,
-                    vk::AccessFlagBits2::eTransferWrite, vk::ImageLayout::eGeneral,
+            const auto ui_layout =
+                SnapshotScene(cmdbuf, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eBlit,
+                              vk::AccessFlagBits2::eTransferWrite);
+            barrier(vk::Image(ui_image), vk::ImageAspectFlagBits::eColor, ui_layout, all,
+                    vk::AccessFlagBits2::eTransferWrite | vk::AccessFlagBits2::eTransferRead,
+                    vk::ImageLayout::eGeneral,
                     vk::PipelineStageFlagBits2::eColorAttachmentOutput, color_access);
             reset = false;
             dispatched_last_frame = true;
@@ -1828,7 +1846,7 @@ void TemporalUpscaler::RunScaled() {
     FfxVkPortableUpscaleDispatchInfo info{};
     info.structSize = sizeof(info);
     info.commandBuffer = cmdbuf;
-    info.color = Describe(color_image, color.info.pixel_format, source_width, source_height,
+    info.color = Describe(color_image, color_format, source_width, source_height,
                           color.usage_flags, vk::ImageAspectFlagBits::eColor,
                           FFX_VK_PORTABLE_RESOURCE_STATE_GENERIC_READ);
     info.depth = Describe(depth_image, depth_format, source_width, source_height, depth.usage_flags,
@@ -1838,7 +1856,8 @@ void TemporalUpscaler::RunScaled() {
                                   vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
                                   vk::ImageAspectFlagBits::eColor,
                                   FFX_VK_PORTABLE_RESOURCE_STATE_GENERIC_READ);
-    info.output = Describe(vk::Image(ui_image), vk::Format::eR8G8B8A8Unorm, ow, oh,
+    info.output = Describe(vk::Image(ui_image),
+                           native16 ? HdrChannel::Native16Format : vk::Format::eR8G8B8A8Unorm, ow, oh,
                            vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled |
                                vk::ImageUsageFlagBits::eColorAttachment,
                            vk::ImageAspectFlagBits::eColor,
@@ -1883,11 +1902,15 @@ void TemporalUpscaler::RunScaled() {
         ok = true;
         reset = false;
         dispatched_last_frame = true;
-        ExtraSharpen(cmdbuf, vk::Image(ui_image), true, ow, oh);
+        ExtraSharpen(cmdbuf, vk::Image(ui_image), !native16, ow, oh);
     }
-    barrier(vk::Image(ui_image), vk::ImageAspectFlagBits::eColor, vk::ImageLayout::eGeneral, all,
-            rw, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-            color_access);
+    auto ui_layout = vk::ImageLayout::eGeneral;
+    if (ok) {
+        ui_layout = SnapshotScene(cmdbuf, ui_layout, all, rw);
+    }
+    barrier(vk::Image(ui_image), vk::ImageAspectFlagBits::eColor, ui_layout, all,
+            rw | vk::AccessFlagBits2::eTransferRead, vk::ImageLayout::eGeneral,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, color_access);
 
     done_this_frame = true; // the UI is not jittered
     if (ok) {

@@ -147,6 +147,10 @@ private:
     void Run();
     void RunScaled();
     void RunUiOnly(VideoCore::ImageId color, VideoCore::ImageId depth);
+    /// bbport HDR, mode 5: copies the UI image (the scene before the UI) for the HUD brightness;
+    /// `ui_layout` and `stage`/`access` describe the UI image's last use. Returns its layout.
+    vk::ImageLayout SnapshotScene(vk::CommandBuffer& cmd, vk::ImageLayout ui_layout,
+                                  vk::PipelineStageFlags2 stage, vk::AccessFlags2 access);
     void EnsureUiResources(u32 width, u32 height, vk::Format color, vk::Format depth);
     /// The UI image's format for this guest target (RGBA16F in the HDR 16-bit chain).
     vk::Format UiColorFormat(const VideoCore::Image& color) const;
