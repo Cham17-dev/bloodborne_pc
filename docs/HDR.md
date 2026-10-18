@@ -53,7 +53,8 @@ upscaler. Outils de diagnostic du mode 5 dans le menu HDR : sondes « 16-bit pro
   l'horizon) mais **moins de HDR à 10 qu'à 30** : la courbe exp du jeu (variante `5e67d866`) a un pied convexe ;
   un genou dans le pied prolonge une pente plus faible que la courbe, et `max(t, courbe du jeu)` rend le SDR.
   Corrigé : le genou ne descend plus sous la fin du pied (`bb_toe_end()`, sortie où la pente est maximale).
-  **À vérifier** : sonde 1, genou 10 au moins autant de vert que 30.
+  **Validé** (build `47ac50a`, sonde 1, pixels de la lune au-dessus du blanc) : genou 10 → 81 000 px, 30 →
+  76 000 (avant : 26 000 et 65 000).
 - **1080p** : mode 5 **inactif** (« not active here », aucune cible RGBA16F). La note du 17/10 était fausse :
   `SceneResolution::Size{}` vaut 1920x1080, donc en 1080p sans upscaler `Reduced()` est faux, aucun proxy, pas de
   chaîne 16 bits. Il faudrait des proxys à l'échelle 1 en mode 5 (`Reduced()` utilisé aussi par l'upscaler et la
