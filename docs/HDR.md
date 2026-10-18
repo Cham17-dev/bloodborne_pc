@@ -71,7 +71,9 @@ upscaler. Outils de diagnostic du mode 5 dans le menu HDR : sondes « 16-bit pro
   6,6 nits à Bloom 50, 4,7 à 0, 7,2 à 100) : en mode 5, facteur de source du mélange = constante de mélange,
   réglée par draw sur `hdr_bloom` (`GraphicsPipeline::ScaledGlow`).
 - **Upscaler en mode 5** (FSR 3.1, 4K Quality) : bandes magenta sur le haut de l'image. `RunScaled` lisait le
-  proxy RGBA16F avec une vue au format 8 bits du jeu. Corrigé (`e6e7053`, **à tester**) : vue RGBA16F pour
+  proxy RGBA16F avec une vue au format 8 bits du jeu. Corrigé et **validé en jeu avec FSR 3.1** (`e6e7053`,
+  soleil de Yharnam 857 nits contre 862 sans upscaler, HUD normal, plus de bandes ; FSR 4, DLSS et TAA non
+  testés : FSR 4 indisponible ici, DLSS absent du paquet local) : vue RGBA16F pour
   FSR 3/FSR 4/DLSS/TAA, FSR 3 en entrée HDR avec sortie RGBA16F, copie de la scène pour HUD brightness
   (`SnapshotScene`) aussi sur ce chemin.
 - Réglages du menu : enregistrés une seconde après le dernier changement, même menu ouvert (`1d088cf`).
