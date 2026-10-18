@@ -1269,8 +1269,22 @@ void TextureCache::GarbageCollectImages() {
         // (CanBeDownloaded); before, every tiled GPU-written image was kept here.
         // Past the critical mark, one unused for a minute goes all the same, unwritten (render
         // targets of an area left behind): out of VRAM the game would crash instead.
-        const bool stuck = download && !image.CanBeDownloaded();
-        const bool drop = stuck && aggresive && image.lru_touched_tick < minute_tick;
+        // bbport: GPU-written tiled images stay as up to 1.8.2 (BB_GC_WRITE_BACK_TILED=1: the
+        // 0.20.1 behaviour). Written back they cost a synchronous GPU->CPU copy each, and on 6-8
+        // GB cards, where VRAM stays over the pressure mark, the collector evicted render
+        // targets still in use: hundreds of stalls a session, and lower FPS than 1.8.x.
+        static const bool write_back_tiled = [] {
+            const char* env = std::getenv("BB_GC_WRITE_BACK_TILED");
+            return env && env[0] == '1';
+        }();
+        // One unused for a minute past the critical mark is written back if it can be, not
+        // dropped: since 0.20.1 far more such images reach here than in 1.8.2 (0 dropped there,
+        // hundreds a session here), and dropping them lost contents the game still reads (black
+        // screen with sound on entering the Hunter's Dream, 6 GB cards).
+        const bool old = aggresive && image.lru_touched_tick < minute_tick;
+        const bool stuck = download && (!image.CanBeDownloaded() ||
+                                        (image.info.IsTiled() && !write_back_tiled && !old));
+        const bool drop = stuck && old;
         if (!drop && (stuck || (download && !pressured))) {
             if (stuck) {
                 ++gc_kept;
