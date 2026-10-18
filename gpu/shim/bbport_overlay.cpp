@@ -293,31 +293,25 @@ void HdrSection(BbSettings::Values& s) {
     ImGui::SeparatorText("HDR");
     HdrStatus(s);
 
-    // Preset: as RenoDX's segmented buttons.
+    // Preset and Settings Mode: sliders showing the choice's name, as RenoDX's.
     static constexpr const char* presets[] = {"Off", "Preset #1", "Preset #2", "Preset #3"};
     const int preset = std::clamp(s.hdr_preset.load(), 0, BbSettings::HdrPresetCount - 1);
-    for (int i = 0; i < BbSettings::HdrPresetCount; ++i) {
-        if (i) ImGui::SameLine();
-        const bool selected = i == preset;
-        if (selected) {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-        }
-        if (ImGui::Button(presets[i]) && !selected) {
-            BbSettings::SelectHdrPreset(i);
-            MarkDirty();
-        }
-        if (selected) {
-            ImGui::PopStyleColor();
-        }
+    int preset_slider = preset;
+    if (ImGui::SliderInt("Preset", &preset_slider, 0, BbSettings::HdrPresetCount - 1,
+                         presets[preset], ImGuiSliderFlags_AlwaysClamp) &&
+        preset_slider != preset) {
+        BbSettings::SelectHdrPreset(preset_slider);
+        MarkDirty();
     }
-    ImGui::SameLine();
-    ImGui::TextUnformatted("Preset");
     Hint("Off: the game's own look in HDR10, at 203 nits. Preset #1 to #3: your own settings, each saved on its own; the settings below change the one selected.");
 
     static constexpr const char* modes[] = {"Simple", "Intermediate", "Advanced"};
     const int level = std::clamp(s.hdr_settings_mode.load(), 0, 2);
-    if (const int chosen = ComboIndex("Settings Mode", level, modes); chosen != level) {
-        Store(s.hdr_settings_mode, chosen, true);
+    int level_slider = level;
+    if (ImGui::SliderInt("Settings Mode", &level_slider, 0, 2, modes[level],
+                         ImGuiSliderFlags_AlwaysClamp) &&
+        level_slider != level) {
+        Store(s.hdr_settings_mode, level_slider, true);
     }
 
     ImGui::BeginDisabled(preset == 0);
