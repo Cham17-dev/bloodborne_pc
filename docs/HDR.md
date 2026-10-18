@@ -114,7 +114,8 @@ Fusion devenue la branche `hdr` (avance rapide jusqu'à `c022624`, 18/10) ; trav
   range l'ancien et charge le nouveau (défauts s'il n'a jamais servi).
 - **Settings Mode** (curseur) : Simple / Intermediate / Advanced (réglages bbport Highlight Strength / Range /
   Boost et section Debug en Advanced).
-- Sections Tone Mapping (Tone Mapper Vanilla / Neutwo / PsychoV30 — `hdr_tonemapper` 2 / 0 / 1 —, Peak, Game
+- Sections Tone Mapping (Tone Mapper Vanilla / Neutwo / PsychoV30 — `hdr_tonemapper` 2 / 0 / 1 ; depuis le
+  18/10 au soir PsychoV30 sur la scène, 3, voir plus bas —, Peak, Game
   Brightness, UI Brightness, Gamma Correction, Scaling), Color Grading (Color Grade Strength, Black Floor),
   Effects, Reset all, About. Presets Game / Balanced / Vivid / SDR look supprimés (inventés, pas RenoDX).
 - Launcher allégé : HDR output, HDR mode (Off / bbport HDR / all areas ; modes de test 1-3 retirés de la liste)
@@ -148,7 +149,34 @@ Chromatic Aberration en direct, grain, puis fiabilité du mode 5 dans toutes les
 - **Tests** : `shader-check.yml` ne fait que compiler ; le test du composite vérifie `bb_curve_psychov`, chemin
   que les modes 4 et 5 n'utilisent plus. Détection du HUD : heuristique (11 captures : HUD ≤ 203 nits).
 
-**Ensuite :** noirs du mode 4 à mesurer de la même façon si besoin ; Vignette (aucune scène vue
+**PsychoV30 sur la scène, par défaut (18/10, soir : `d5365a4`, `5a36e74`, puis LUT).**
+- **Tone mapper `hdr_tonemapper` = 3, affiché « PsychoV30 », défaut** (mode 5 ; ailleurs repli sur l'hybride 1).
+  PsychoV30 tourne une seule fois, dans le draw delta du composite (`bb_curve_psychov_scene`,
+  `bb_composite_hdr.frag`), sur la scène linéaire à la place de la courbe du jeu : gris ancré (entrée où la courbe
+  du jeu vaut 0,18 → 0,18), contraste = pente log-log du jeu au gris × curseur, Exposure / Highlights / Shadows /
+  Contrast / Saturation passés à PsychoV30 (curseur / 50, 1 neutre), cube BT.709, pic = pic / blanc du jeu. Ces
+  valeurs passent par `PushData::bb_hdr2` (offset 96, `PushData` = 128 octets). Le delta peut être négatif (la
+  courbe peut assombrir). La passe finale ne fait plus que BT.2020, Black Floor et le plafond au pic (ni Strength,
+  ni Boost, ni grade, ni second tonemap) ; Highlight Saturation, Blowout et « bbport Highlights » grisés en mode 5.
+- **Ombres** : une seule puissance au gris (sans le pied de la courbe du jeu) les assombrissait (0,5-2 nits ×0,78,
+  2-10 ×0,89 contre Vanilla). Sous le gris, la luminance est celle du jeu (couleur de PsychoV30, curseurs appliqués
+  en rapport), fondue jusqu'au gris. **Mesure** (atelier, JXR, menu exclu) : contre Vanilla, < 0,5 nit 1,05,
+  0,5-2 nits 1,04, 2-10 1,01, 10-150 0,99-1,00, 150-250 1,13 ; fenêtre : pic 317 nits contre 245 pour l'hybride
+  (+29 %, même écart que le premier essai : 503 / 394).
+- **Menu** : Tone Mapper = Vanilla / PsychoV30 ; en Advanced aussi Neutwo et PsychoV30 (hybrid), gardés pour
+  comparer (`hdr_tonemapper` 0 et 1).
+- **LUT au-dessus du blanc** (`bb_color_grading.frag`) : la couleur est divisée par son canal max, passée dans la
+  table 16³ du jeu, puis remultipliée (comme RenoDX), au lieu d'écrêter chaque canal à 1 (la table voyait une
+  autre teinte : un rouge vif (4 ; 0,5 ; 0,2) entrait comme un orange (1 ; 0,5 ; 0,2)). Identique sous le blanc.
+  **À mesurer en jeu** (lumières saturées : feux, lanternes, magie).
+- **Upscalers et luminosité** (atelier, PsychoV30 et Vanilla, JXR) : en Quality (1440p) DLSS et FSR 4 rendent
+  l'image 5 à 18 % plus sombre, en Vanilla aussi (donc pas notre HDR) ; en FSR 3.1 Native AA (4K) les tons moyens
+  et le pic reviennent (0,97-0,99, 358 nits contre 353) : c'est le rendu du jeu en résolution réduite. Les **noirs
+  relevés** (< 0,5 nit : ×1,09 à ×1,41) viennent du **Sharpening (RCAS)** : décoché, ×1,01. À corriger : netteté
+  sans dépassement sous le noir en HDR. DLSS Native AA (DLAA) : scintillement signalé, à voir.
+
+**Ensuite :** netteté des upscalers en HDR (noirs) ; UI Visibility ; Flare et Hue Correction ; Blowout et
+Highlight Saturation après PsychoV30 ; scintillement DLAA ; noirs du mode 4 à mesurer de la même façon si besoin ; Vignette (aucune scène vue
 n'en a) ; Scene grading et Highlight range en mode 4 ; grain ; variantes de composite non couvertes ; franges
 colorées en 4K (bug du port, hors HDR).
 
