@@ -199,7 +199,7 @@ void main() {
             no_vig.vig888 = false;
             vec3 x_nv = bb_exposed(no_vig, scene, ms, vig_uv);
             vec3 t_nv;
-            if (bb_curve_hdr(o, x_nv, BB_HDR_KNEE, BB_HDR_PEAK, t_nv)) {
+            if (bb_curve_hdr(o, x_nv, knee, BB_HDR_PEAK, t_nv)) {
                 vec3 screen_nv = t_nv + glow * (1.0 - min(t_nv, 1.0));
                 float l_nv = dot(max(bb_grade(o, screen_nv), 0.0), vec3(0.2126390059, 0.7151686788,
                                                                        0.0721923154));
