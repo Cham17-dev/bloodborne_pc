@@ -61,11 +61,15 @@ float neutwo_shoulder(float x, float k, float peak) {
     return k + over * inversesqrt(1.0 + (over / room) * (over / room));
 }
 
-// The untonemapped, graded scene (1 = paper white) to the display's range, like RenoDX's tone
-// mapper: Neutwo from 0.6 of the peak (on luminance, or per channel), or PsychoV30.
+// The graded scene (1 = paper white; the game's curve extended above its white) to the display's
+// range: bbport's adaptation of Neutwo (unchanged up to 0.6 of the peak, a Neutwo shoulder above;
+// on luminance or per channel), or PsychoV30.
 vec3 tonemap_scene(vec3 v, float peak) {
     if (pp.hdr_tonemapper == 1u) {
-        return max(rd_psychov30(v, peak), 0.0);
+        // PsychoV30 targets the BT.2020 volume and returns BT.709 coordinates: a BT.2020 color
+        // can have negative BT.709 channels. They stay signed until the BT.2020 conversion, which
+        // drops what is still negative there (as RenoDX's FromSoftware mod).
+        return rd_psychov30(v, peak);
     }
     float k = 0.6 * peak;
     if (pp.hdr_per_channel != 0u) {
