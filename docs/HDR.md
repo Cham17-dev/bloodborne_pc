@@ -57,8 +57,10 @@ upscaler. Outils de diagnostic du mode 5 dans le menu HDR : sondes « 16-bit pro
   76 000 (avant : 26 000 et 65 000).
 - **1080p** : mode 5 **inactif** (« not active here », aucune cible RGBA16F). La note du 17/10 était fausse :
   `SceneResolution::Size{}` vaut 1920x1080, donc en 1080p sans upscaler `Reduced()` est faux, aucun proxy, pas de
-  chaîne 16 bits. Il faudrait des proxys à l'échelle 1 en mode 5 (`Reduced()` utilisé aussi par l'upscaler et la
-  composition de l'interface : à faire avec soin).
+  chaîne 16 bits. **Corrigé et validé en jeu (build `cf94c39`)** en deux temps : proxys à l'échelle 1 en mode 5
+  (`proxies_at_native`, `b325bcd`), puis `OnDispatch` (le compute qui déclenche l'upscaler, avant le composite)
+  ne termine plus la scène en mode 5 sans upscaler (`UiComposed()` au lieu de `Scaled()`) : la trace montrait
+  « raster scaling false » sur toute la chaîne, dessinée dans les images 8 bits.
 
 - **Noirs, mode 5** (build `47ac50a`, intérieur sombre, composite `5c02eaf8`, menu Compare, JXR) : **pas de noirs
   remontés**. Pixels les plus sombres ~0,003 nit dans les trois cas. Par tranche de luminance du SDR :
