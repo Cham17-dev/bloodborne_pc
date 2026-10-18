@@ -60,8 +60,12 @@ upscaler. Outils de diagnostic du mode 5 dans le menu HDR : sondes « 16-bit pro
   chaîne 16 bits. Il faudrait des proxys à l'échelle 1 en mode 5 (`Reduced()` utilisé aussi par l'upscaler et la
   composition de l'interface : à faire avec soin).
 
-**Ensuite :** noirs du HDR un peu au-dessus du SDR du jeu (0,34 contre 0,09 nit sur les pixels les plus sombres,
-suspect : tonemapper/étalonnage de la passe finale) ; glow final `8c08444c` réglable ; Vignette (aucune scène vue
+- **Noirs, mode 5** (build `47ac50a`, intérieur sombre, composite `5c02eaf8`, menu Compare, JXR) : **pas de noirs
+  remontés**. Pixels les plus sombres ~0,003 nit dans les trois cas. Par tranche de luminance du SDR :
+  Neutwo = SDR à ±2 % (0–0,2 nit : 0,030 → 0,038) ; PsychoV30 un peu plus sombre (−10 à −13 % entre 0,2 et 3 nits).
+  L'écart « 0,34 contre 0,09 nit » n'est pas reproduit en mode 5 (mesure d'origine : mode et référence inconnus).
+
+**Ensuite :** noirs du mode 4 à mesurer de la même façon si besoin ; glow final `8c08444c` réglable ; Vignette (aucune scène vue
 n'en a) ; Scene grading et Highlight range en mode 4 ; grain ; variantes de composite non couvertes ; franges
 colorées en 4K (bug du port, hors HDR).
 
