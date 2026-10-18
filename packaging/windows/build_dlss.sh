@@ -11,7 +11,8 @@ cmake=${CMAKE_EXE:-cmake}
 rm -rf out/vkinclude && mkdir -p out/vkinclude
 prefix=${MINGW_PREFIX:-/clang64} # the MSYS2 CLANG64 tree, wherever MSYS2 is (CI: not C:/msys64)
 cp -r "$prefix/include/vulkan" "$prefix/include/vk_video" out/vkinclude/
-"$cmake" -S gpu/dlss_bridge -B out/dlss-bridge -G "Visual Studio 17 2022" -A x64 \
+# CMAKE_GENERATOR: another Visual Studio (CI runners move to newer ones).
+"$cmake" -S gpu/dlss_bridge -B out/dlss-bridge -G "${CMAKE_GENERATOR:-Visual Studio 17 2022}" -A x64 \
     -DDLSS_SDK_ROOT="$(cygpath -m "$sdk")" -DVULKAN_INCLUDE="$(cygpath -m "$PWD/out/vkinclude")"
 "$cmake" --build out/dlss-bridge --config Release
 cp out/dlss-bridge/Release/bbport_dlss.dll "$sdk/lib/Windows_x86_64/rel/nvngx_dlss.dll" out/
