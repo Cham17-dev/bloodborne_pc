@@ -26,6 +26,10 @@ SceneTargets::SceneTargets(const Instance& i, Scheduler& s, Runtime& r, Lookup g
     runtime.scene_targets = this;
     const char* force = std::getenv("BB_SCENE_STENCIL_BITS");
     force_stencil_bits = force && force[0] == '1';
+    // The 16-bit chain is drawn in the proxies: at a 1080p output without an upscaler the scene
+    // keeps its native size, so mode 5 needs proxies of that same size (SetSize never runs).
+    proxies_at_native = HdrChannel::Native16();
+    HdrChannel::SetNative16Active(Reduced());
     CreateResampleResources();
 }
 SceneTargets::~SceneTargets() {
