@@ -62,6 +62,9 @@ public:
     /// The game's ColorGrading pass (a color table), replaced in mode 5; its strength (in-game
     /// menu, Scene grading) goes to the shader in ud_regs3.w (hdr/bb_color_grading.frag).
     static constexpr u64 ColorGradingHash = 0xed4c7668;
+    /// The game's second glow, added after its tone mapping (a blur of the 960x540 glow targets,
+    /// additive); in mode 5 weighted by the in-game Bloom slider (blend constant).
+    static constexpr u64 GlowAddHash = 0x8c08444c;
     /// Mode 5: bbport's version of a game shader of the chain (glow source, display copy) with
     /// the game shader's bindings and locations, or empty to keep the game's.
     static std::vector<u32> ChainReplacement(u64 pgm_hash, std::span<const u32> game);

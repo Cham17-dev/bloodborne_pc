@@ -3739,7 +3739,14 @@ void Rasterizer::UpdateRasterizationState() const {
 void Rasterizer::UpdateColorBlendingState(const GraphicsPipeline* pipeline) const {
     const auto& regs = Regs();
     auto& dynamic_state = scheduler.GetDynamicState();
-    dynamic_state.SetBlendConstants(regs.blend_constants);
+    if (pipeline->ScaledGlow()) {
+        // bbport HDR, mode 5: the game's second glow, weighted by the in-game Bloom slider
+        // (50 = the game's: 1).
+        const float k = std::clamp(BbSettings::Get().hdr_bloom.load(), 0.0f, 100.0f) / 50.0f;
+        dynamic_state.SetBlendConstants({k, k, k, 1.0f});
+    } else {
+        dynamic_state.SetBlendConstants(regs.blend_constants);
+    }
     dynamic_state.SetColorWriteMasks(pipeline->GetGraphicsKey().write_masks);
     dynamic_state.SetAttachmentFeedbackLoopEnabled(attachment_feedback_loop);
 }

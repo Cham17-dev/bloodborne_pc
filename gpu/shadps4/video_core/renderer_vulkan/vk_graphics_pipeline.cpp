@@ -389,6 +389,19 @@ GraphicsPipeline::GraphicsPipeline(
                                                      ? vk::BlendFactor::eOne
                                                      : vk::BlendFactor::eZero; // 1-A
         }
+
+        // bbport HDR, mode 5: the game's second glow, added after its tone mapping (8c08444c,
+        // src alpha 1 + dst), scaled live by the in-game Bloom slider: the source is weighted by
+        // the blend constant, set per draw (Rasterizer::UpdateColorBlendingState).
+        const auto* fs = stages[u32(Shader::SwStage::Fragment)];
+        if (i == 0 && control.enable && fs && fs->pgm_hash == HdrChannel::GlowAddHash &&
+            HdrChannel::Native16() && color_blend == vk::BlendOp::eAdd &&
+            attachments[i].dstColorBlendFactor == vk::BlendFactor::eOne &&
+            (attachments[i].srcColorBlendFactor == vk::BlendFactor::eSrcAlpha ||
+             attachments[i].srcColorBlendFactor == vk::BlendFactor::eOne)) {
+            attachments[i].srcColorBlendFactor = vk::BlendFactor::eConstantColor;
+            scaled_glow = true;
+        }
     }
 
     const vk::PipelineColorBlendStateCreateInfo color_blending = {

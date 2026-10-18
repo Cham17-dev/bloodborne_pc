@@ -107,6 +107,11 @@ public:
         return *hdr_pipeline;
     }
 
+    /// bbport HDR, mode 5: the game's second glow, weighted by the blend constant (Bloom).
+    bool ScaledGlow() const noexcept {
+        return scaled_glow;
+    }
+
     /// Gets the attributes and bindings for vertex inputs.
     template <typename Attribute, typename Binding>
     void GetVertexInputs(VertexInputs<Attribute>& attributes, VertexInputs<Binding>& bindings,
@@ -116,6 +121,7 @@ public:
 
 private:
     vk::UniquePipeline hdr_pipeline; ///< bbport HDR side channel (vk_hdr_channel.h)
+    bool scaled_glow = false;        ///< see ScaledGlow()
     void BuildDescSetLayout(bool preloading);
 
 private:

@@ -381,7 +381,7 @@ void HdrSection(BbSettings::Values& s) {
     }
     if (ImGui::TreeNodeEx("Game effects (scene only)", ImGuiTreeNodeFlags_DefaultOpen)) {
         SliderReset("Bloom", s.hdr_bloom, 0.0f, 100.0f, 50.0f, "%.0f",
-                    "The game's glow around lights and bright areas: 50 is the game's, 0 removes it, 100 doubles it. As RenoDX's Bloom.");
+                    "The game's glow around lights and bright areas: 50 is the game's, 0 removes it, 100 doubles it. As RenoDX's Bloom. In HDR 16-bit mode it also scales the second glow the game adds after its tone mapping.");
         SliderReset("Vignette", s.hdr_vignette, 0.0f, 100.0f, 50.0f, "%.0f",
                     "The game's darkening toward the screen edges, where the game has one: 50 is the game's, 0 removes it, 100 doubles it. As RenoDX's Vignette.");
         ImGui::TextDisabled("Film grain: not yet (the grain is added in the game's 8-bit image).");
