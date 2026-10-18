@@ -50,8 +50,9 @@ jobs:
           export MSYS2_ROOT="$(cygpath -u '${{ steps.msys2.outputs.msys2-location }}')"
           bash build.sh
 
-      # DLSS: NVIDIA's public SDK and the runner's Visual Studio 2022 build bbport_dlss.dll
-      # (gpu/dlss_bridge); package.sh ships it with nvngx_dlss.dll (NVIDIA's license).
+      # DLSS: NVIDIA's public SDK and the runner's Visual Studio build bbport_dlss.dll
+      # (gpu/dlss_bridge); package.sh ships it with nvngx_dlss.dll (NVIDIA's license). Optional:
+      # if it fails the package is made without DLSS, the error shown in the run's annotations.
       - name: DLSS SDK
         uses: actions/checkout@v4
         with:
@@ -60,10 +61,24 @@ jobs:
           lfs: true
 
       - name: DLSS bridge
+        continue-on-error: true
         run: |
           export DLSS_SDK_ROOT="$PWD/dlss-sdk"
           export CMAKE_EXE="/c/Program Files/CMake/bin/cmake.exe" # with the VS generators
-          bash packaging/windows/build_dlss.sh
+          vswhere="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+          vs=$("$vswhere" -latest -products '*' -property installationVersion | cut -d. -f1)
+          case "$vs" in
+            17) export CMAKE_GENERATOR="Visual Studio 17 2022" ;;
+            18) export CMAKE_GENERATOR="Visual Studio 18 2026" ;;
+          esac
+          echo "::notice::DLSS bridge: Visual Studio $vs, $("$CMAKE_EXE" --version | head -1)"
+          if ! bash packaging/windows/build_dlss.sh > dlss.log 2>&1; then
+            cat dlss.log
+            grep -iE 'error|not found|cannot|no such' dlss.log | head -6 | sed 's/^/::error::/'
+            tail -3 dlss.log | sed 's/^/::error::/'
+            exit 1
+          fi
+          cat dlss.log
 
       - name: Package
         run: |
