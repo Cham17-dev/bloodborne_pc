@@ -520,7 +520,8 @@ def game_environment(s):
             for key in ('BB_SHADNET_SERVER', 'BB_SHADNET_WEBAPI', 'BB_SHADNET_NPID', 'BB_SHADNET_PASSWORD'):
                 env.pop(key, None)
     # Which build a server sees (shadNet's client version, The Hunter's Dream's client field).
-    env.setdefault('BB_CLIENT_VERSION', f'bbport {VERSION}')
+    # The servers tell clients apart by this User-Agent: name/version (bbport/1.9.1).
+    env.setdefault('BB_CLIENT_VERSION', f'bbport/{VERSION}')
     env['PYTHONUNBUFFERED'] = '1'
     env['PYTHONIOENCODING'] = 'utf-8'
     return env
