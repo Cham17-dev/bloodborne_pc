@@ -132,14 +132,37 @@ bool bb_curve_psychov_scene(BbComposite o, vec3 x, out vec3 t) {
     float exposure = bb_bits(push_data.bb_hdr2a.y, 1.0);
     float highlights = bb_bits(push_data.bb_hdr2a.z, 1.0);
     float shadows = bb_bits(push_data.bb_hdr2a.w, 1.0);
-    float contrast = clamp(grey_in * slope / 0.18, 0.3, 3.0) * bb_bits(push_data.bb_hdr2b.x, 1.0);
+    float game_contrast = clamp(grey_in * slope / 0.18, 0.3, 3.0);
+    float user_contrast = bb_bits(push_data.bb_hdr2b.x, 1.0);
+    float contrast = game_contrast * user_contrast;
     float purity = bb_bits(push_data.bb_hdr2b.y, 1.0);
+    vec3 game = bb_curve(o, x);
     if (o.curve != 3) {
         x = max(x, BB_FLOOR); // PsychoV30 needs a positive input
     }
     t = rd_psychov30(x, peak, exposure, highlights, shadows, max(contrast, 0.05), purity, 1.0,
                      vec3(grey_in), vec3(0.18), 1.0, 0, 1.0, RD_PSY30_SOURCE_BOUNDARY_BT709);
     t = max(t, 0.0);
+    // Below mid grey, the game's own luminance (its curve's toe lifts the shadows, PsychoV30's
+    // single power at mid grey does not), PsychoV30's color kept; up to mid grey, PsychoV30 alone.
+    // The sliders still apply (the game's value scaled as they move PsychoV30's).
+    const vec3 luma = vec3(0.2126390059, 0.7151686788, 0.0721923154);
+    float l_game = dot(max(game, 0.0), luma);
+    float l_t = dot(t, luma);
+    if (l_t > 1e-6 && l_game < 0.18) {
+        // The sliders' effect (exposure, shadows, contrast) as a ratio on PsychoV30's own output.
+        float grade = 1.0;
+        if (exposure != 1.0 || highlights != 1.0 || shadows != 1.0 || purity != 1.0 ||
+            user_contrast != 1.0) {
+            vec3 base = rd_psychov30(x, peak, 1.0, 1.0, 1.0, game_contrast, 1.0, 1.0,
+                                     vec3(grey_in), vec3(0.18), 1.0, 0, 1.0,
+                                     RD_PSY30_SOURCE_BOUNDARY_BT709);
+            float l_base = dot(max(base, 0.0), luma);
+            grade = l_base > 1e-6 ? l_t / l_base : 1.0;
+        }
+        float match = l_game * grade / l_t;
+        t *= mix(match, 1.0, smoothstep(0.05, 0.18, l_game));
+    }
     return true;
 }
 

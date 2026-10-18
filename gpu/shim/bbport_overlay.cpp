@@ -373,23 +373,31 @@ void HdrSection(BbSettings::Values& s) {
 
     ImGui::BeginDisabled(preset == 0);
     ImGui::SeparatorText("Tone Mapping");
-    // Shown as RenoDX's order; stored as bbport.ini's hdr_tonemapper (0 Neutwo, 1 PsychoV30,
-    // 2 Vanilla, 3 PsychoV30 on the scene).
-    static constexpr const char* tonemappers[] = {"Vanilla", "Neutwo", "PsychoV30",
-                                                  "PsychoV30 (scene)"};
-    static constexpr int stored[] = {BbSettings::HdrToneMapperVanilla, 0, 1,
-                                     BbSettings::HdrToneMapperPsychoScene};
+    // Stored as bbport.ini's hdr_tonemapper (0 Neutwo, 1 PsychoV30 hybrid, 2 Vanilla,
+    // 3 PsychoV30 on the scene). Vanilla and PsychoV30 (on the scene, as RenoDX's) first; the
+    // older two, kept to compare, in Advanced only (or while one of them is selected).
+    static constexpr const char* tonemappers[] = {"Vanilla", "PsychoV30", "Neutwo",
+                                                  "PsychoV30 (hybrid)"};
+    static constexpr int stored[] = {BbSettings::HdrToneMapperVanilla,
+                                     BbSettings::HdrToneMapperPsychoScene, 0, 1};
     const int tonemapper =
         std::clamp(s.hdr_tonemapper.load(), 0, BbSettings::HdrToneMapperPsychoScene);
-    const int shown = tonemapper == BbSettings::HdrToneMapperVanilla ? 0
-                      : tonemapper == BbSettings::HdrToneMapperPsychoScene ? 3
-                                                                           : tonemapper + 1;
-    if (const int chosen = ComboIndex("Tone Mapper", shown, tonemappers, 1); chosen != shown) {
+    int shown = 0;
+    for (int i = 0; i < 4; ++i) {
+        shown = stored[i] == tonemapper ? i : shown;
+    }
+    const std::size_t count = (level >= 2 || shown >= 2) ? 4 : 2;
+    if (const int chosen = ComboIndex("Tone Mapper", shown,
+                                      std::span<const char* const>(tonemappers, count), 1);
+        chosen != shown) {
         Store(s.hdr_tonemapper, stored[chosen], true);
     }
-    // PsychoV30 on the scene (HDR 16-bit mode only): the grading sliders are PsychoV30's own.
-    const bool psycho_scene = tonemapper == BbSettings::HdrToneMapperPsychoScene;
-    Hint("Vanilla: the game's own look (no HDR highlights). Neutwo: the game's image, its light above white rolled off near your display's peak. PsychoV30: models the eye's response, truer colors in bright lights. PsychoV30 (scene): PsychoV30 alone on the game's scene in place of its curve, mid grey kept (HDR 16-bit mode; elsewhere PsychoV30).");
+    // PsychoV30 on the scene (HDR 16-bit mode; elsewhere the hybrid): the grading sliders are
+    // PsychoV30's own.
+    const bool psycho_scene =
+        tonemapper == BbSettings::HdrToneMapperPsychoScene && s.hdr_mode == 5;
+    Hint(level >= 2 ? "Vanilla: the game's own look (no HDR highlights). PsychoV30 (default): RenoDX's way, PsychoV30 on the game's scene in place of its curve, the game's mid tones and shadows kept, its lights up to your display's peak (HDR 16-bit mode; elsewhere the hybrid). Neutwo and PsychoV30 (hybrid), older, to compare: the game's image, its light above white rolled off near the peak."
+                    : "Vanilla: the game's own look (no HDR highlights). PsychoV30: the game's mid tones and shadows, its lights up to your display's peak, as RenoDX's.");
     // Defaults as RenoDX's: the display's peak Windows reports, and the reference white for it.
     const float display_peak = BbSettings::DisplayPeak();
     char peak_hint[160];

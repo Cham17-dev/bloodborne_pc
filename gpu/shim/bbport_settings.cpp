@@ -213,7 +213,7 @@ void ResetHdr(Values& v) {
     v.hdr_peak_nits = DefaultPeakNits();
     v.hdr_strength = 1.0f;
     v.hdr_boost = 0.0f;
-    v.hdr_tonemapper = 0;
+    v.hdr_tonemapper = HdrToneMapperPsychoScene;
     v.hdr_per_channel = false;
     v.hdr_ui_nits = 203.0f;
     v.hdr_gamma22 = true;

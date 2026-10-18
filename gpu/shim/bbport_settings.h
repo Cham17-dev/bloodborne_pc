@@ -126,9 +126,9 @@ struct Values {
     std::atomic<bool> hdr_native16_live{false}; ///< this frame is the 16-bit chain's
     std::atomic<unsigned> hdr_variant{0};        ///< last composite with the HDR pass
     std::atomic<int> hdr_mode{0};                ///< BB_HDR_TONEMAP
-    /// 0 Neutwo, 1 PsychoV30, 2 Vanilla (the game's own look), 3 PsychoV30 on the scene (HDR
-    /// 16-bit mode; live, saved).
-    std::atomic<int> hdr_tonemapper{0};
+    /// 0 Neutwo, 1 PsychoV30 (hybrid), 2 Vanilla (the game's own look), 3 PsychoV30 on the scene
+    /// (the default; HDR 16-bit mode, elsewhere 1; live, saved).
+    std::atomic<int> hdr_tonemapper{3};
     std::atomic<bool> hdr_per_channel{false};    ///< Neutwo per channel (else luminance)
     /// The in-game menu's HDR preset, as RenoDX's: 0 Off (the game's own look), 1..3 the
     /// player's own settings, each kept in bbport.ini (hdr_preset1..3); the sliders change the one
