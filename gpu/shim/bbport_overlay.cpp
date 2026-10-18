@@ -297,7 +297,8 @@ void HdrSection(BbSettings::Values& s) {
     static constexpr const char* presets[] = {"Off", "Preset #1", "Preset #2", "Preset #3"};
     const int preset = std::clamp(s.hdr_preset.load(), 0, BbSettings::HdrPresetCount - 1);
     int preset_slider = preset;
-    if (ImGui::SliderInt("Preset", &preset_slider, 0, BbSettings::HdrPresetCount - 1,
+    // "##hdr": the upscaler's Preset above has the same label (same ImGui ID otherwise).
+    if (ImGui::SliderInt("Preset##hdr", &preset_slider, 0, BbSettings::HdrPresetCount - 1,
                          presets[preset], ImGuiSliderFlags_AlwaysClamp) &&
         preset_slider != preset) {
         BbSettings::SelectHdrPreset(preset_slider);
