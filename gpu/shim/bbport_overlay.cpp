@@ -232,7 +232,40 @@ void MarkDirty() {
     dirty_time = std::chrono::steady_clock::now();
 }
 
-// A slider with a reset button after it (as in ReShade and RenoDX), then its hint.
+// RenoDX's reset button, after a setting's label: a small disc with a circular arrow, drawn (this
+// menu has no icon font). Dimmed and inert while the value is the default. True when clicked.
+bool ResetIcon(bool at_default) {
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float size = ImGui::GetTextLineHeight();
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImGui::SetCursorScreenPos(ImVec2(pos.x, pos.y + style.FramePadding.y)); // on the label's line
+    const bool pressed = ImGui::InvisibleButton("##reset", ImVec2(size, size));
+    const bool hovered = ImGui::IsItemHovered() && !at_default;
+    if (hovered) {
+        ImGui::SetTooltip("Reset");
+    }
+    constexpr float pi = 3.14159265f;
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const float r = size * 0.5f;
+    const ImVec2 c(pos.x + r, pos.y + style.FramePadding.y + r);
+    draw->AddCircleFilled(c, r, ImGui::GetColorU32(ImGuiCol_Text,
+                                                   at_default ? 0.3f : hovered ? 1.0f : 0.65f));
+    // The arrow: an arc open on the right, its head at the top end pointing into the gap.
+    const ImU32 ink = ImGui::GetColorU32(ImGuiCol_WindowBg);
+    const float ra = r * 0.52f, a0 = pi * 0.3f, a1 = pi * 1.72f;
+    draw->PathArcTo(c, ra, a0, a1, 16);
+    draw->PathStroke(ink, 0, r * 0.2f);
+    const ImVec2 radial(std::cos(a1), std::sin(a1));
+    const ImVec2 tangent(-radial.y, radial.x); // clockwise on screen
+    const ImVec2 p(c.x + radial.x * ra, c.y + radial.y * ra);
+    const float head = r * 0.36f;
+    draw->AddTriangleFilled(ImVec2(p.x + tangent.x * head, p.y + tangent.y * head),
+                            ImVec2(p.x + radial.x * head, p.y + radial.y * head),
+                            ImVec2(p.x - radial.x * head, p.y - radial.y * head), ink);
+    return pressed && !at_default;
+}
+
+// A slider with RenoDX's reset button after it, then its hint.
 void SliderReset(const char* label, std::atomic<float>& value, float lo, float hi, float reset,
                  const char* format, const char* hint) {
     ImGui::PushID(label);
@@ -240,20 +273,21 @@ void SliderReset(const char* label, std::atomic<float>& value, float lo, float h
     const bool changed = ImGui::SliderFloat(label, &v, lo, hi, format);
     Store(value, v, changed);
     ImGui::SameLine();
-    ImGui::BeginDisabled(std::abs(value.load() - reset) < 1e-4f);
-    if (ImGui::SmallButton("Reset")) {
+    if (ResetIcon(std::abs(value.load() - reset) < 1e-4f)) {
         Store(value, reset, true);
     }
-    ImGui::EndDisabled();
     ImGui::PopID();
     if (hint) {
         Hint(hint);
     }
 }
 
-// A combo over `names`; `current` and the result are indices into it.
-int ComboIndex(const char* label, int current, std::span<const char* const> names) {
+// A combo over `names`; `current` and the result are indices into it. With `reset` (an index),
+// RenoDX's reset button after it.
+int ComboIndex(const char* label, int current, std::span<const char* const> names,
+               int reset = -1) {
     int chosen = current;
+    ImGui::PushID(label);
     if (ImGui::BeginCombo(label, names[std::clamp(current, 0, int(names.size()) - 1)])) {
         for (int i = 0; i < int(names.size()); ++i) {
             if (ImGui::Selectable(names[i], i == current)) {
@@ -262,6 +296,13 @@ int ComboIndex(const char* label, int current, std::span<const char* const> name
         }
         ImGui::EndCombo();
     }
+    if (reset >= 0) {
+        ImGui::SameLine();
+        if (ResetIcon(current == reset)) {
+            chosen = reset;
+        }
+    }
+    ImGui::PopID();
     return chosen;
 }
 
@@ -323,7 +364,7 @@ void HdrSection(BbSettings::Values& s) {
     static constexpr int stored[] = {BbSettings::HdrToneMapperVanilla, 0, 1};
     const int tonemapper = std::clamp(s.hdr_tonemapper.load(), 0, BbSettings::HdrToneMapperVanilla);
     const int shown = tonemapper == BbSettings::HdrToneMapperVanilla ? 0 : tonemapper + 1;
-    if (const int chosen = ComboIndex("Tone Mapper", shown, tonemappers); chosen != shown) {
+    if (const int chosen = ComboIndex("Tone Mapper", shown, tonemappers, 1); chosen != shown) {
         Store(s.hdr_tonemapper, stored[chosen], true);
     }
     Hint("Vanilla: the game's own look (no HDR highlights). Neutwo: the game's image, its light above white rolled off near your display's peak. PsychoV30: models the eye's response, truer colors in bright lights.");
@@ -348,14 +389,14 @@ void HdrSection(BbSettings::Values& s) {
     if (level >= 1) {
         static constexpr const char* gammas[] = {"Off (sRGB)", "2.2"};
         const int gamma = s.hdr_gamma22 ? 1 : 0;
-        if (const int chosen = ComboIndex("Gamma Correction", gamma, gammas); chosen != gamma) {
+        if (const int chosen = ComboIndex("Gamma Correction", gamma, gammas, 1); chosen != gamma) {
             Store(s.hdr_gamma22, chosen == 1, true);
         }
         Hint("2.2: the game's image as SDR monitors show it, deeper shadows (default). Off: the sRGB curve, lighter near-blacks.");
         ImGui::BeginDisabled(tonemapper != 0);
         static constexpr const char* scalings[] = {"Luminance", "Per Channel"};
         const int scaling = s.hdr_per_channel ? 1 : 0;
-        if (const int chosen = ComboIndex("Scaling", scaling, scalings); chosen != scaling) {
+        if (const int chosen = ComboIndex("Scaling", scaling, scalings, 0); chosen != scaling) {
             Store(s.hdr_per_channel, chosen == 1, true);
         }
         Hint("Neutwo only. Luminance keeps the colors of bright lights; Per Channel lets them go toward white sooner (a filmic look).");
