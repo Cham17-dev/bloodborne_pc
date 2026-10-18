@@ -54,7 +54,10 @@ std::mutex imgui_mutex; // the ImGui context: window thread (input) and present 
 bool initialized = false;
 std::atomic<bool> menu_open{false};
 bool l3_down = false, r3_down = false;
-bool dirty = false; // settings changed while open: saved on close
+// Settings changed in the menu: saved on close, or a second after the last change while it stays
+// open (quitting the game with the menu open lost them).
+bool dirty = false;
+std::chrono::steady_clock::time_point dirty_time{};
 // The game's text dialog (SetTextEntry), guarded by imgui_mutex.
 bool text_entry_active = false;
 std::string text_entry_prompt, text_entry_text;
@@ -135,6 +138,7 @@ void Store(std::atomic<T>& target, const T& value, bool changed) {
     if (changed) {
         target = value;
         dirty = true;
+        dirty_time = std::chrono::steady_clock::now();
     }
 }
 
@@ -978,6 +982,10 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     ImGui::NewFrame();
     if (menu_open) {
         Menu();
+        if (dirty && now - dirty_time >= std::chrono::seconds(1)) {
+            dirty = false;
+            BbSettings::Save();
+        }
     }
     if (BbSettings::Get().show_fps && !menu_open) {
         FpsCounter();
