@@ -84,7 +84,7 @@ void Set(Values& v, const std::string& key, const std::string& value) {
     } else if (key == "hdr_boost") {
         if (!value.empty()) v.hdr_boost = Clamp(f, 0.0f, 1.0f);
     } else if (key == "hdr_tonemapper") {
-        if (!value.empty()) v.hdr_tonemapper = std::clamp(i, 0, HdrToneMapperVanilla);
+        if (!value.empty()) v.hdr_tonemapper = std::clamp(i, 0, HdrToneMapperPsychoScene);
     } else if (key == "hdr_preset") {
         if (!value.empty()) v.hdr_preset = std::clamp(i, 0, HdrPresetCount - 1);
         loaded_hdr_preset = true;
@@ -351,7 +351,7 @@ void Load() {
         }
     }
     if (const char* env = std::getenv("BB_HDR_TONEMAPPER")) {
-        v.hdr_tonemapper = std::clamp(std::atoi(env), 0, HdrToneMapperVanilla);
+        v.hdr_tonemapper = std::clamp(std::atoi(env), 0, HdrToneMapperPsychoScene);
     }
     if (const char* env = std::getenv("BB_HDR_GAMMA22")) {
         v.hdr_gamma22 = std::atoi(env) != 0;

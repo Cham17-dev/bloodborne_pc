@@ -522,7 +522,12 @@ u32 HdrChannel::Tonemapper() {
     if (s.hdr_preset == 0) {
         return u32(BbSettings::HdrToneMapperVanilla);
     }
-    return u32(std::clamp(s.hdr_tonemapper.load(), 0, BbSettings::HdrToneMapperVanilla));
+    const int tonemapper = std::clamp(s.hdr_tonemapper.load(), 0, BbSettings::HdrToneMapperPsychoScene);
+    // PsychoV30 on the scene needs the 16-bit chain (the composite); elsewhere PsychoV30.
+    if (tonemapper == BbSettings::HdrToneMapperPsychoScene && !Native16()) {
+        return 1u;
+    }
+    return u32(tonemapper);
 }
 
 bool HdrChannel::VanillaChain() {

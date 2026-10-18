@@ -243,6 +243,11 @@ struct PushData {
     /// by them only (the recompiled game shaders do not declare it): y the knee (Highlight
     /// range), z the 16-bit chain probe, w the bloom or Scene grading strength. 0: not set.
     std::array<u32, 4> bb_hdr;
+    /// bbport HDR, mode 5, tone mapper PsychoV30 (scene), for the composite's delta draw only
+    /// (hdr/bb_composite_hdr.frag), each a float's bits plus one (0: not set): [0] the display's
+    /// peak in units of the game's white (the mode itself), [1] exposure, [2] highlights,
+    /// [3] shadows, [4] contrast, [5] saturation (PsychoV30's own parameters, 1 neutral).
+    std::array<u32, 8> bb_hdr2;
 
     void AddOffset(u32 binding, u32 offset) {
         ASSERT(offset < 256 && binding < buf_offsets.size());

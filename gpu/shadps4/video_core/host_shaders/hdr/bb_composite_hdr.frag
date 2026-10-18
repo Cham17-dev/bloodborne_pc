@@ -62,6 +62,10 @@ layout(push_constant, std430) uniform AuxData {
     layout(offset = 72) uint motion_param;
     layout(offset = 76) uint scene_size;
     layout(offset = 80) uvec4 bb_hdr;
+    // Mode 5, PsychoV30 (scene): x the display's peak (game white units), y exposure,
+    // z highlights, w shadows; bb_hdr2b: x contrast, y saturation (bits plus one, 0: not set).
+    layout(offset = 96) uvec4 bb_hdr2a;
+    layout(offset = 112) uvec4 bb_hdr2b;
 } push_data;
 
 layout(set = 0, binding = 1) uniform texture2D bb_img_scene;
@@ -110,6 +114,35 @@ bool bb_curve_psychov(BbComposite o, vec3 x, float peak, out vec3 t) {
     return true;
 }
 
+float bb_bits(uint bits, float fallback) {
+    return bits == 0u ? fallback : uintBitsToFloat(bits - 1u);
+}
+
+// Mode 5, tone mapper PsychoV30 (scene): PsychoV30 alone on the scene's linear color, in place of
+// the game's curve, to the display's peak (the final pass then only encodes). Anchored as
+// bb_curve_psychov (the game's mid grey stays mid grey, its slope there as contrast), with the
+// menu's exposure, highlights, shadows, contrast and saturation as PsychoV30's own parameters.
+bool bb_curve_psychov_scene(BbComposite o, vec3 x, out vec3 t) {
+    float grey_in, slope;
+    if (!bb_knee(o.curve, 0.18, grey_in, slope)) {
+        t = bb_curve(o, x);
+        return false;
+    }
+    float peak = max(bb_bits(push_data.bb_hdr2a.x, BB_HDR_PEAK), 1.0);
+    float exposure = bb_bits(push_data.bb_hdr2a.y, 1.0);
+    float highlights = bb_bits(push_data.bb_hdr2a.z, 1.0);
+    float shadows = bb_bits(push_data.bb_hdr2a.w, 1.0);
+    float contrast = clamp(grey_in * slope / 0.18, 0.3, 3.0) * bb_bits(push_data.bb_hdr2b.x, 1.0);
+    float purity = bb_bits(push_data.bb_hdr2b.y, 1.0);
+    if (o.curve != 3) {
+        x = max(x, BB_FLOOR); // PsychoV30 needs a positive input
+    }
+    t = rd_psychov30(x, peak, exposure, highlights, shadows, max(contrast, 0.05), purity, 1.0,
+                     vec3(grey_in), vec3(0.18), 1.0, 0, 1.0, RD_PSY30_SOURCE_BOUNDARY_BT709);
+    t = max(t, 0.0);
+    return true;
+}
+
 // The game's interpolation, as recompiled: attribute with the barycentrics.
 vec2 interp(vec4 a0, vec4 a1, vec4 a2) {
     vec3 b = gl_BaryCoordEXT;
@@ -149,7 +182,9 @@ void main() {
     if (BB_OUTPUT_DELTA && push_data.bb_hdr.y != 0u) {
         knee = clamp(uintBitsToFloat(push_data.bb_hdr.y - 1u), 0.1, 0.95);
     }
-    bool has_hdr = !BB_ADDITIVE && (BB_TONEMAPPER == 1
+    bool psycho_scene = BB_OUTPUT_DELTA && push_data.bb_hdr2a.x != 0u;
+    bool has_hdr = !BB_ADDITIVE && (psycho_scene ? bb_curve_psychov_scene(o, x, hdr_t)
+                                    : BB_TONEMAPPER == 1
                                         ? bb_curve_psychov(o, x, BB_HDR_PEAK, hdr_t)
                                         : bb_curve_hdr(o, x, knee, BB_HDR_PEAK, hdr_t));
     vec3 g = bb_glow(o, base, bloom, ms);
@@ -235,7 +270,8 @@ void main() {
                 delta = max(target, 0.0) - clamp(sdr_graded, 0.0, 1.0);
             }
         }
-        frag_color0 = vec4(scaled ? delta : max(delta, 0.0), 0.0);
+        // PsychoV30 (scene) replaces the game's curve, so it may also darken.
+        frag_color0 = vec4((scaled || psycho_scene) ? delta : max(delta, 0.0), 0.0);
         // Chain probe (in-game menu, test; bb_hdr.z set for this draw by bbport): green
         // where this draw adds light above the game's white (red and blue pushed far below 0,
         // so the green stays whatever is added later).

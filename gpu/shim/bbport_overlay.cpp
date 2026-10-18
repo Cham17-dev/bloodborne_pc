@@ -374,15 +374,22 @@ void HdrSection(BbSettings::Values& s) {
     ImGui::BeginDisabled(preset == 0);
     ImGui::SeparatorText("Tone Mapping");
     // Shown as RenoDX's order; stored as bbport.ini's hdr_tonemapper (0 Neutwo, 1 PsychoV30,
-    // 2 Vanilla).
-    static constexpr const char* tonemappers[] = {"Vanilla", "Neutwo", "PsychoV30"};
-    static constexpr int stored[] = {BbSettings::HdrToneMapperVanilla, 0, 1};
-    const int tonemapper = std::clamp(s.hdr_tonemapper.load(), 0, BbSettings::HdrToneMapperVanilla);
-    const int shown = tonemapper == BbSettings::HdrToneMapperVanilla ? 0 : tonemapper + 1;
+    // 2 Vanilla, 3 PsychoV30 on the scene).
+    static constexpr const char* tonemappers[] = {"Vanilla", "Neutwo", "PsychoV30",
+                                                  "PsychoV30 (scene)"};
+    static constexpr int stored[] = {BbSettings::HdrToneMapperVanilla, 0, 1,
+                                     BbSettings::HdrToneMapperPsychoScene};
+    const int tonemapper =
+        std::clamp(s.hdr_tonemapper.load(), 0, BbSettings::HdrToneMapperPsychoScene);
+    const int shown = tonemapper == BbSettings::HdrToneMapperVanilla ? 0
+                      : tonemapper == BbSettings::HdrToneMapperPsychoScene ? 3
+                                                                           : tonemapper + 1;
     if (const int chosen = ComboIndex("Tone Mapper", shown, tonemappers, 1); chosen != shown) {
         Store(s.hdr_tonemapper, stored[chosen], true);
     }
-    Hint("Vanilla: the game's own look (no HDR highlights). Neutwo: the game's image, its light above white rolled off near your display's peak. PsychoV30: models the eye's response, truer colors in bright lights.");
+    // PsychoV30 on the scene (HDR 16-bit mode only): the grading sliders are PsychoV30's own.
+    const bool psycho_scene = tonemapper == BbSettings::HdrToneMapperPsychoScene;
+    Hint("Vanilla: the game's own look (no HDR highlights). Neutwo: the game's image, its light above white rolled off near your display's peak. PsychoV30: models the eye's response, truer colors in bright lights. PsychoV30 (scene): PsychoV30 alone on the game's scene in place of its curve, mid grey kept (HDR 16-bit mode; elsewhere PsychoV30).");
     // Defaults as RenoDX's: the display's peak Windows reports, and the reference white for it.
     const float display_peak = BbSettings::DisplayPeak();
     char peak_hint[160];
@@ -429,9 +436,11 @@ void HdrSection(BbSettings::Values& s) {
     percent("Contrast", s.hdr_contrast, 50.0f, nullptr);
     percent("Saturation", s.hdr_saturation, 50.0f, nullptr);
     if (level >= 1) {
+        ImGui::BeginDisabled(psycho_scene); // not PsychoV30's
         percent("Highlight Saturation", s.hdr_highlight_saturation, 50.0f, nullptr);
         percent("Blowout", s.hdr_blowout, 0.0f,
                 "The brightest colors fade to white near the peak, like overexposed film.");
+        ImGui::EndDisabled();
         ImGui::BeginDisabled(s.hdr_mode != 5);
         SliderReset("Color Grade Strength", s.hdr_scene_grading, 0.0f, 100.0f, 100.0f, "%.0f %%",
                     "The game's own color grading: 100 is the game's look, 0 the image before it. HDR 16-bit mode.");
@@ -450,6 +459,7 @@ void HdrSection(BbSettings::Values& s) {
 
     if (level >= 2) {
         ImGui::SeparatorText("bbport Highlights");
+        ImGui::BeginDisabled(psycho_scene); // PsychoV30 (scene) shapes the highlights itself
         SliderReset("Highlight Strength", s.hdr_strength, 0.0f, 3.0f, 1.0f, "%.2f",
                     "How much of the light the game computed above its white is shown: 0 is the SDR look, 1 bbport's default.");
         ImGui::BeginDisabled(s.hdr_mode != 5);
@@ -458,6 +468,7 @@ void HdrSection(BbSettings::Values& s) {
         ImGui::EndDisabled();
         SliderReset("Highlight Boost", s.hdr_boost, 0.0f, 1.0f, 0.0f, "%.2f",
                     "Raises the parts the game drew close to its white toward the peak, for scenes lit for SDR: 0 is off.");
+        ImGui::EndDisabled();
     }
     if (ImGui::Button("Reset all")) {
         BbSettings::ResetHdr();

@@ -126,7 +126,8 @@ struct Values {
     std::atomic<bool> hdr_native16_live{false}; ///< this frame is the 16-bit chain's
     std::atomic<unsigned> hdr_variant{0};        ///< last composite with the HDR pass
     std::atomic<int> hdr_mode{0};                ///< BB_HDR_TONEMAP
-    /// 0 Neutwo, 1 PsychoV30, 2 Vanilla (the game's own look; live, saved).
+    /// 0 Neutwo, 1 PsychoV30, 2 Vanilla (the game's own look), 3 PsychoV30 on the scene (HDR
+    /// 16-bit mode; live, saved).
     std::atomic<int> hdr_tonemapper{0};
     std::atomic<bool> hdr_per_channel{false};    ///< Neutwo per channel (else luminance)
     /// The in-game menu's HDR preset, as RenoDX's: 0 Off (the game's own look), 1..3 the
@@ -212,6 +213,9 @@ bool ResolutionNeedsRestart();
 void Save();
 
 inline constexpr int HdrToneMapperVanilla = 2;
+/// PsychoV30 on the scene itself, in the composite (HDR 16-bit mode; elsewhere PsychoV30): the
+/// game's mid grey kept, the color grading sliders as PsychoV30's own parameters.
+inline constexpr int HdrToneMapperPsychoScene = 3;
 inline constexpr int HdrPresetCount = 4; ///< Off and three of the player's
 /// Selects an HDR preset: the HDR settings go to the one selected before, and those of the new
 /// one (1..3) are loaded; a preset never saved starts from the defaults. 0 (Off) keeps them.

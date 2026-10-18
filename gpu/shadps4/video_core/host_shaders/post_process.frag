@@ -40,7 +40,7 @@ layout (push_constant) uniform settings {
     float hdr_saturation;
     float hdr_highlight_saturation;
     float hdr_blowout;
-    uint hdr_tonemapper;   // bbport: 0 Neutwo, 1 PsychoV30 (RenoDX), 2 Vanilla (the game's SDR)
+    uint hdr_tonemapper;   // bbport: 0 Neutwo, 1 PsychoV30 (RenoDX), 2 Vanilla (the game's SDR), 3 PsychoV30 on the scene (mode 5)
     uint hdr_per_channel;  // bbport: Neutwo per channel (else on luminance, hue kept)
     float hdr_bloom;       // bbport: the game's bloom, 0 none .. 1 the game's .. 2 double
     float hdr_vignette;    // bbport: the game's vignettes, 0 none .. 1 the game's .. 2 double
@@ -210,14 +210,19 @@ vec3 native16_nits(vec3 v) {
     // Above white the chain's values are gamma encoded (the composite's output, a 2.2 power).
     vec3 lin = black_floor(lin_sdr * mix(vec3(1.0), pow(v, vec3(2.2)), greaterThan(v, vec3(1.0))));
     float peak = max(pp.hdr_peak_nits / pp.hdr_paper_white, 1.0);
-    float l = dot(lin, LUMA709), l_sdr = dot(lin_sdr, LUMA709);
-    // Strength: the luminance above white raised to this power.
-    if (l > 1.0) {
-        lin *= pow(l, max(pp.hdr_strength, 0.0) - 1.0);
+    float l_sdr = dot(lin_sdr, LUMA709);
+    vec3 t = lin;
+    // PsychoV30 (scene): the composite already tonemapped the scene to the peak; only encoded here.
+    if (pp.hdr_tonemapper != 3u) {
+        float l = dot(lin, LUMA709);
+        // Strength: the luminance above white raised to this power.
+        if (l > 1.0) {
+            lin *= pow(l, max(pp.hdr_strength, 0.0) - 1.0);
+        }
+        float y = clamp((l_sdr - 0.45) / 0.55, 0.0, 1.0);
+        lin *= 1.0 + clamp(pp.hdr_boost, 0.0, 1.0) * (peak - 1.0) * y * y * y;
+        t = tonemap_scene(grade_scene(max(lin, 0.0), peak), peak);
     }
-    float y = clamp((l_sdr - 0.45) / 0.55, 0.0, 1.0);
-    lin *= 1.0 + clamp(pp.hdr_boost, 0.0, 1.0) * (peak - 1.0) * y * y * y;
-    vec3 t = tonemap_scene(grade_scene(max(lin, 0.0), peak), peak);
     vec3 nits = min(max(bt709_to_bt2020(t), 0.0) * pp.hdr_paper_white, vec3(pp.hdr_peak_nits));
     // The HUD: the pixels the UI changed since the scene's snapshot (bound as hdrChannel in
     // mode 5), shown as the game's SDR at the HUD brightness. The game's brightness curve comes
