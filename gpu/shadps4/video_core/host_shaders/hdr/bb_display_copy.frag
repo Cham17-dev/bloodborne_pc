@@ -27,16 +27,18 @@ layout(push_constant, std430) uniform AuxData {
 } push_data;
 
 layout(set = 0, binding = 0) uniform texture2D fs_img0;
-layout(set = 0, binding = 1) uniform texture1DArray fs_img1;
+// The brightness table (one row per channel): a 1D array image, which shadPS4 0.20.1 binds as a
+// 2D array view of height 1 (sampled at y 0, as the recompiled shader does).
+layout(set = 0, binding = 1) uniform texture2DArray fs_img1;
 layout(set = 0, binding = 2) uniform sampler fs_samp0;
 
 layout(location = 0) out vec4 frag_color0;
 
 float brightness(float v, float row) {
     if (v <= 1.0) {
-        return texture(sampler1DArray(fs_img1, fs_samp0), vec2(v, row)).x;
+        return texture(sampler2DArray(fs_img1, fs_samp0), vec3(v, 0.0, row)).x;
     }
-    return texture(sampler1DArray(fs_img1, fs_samp0), vec2(1.0, row)).x * v;
+    return texture(sampler2DArray(fs_img1, fs_samp0), vec3(1.0, 0.0, row)).x * v;
 }
 
 void main() {
