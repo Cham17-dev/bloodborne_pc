@@ -46,8 +46,18 @@ Réglages en direct dans le menu (Insert), enregistrés dans `bbport.ini`. Compi
 upscaler. Outils de diagnostic du mode 5 dans le menu HDR : sondes « 16-bit probe » 1–5 et bouton « Log the
 16-bit chain (one frame) » (lignes `HDR trace:` dans `user/last_run.log`). Captures JXR : `docs/hdr-tools/jxr_nits.py`.
 
-**À tester (dernier commit `e3acaf4`) :** Highlight range (mode 5) dans le Rêve du chasseur, lune à 30–40 % ; le
-mode 5 en sortie 1080p (`UiComposed`) ; Black floor dans une zone très sombre ; Highlight strength en 16 bits.
+**Tests du 18/10 (build `b1aea36`, mode 5, PsychoV30, JXR) :**
+- **Black floor 0,4** : marche (pixels les plus sombres 0,7 → 0,3 nit, minimum 0).
+- **Highlight strength 1 → 2** : marche (lune du Rêve, max 259 → 485 nits).
+- **Highlight range** : marche (sonde 1, lune du Rêve : genou 60 → quelques taches, 30 → presque toute la lune et
+  l'horizon) mais **moins de HDR à 10 qu'à 30** : la courbe exp du jeu (variante `5e67d866`) a un pied convexe ;
+  un genou dans le pied prolonge une pente plus faible que la courbe, et `max(t, courbe du jeu)` rend le SDR.
+  Corrigé : le genou ne descend plus sous la fin du pied (`bb_toe_end()`, sortie où la pente est maximale).
+  **À vérifier** : sonde 1, genou 10 au moins autant de vert que 30.
+- **1080p** : mode 5 **inactif** (« not active here », aucune cible RGBA16F). La note du 17/10 était fausse :
+  `SceneResolution::Size{}` vaut 1920x1080, donc en 1080p sans upscaler `Reduced()` est faux, aucun proxy, pas de
+  chaîne 16 bits. Il faudrait des proxys à l'échelle 1 en mode 5 (`Reduced()` utilisé aussi par l'upscaler et la
+  composition de l'interface : à faire avec soin).
 
 **Ensuite :** noirs du HDR un peu au-dessus du SDR du jeu (0,34 contre 0,09 nit sur les pixels les plus sombres,
 suspect : tonemapper/étalonnage de la passe finale) ; glow final `8c08444c` réglable ; Vignette (aucune scène vue
@@ -93,7 +103,7 @@ luminosité du jeu appliquée après), affichés en SDR à la luminosité HUD (r
 de 1). **Bloom** — la passe delta du composite vise le composite avec son glow multiplié par le curseur (poussé
 dans `ud_regs3.w` pour ce draw) et peut donc retirer de la lumière (sortie signée). Le glow ajouté après
 (`8c08444c`) n'est pas encore réglable.
-**1080p** : les proxys existent aussi en 1080p (taille de scène 1920x1080, `Reduced()` vrai), mais l'interface
+**1080p** (faux, voir les tests du 18/10) : les proxys existent aussi en 1080p (taille de scène 1920x1080, `Reduced()` vrai), mais l'interface
 n'était composée à la taille de sortie que pour une sortie ≠ 1080p (`Scaled()`), donc pas d'image UI ni d'image
 d'affichage 16 bits. `UiComposed()` = `Scaled()` ou (mode 5 sans upscaler actif) remplace `Scaled()` pour la
 composition de l'interface (`OnDraw`). Non testé en jeu au moment du commit.

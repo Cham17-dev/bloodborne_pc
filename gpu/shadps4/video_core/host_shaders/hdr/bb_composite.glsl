@@ -199,9 +199,32 @@ float bb_neutwo(float x, float p) {
     return p * inversesqrt(1.0 + r * r);
 }
 
+// The exp curve with a toe (curve 0, c > 0: y (c (y - 1) + 1)^2, y = 1 - e^-kv) is convex at
+// first: a knee there continues a slope lower than the curve's own, so the HDR curve falls back to
+// the game's (less HDR at 10 % than at 30 % in the Hunter's Dream, 18/10). The output where its
+// slope (g'(y) (1 - y)) is steepest, the lowest knee that adds light; 0 without a toe.
+float bb_toe_end() {
+    float c = bb_c(833u);
+    float best_y = 0.0, best_h = 0.0;
+    for (int i = 0; i < 32; ++i) {
+        float y = float(i) / 32.0;
+        float a = c * y - c + 1.0;
+        float h = (a * a + 2.0 * c * y * a) * (1.0 - y);
+        if (h > best_h) {
+            best_h = h;
+            best_y = y;
+        }
+    }
+    float a = c * best_y - c + 1.0;
+    return best_y * a * a;
+}
+
 // The HDR curve: the game's below the knee, a Neutwo shoulder of the same slope above, rising to
 // `peak` (in units of the game's white). Returns false where the curve has no knee (no HDR).
 bool bb_curve_hdr(BbComposite o, vec3 x, float knee, float peak, out vec3 t) {
+    if (o.curve == 0) {
+        knee = max(knee, bb_toe_end());
+    }
     float kv, ks;
     if (!bb_knee(o.curve, knee, kv, ks)) {
         t = bb_curve(o, x);
