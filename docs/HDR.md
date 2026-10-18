@@ -35,7 +35,26 @@ Le journal (`user\last_run.log`, lignes GPU au niveau info : `BB_GPU_LOG=info`, 
 depuis hdr-22 quand un mode « HDR tonemap » est choisi) contient `HDR output: on, HDR10 swapchain` quand la sortie HDR est active,
 ou `HDR output: off, the display offers no HDR10 format` quand l'écran ne propose pas le HDR10.
 
-## Reprendre le projet (point au 17/10, fin de matinée)
+## Reprendre le projet (point au 18/10)
+
+**Résumé en une minute.** Deux modes HDR, choisis dans le launcher (« HDR tonemap ») : **4 « all areas »** (canal
+HDR à côté de la chaîne du jeu, marche partout y compris en 1080p) et **5 « 16-bit »** (la chaîne du jeu après son
+composite en RGBA16F, validé le 17/10 : soleil de Yharnam ~860 nits avec détails, HUD brightness et Bloom réglables).
+Réglages en direct dans le menu (Insert), enregistrés dans `bbport.ini`. Compilation locale MSYS2 CLANG64 dans
+`E:\bloodborne_pc` (`bash build.sh && bash packaging/windows/package.sh`, copier `out\stage\bbport-windows` sur
+`E:\Bloodborne\hdr`, le launcher affiche « local <commit> »). Écran de test : QD-OLED 1000 nits, 4K, sans
+upscaler. Outils de diagnostic du mode 5 dans le menu HDR : sondes « 16-bit probe » 1–5 et bouton « Log the
+16-bit chain (one frame) » (lignes `HDR trace:` dans `user/last_run.log`). Captures JXR : `docs/hdr-tools/jxr_nits.py`.
+
+**À tester (dernier commit `e3acaf4`) :** Highlight range (mode 5) dans le Rêve du chasseur, lune à 30–40 % ; le
+mode 5 en sortie 1080p (`UiComposed`) ; Black floor dans une zone très sombre ; Highlight strength en 16 bits.
+
+**Ensuite :** noirs du HDR un peu au-dessus du SDR du jeu (0,34 contre 0,09 nit sur les pixels les plus sombres,
+suspect : tonemapper/étalonnage de la passe finale) ; glow final `8c08444c` réglable ; Vignette (aucune scène vue
+n'en a) ; Scene grading et Highlight range en mode 4 ; grain ; variantes de composite non couvertes ; franges
+colorées en 4K (bug du port, hors HDR).
+
+## Point du 17/10, fin de matinée
 
 **État.** Le mode 4 (« bbport HDR, all areas », build hdr-32, sauvegarde `hdr-30-stable` pour hdr-30) est le mode
 qui marche : réglages en direct dans le menu (Insert), soleil de Yharnam ~860 nits avec ses détails (mieux que le
