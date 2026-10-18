@@ -93,7 +93,9 @@ incompatibilités du moteur 0.20.1 corrigées :
   2D en tableau : `bb_display_copy.frag` la lit en `texture2DArray` (écran noir en mode 5 avant `2eec019`).
 **Validé en jeu (build local `2eec019`, mode 5, 4K, soleil de Yharnam)** : 862 nits comme en 1.7.8 ; Bloom 0
 (p90 25,8 → 17,8 nits), Highlight range 10 (p99 693 → 749), Scene grading 0, sonde 1 et FSR 3.1 (857 nits)
-fonctionnent. Paquet CI avec DLSS : `bbport-windows-hdr-merge-1.9.1-60`. **À tester** : DLSS, 1080p, mode 4.
+fonctionnent. Paquet CI avec DLSS : `bbport-windows-hdr-merge-1.9.1-60`. **DLSS validé** (ce paquet, RTX 4090,
+DLSS Quality 2560x1440 → 4K, « HDR input ») : soleil 854 nits contre 862 sans upscaler, image et HUD
+normaux. **À tester** : 1080p, mode 4 ; génération d'images en HDR (coupée par Supermedo).
 
 **Ensuite :** noirs du mode 4 à mesurer de la même façon si besoin ; Vignette (aucune scène vue
 n'en a) ; Scene grading et Highlight range en mode 4 ; grain ; variantes de composite non couvertes ; franges
