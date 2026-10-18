@@ -77,6 +77,23 @@ upscaler. Outils de diagnostic du mode 5 dans le menu HDR : sondes « 16-bit pro
   FSR 3/FSR 4/DLSS/TAA, FSR 3 en entrée HDR avec sortie RGBA16F, copie de la scène pour HUD brightness
   (`SnapshotScene`) aussi sur ce chemin.
 - Réglages du menu : enregistrés une seconde après le dernier changement, même menu ouvert (`1d088cf`).
+- **CI avec DLSS** (`372d761`) : le workflow Windows récupère le SDK public de NVIDIA et compile
+  `bbport_dlss.dll` avec le Visual Studio du runner (VS 18 2026 le 18/10, générateur choisi par vswhere) ;
+  étape facultative, erreurs en annotations publiques.
+
+**Fusion de Supermedo 1.9.1 (branche `hdr-merge-1.9.1`, 18/10).** 47 commits (génération d'images FSR 3.1 /
+DLSS FG, shadPS4 0.20.1, FOV, clavier-souris, en ligne via le serveur d'Awaken). 8 conflits réglés en
+gardant les deux côtés ; le presenter compose en RGBA8 pour la génération d'images mais en HDR10 avec la
+sortie HDR (`FrameFormat`), la génération d'images restant coupée en HDR (choix de Supermedo). Deux
+incompatibilités du moteur 0.20.1 corrigées :
+- plus de registres `ud_regs` dans `PushData` : les valeurs de nos shaders passent par un membre à nous
+  (`bb_hdr`, offset 80), et les shaders `hdr/*.frag` déclarent le bloc aux offsets explicites
+  (`static_assert` dans `vk_rasterizer.cpp`) ;
+- la table de luminosité de la copie d'affichage (`38d65b32`, image 1D en tableau) est liée comme vue
+  2D en tableau : `bb_display_copy.frag` la lit en `texture2DArray` (écran noir en mode 5 avant `2eec019`).
+**Validé en jeu (build local `2eec019`, mode 5, 4K, soleil de Yharnam)** : 862 nits comme en 1.7.8 ; Bloom 0
+(p90 25,8 → 17,8 nits), Highlight range 10 (p99 693 → 749), Scene grading 0, sonde 1 et FSR 3.1 (857 nits)
+fonctionnent. Paquet CI avec DLSS : `bbport-windows-hdr-merge-1.9.1-60`. **À tester** : DLSS, 1080p, mode 4.
 
 **Ensuite :** noirs du mode 4 à mesurer de la même façon si besoin ; Vignette (aucune scène vue
 n'en a) ; Scene grading et Highlight range en mode 4 ; grain ; variantes de composite non couvertes ; franges
