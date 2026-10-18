@@ -1413,7 +1413,11 @@ bool TemporalUpscaler::Scaled() const {
 }
 
 bool TemporalUpscaler::UiComposed() const {
-    return Scaled() || (HdrChannel::Native16() && !Active());
+    // bbport HDR, mode 5: the UI is composed at the output size at 1080p too, with or without an
+    // upscaler. The upscaler then scales the finished 16-bit frame (RunScaled, as above 1080p):
+    // run on the scene color before the composite (the 1080p path), it ended the scene there and
+    // the chain after it drew into the 8-bit images (no HDR at 1080p with DLSS or FSR).
+    return Scaled() || HdrChannel::Native16();
 }
 
 void TemporalUpscaler::OnColorTarget(VideoCore::ImageId color) {

@@ -378,6 +378,15 @@ def migrate_hdr_settings(app, ini, lines):
             ini[key] = str(app[key]).strip()
 
 
+def ini_text(key, value):
+    """A launcher widget's value as bbport.ini writes it."""
+    if key in INI_FLAGS:
+        return '1' if value else '0'
+    if key == 'sharpness':
+        return f'{float(value):.2f}'
+    return str(value)
+
+
 def save_ini(values, lines):
     """Rewrites the edited keys in place, appends missing ones, keeps comments and other keys."""
     written, out = set(), []
@@ -636,6 +645,8 @@ class Launcher:
         self.app = {**APP_DEFAULTS, **load_json(CONFIG_FILE, {})}
         self.ini, self.ini_lines = load_ini()
         migrate_hdr_settings(self.app, self.ini, self.ini_lines)
+        # bbport.ini values as the launcher's widgets last took them from the file (collect()).
+        self.ini_shown = {}
         self.remap_ini_path = input_ini_path(ini_path())
         self.remap_bindings, self.remap_lines, self.remap_toggle_key, self.remap_reload_key, \
             self.mouse_settings = load_input_ini(self.remap_ini_path)
@@ -780,6 +791,8 @@ class Launcher:
                     v = tk.StringVar(value=str(value))
             v.store = store
             self.vars[key] = v
+            if store == 'ini':
+                self.ini_shown[key] = ini_text(key, v.get())
         return self.vars[key]
 
     def choice(self, parent, key, store, options, width=38, custom=None):
@@ -2186,19 +2199,34 @@ class Launcher:
 
     def collect(self):
         """Writes settings.json, bbport.ini, mods.json and patches.json."""
+        # bbport.ini as it is now: the in-game menu saves to it while the launcher stays open. A
+        # key takes the launcher's value only where it was changed in the launcher (or is not in
+        # the file yet); elsewhere the file's value stays (the game's last choices are no longer
+        # put back by the launcher's older copy), and the widget shows it from now on.
+        current, lines = load_ini()
+        present = {line.split('=', 1)[0].strip() for line in lines if '=' in line}
         for key, var in self.vars.items():
             try:
                 value = var.get()
             except self.tk.TclError:  # an unfinished number in a spinbox
                 value = APP_DEFAULTS.get(key, INI_DEFAULTS.get(key))
             if var.store == 'ini':
-                self.ini[key] = ('1' if value else '0') if key in INI_FLAGS else \
-                    f'{float(value):.2f}' if key == 'sharpness' else str(value)
+                text = ini_text(key, value)
+                if text != self.ini_shown.get(key) or key not in present:
+                    current[key] = text
+                elif current.get(key) is not None and current[key] != text:
+                    file_value = current[key]
+                    var.set(file_value == '1' if key in INI_FLAGS else
+                            float(file_value or 0.5) if key == 'sharpness' else file_value)
+                self.ini_shown[key] = current.get(key, text)
             else:
                 self.app[key] = value
+        for key in ('hdr_paper_white', 'hdr_peak_nits', 'hdr_tonemapper'):  # migrated ones
+            if key not in present and key in self.ini:
+                current[key] = self.ini[key]
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         CONFIG_FILE.write_text(json.dumps(self.app, indent=2, ensure_ascii=False), encoding='utf-8')
-        save_ini({key: self.ini[key] for key in INI_DEFAULTS}, self.ini_lines)
+        save_ini({key: current[key] for key in INI_DEFAULTS if key in current}, lines)
         self.ini, self.ini_lines = load_ini()
         if self.remap_edits:
             save_input_ini(self.remap_ini_path, {key: [v for v in values if v]
