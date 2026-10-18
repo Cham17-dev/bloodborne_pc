@@ -339,9 +339,17 @@ void HdrSection(BbSettings::Values& s) {
     const int preset = std::clamp(s.hdr_preset.load(), 0, BbSettings::HdrPresetCount - 1);
     int preset_slider = preset;
     // "##hdr": the upscaler's Preset above has the same label (same ImGui ID otherwise).
-    if (ImGui::SliderInt("Preset##hdr", &preset_slider, 0, BbSettings::HdrPresetCount - 1,
-                         presets[preset], ImGuiSliderFlags_AlwaysClamp) &&
-        preset_slider != preset) {
+    ImGui::PushID("hdr_preset");
+    bool preset_changed = ImGui::SliderInt("Preset##hdr", &preset_slider, 0,
+                                           BbSettings::HdrPresetCount - 1, presets[preset],
+                                           ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SameLine();
+    if (ResetIcon(preset == 1)) { // back to Preset #1, the first one in use
+        preset_slider = 1;
+        preset_changed = true;
+    }
+    ImGui::PopID();
+    if (preset_changed && preset_slider != preset) {
         BbSettings::SelectHdrPreset(preset_slider);
         MarkDirty();
     }
@@ -350,9 +358,16 @@ void HdrSection(BbSettings::Values& s) {
     static constexpr const char* modes[] = {"Simple", "Intermediate", "Advanced"};
     const int level = std::clamp(s.hdr_settings_mode.load(), 0, 2);
     int level_slider = level;
-    if (ImGui::SliderInt("Settings Mode", &level_slider, 0, 2, modes[level],
-                         ImGuiSliderFlags_AlwaysClamp) &&
-        level_slider != level) {
+    ImGui::PushID("hdr_settings_mode");
+    bool level_changed = ImGui::SliderInt("Settings Mode", &level_slider, 0, 2, modes[level],
+                                          ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SameLine();
+    if (ResetIcon(level == 0)) { // back to Simple
+        level_slider = 0;
+        level_changed = true;
+    }
+    ImGui::PopID();
+    if (level_changed && level_slider != level) {
         Store(s.hdr_settings_mode, level_slider, true);
     }
 
@@ -456,19 +471,20 @@ void HdrSection(BbSettings::Values& s) {
         ImGui::SeparatorText("Debug");
         static constexpr const char* compares[] = {"HDR", "SDR (the game's image)",
                                                    "Split: SDR left | HDR right"};
-        s.hdr_compare = ComboIndex("Compare", s.hdr_compare, compares);
+        s.hdr_compare = ComboIndex("Compare", s.hdr_compare, compares, 0);
         Hint("F9 switches it with the menu closed. Not saved.");
         static constexpr const char* debug_views[] = {"Off", "Highlight gain as colors",
                                                       "Pixels taken as UI in red"};
-        s.hdr_debug = ComboIndex("Debug view", s.hdr_debug, debug_views);
+        s.hdr_debug = ComboIndex("Debug view", s.hdr_debug, debug_views, 0);
         if (s.hdr_mode == 5) {
             static constexpr const char* decodes[] = {"Auto", "Linear", "sRGB signal"};
-            s.hdr_native16_decode = ComboIndex("16-bit decoding", s.hdr_native16_decode, decodes);
+            s.hdr_native16_decode =
+                ComboIndex("16-bit decoding", s.hdr_native16_decode, decodes, 0);
             static constexpr const char* probes[] = {
                 "Off", "1. Composite: HDR part", "2. Final image above white",
                 "3. Color grading input above white", "4. Color grading area",
                 "5. Copy above white"};
-            s.hdr_native16_probe = ComboIndex("16-bit probe", s.hdr_native16_probe, probes);
+            s.hdr_native16_probe = ComboIndex("16-bit probe", s.hdr_native16_probe, probes, 0);
             Hint("1, green where the composite gets light above white; 2, magenta where the image reaching the screen is above white; 3, magenta where the color grading reads above white (cyan: exactly white); 4, green where it draws; 5, magenta where the copies are above white. Not saved.");
             if (ImGui::Button("Log the 16-bit chain (one frame)")) {
                 s.hdr_chain_trace = true;
