@@ -96,6 +96,33 @@ incompatibilités du moteur 0.20.1 corrigées :
 fonctionnent. Paquet CI avec DLSS : `bbport-windows-hdr-merge-1.9.1-60`. **DLSS validé** (ce paquet, RTX 4090,
 DLSS Quality 2560x1440 → 4K, « HDR input ») : soleil 854 nits contre 862 sans upscaler, image et HUD
 normaux. **À tester** : 1080p, mode 4 ; génération d'images en HDR (coupée par Supermedo).
+Fusion devenue la branche `hdr` (avance rapide jusqu'à `c022624`, 18/10) ; travail dans le worktree
+`E:\bloodborne_pc_merge`.
+- **1080p avec DLSS ou FSR** (`c022624`, validé : 857 / 849 / 857 nits sans upscaler / DLSS / FSR 3.1,
+  203 avant) : en mode 5 l'interface est toujours composée à la taille de sortie (`UiComposed()` =
+  `Scaled() || Native16()`), l'upscaler agrandit l'image 16 bits finie (`RunScaled`) au lieu de passer
+  avant le composite.
+- **Launcher** (`c022624`, validé) : Jouer réécrivait `bbport.ini` depuis la copie lue au clic précédent
+  (réglages du menu en jeu perdus tant que le launcher restait ouvert, bug d'origine Supermedo) ; `collect()`
+  repart du fichier et n'écrit que les réglages changés dans le launcher.
+
+**Menu façon RenoDX (`21febe9` → `4b5c8bd`, validé en jeu le 18/10)**, d'après le mod FromSoftware de RenoDX
+(`src/games/fromsoft_engine/addon.cpp`, `src/utils/settings.hpp`) :
+- **Preset** (curseur) : Off = rendu du jeu (tone mapper Vanilla, 203 nits, Black Floor 0) ; #1 à #3 = réglages
+  du joueur, `hdr_preset1..3` dans `bbport.ini` (« clé=valeur;… »), `hdr_preset` le choix ; un `bbport.ini`
+  d'avant devient le Preset #1. Le preset sélectionné reçoit les changements (`Save`), `SelectHdrPreset`
+  range l'ancien et charge le nouveau (défauts s'il n'a jamais servi).
+- **Settings Mode** (curseur) : Simple / Intermediate / Advanced (réglages bbport Highlight Strength / Range /
+  Boost et section Debug en Advanced).
+- Sections Tone Mapping (Tone Mapper Vanilla / Neutwo / PsychoV30 — `hdr_tonemapper` 2 / 0 / 1 —, Peak, Game
+  Brightness, UI Brightness, Gamma Correction, Scaling), Color Grading (Color Grade Strength, Black Floor),
+  Effects, Reset all, About. Presets Game / Balanced / Vivid / SDR look supprimés (inventés, pas RenoDX).
+- Launcher allégé : HDR output, HDR mode (Off / bbport HDR / all areas ; modes de test 1-3 retirés de la liste)
+  et diagnostic ; le reste est dans le menu en jeu.
+- Libellé « Preset » en double avec celui de l'upscaler : ID ImGui distinct (`Preset##hdr`).
+
+**Prochaines étapes RenoDX :** UI Visibility (cacher le HUD), Flare et Hue Emulation (tonemappers RenoDX),
+Chromatic Aberration en direct, grain, puis fiabilité du mode 5 dans toutes les zones, génération d'images en HDR.
 
 **Ensuite :** noirs du mode 4 à mesurer de la même façon si besoin ; Vignette (aucune scène vue
 n'en a) ; Scene grading et Highlight range en mode 4 ; grain ; variantes de composite non couvertes ; franges
