@@ -34,6 +34,9 @@ https://nativeretro.com/
   physics, the Japanese/Asian button layout with Circle to confirm and Cross to dodge).
 - **Game effects** on and off: chromatic aberration, depth of field, motion blur, SSAO, the
   game's own AA, dynamic light shadows, screen-space reflections, model detail.
+- **Field of view** from 30 to 90 degrees (the game has 43), for every camera of the game.
+- **Mute in the background:** optionally silent while the game window is not in focus; the
+  mouse is released then too.
 - **Mods and third-party patches**, loaded without changing your game files.
 - **DLC** from your own dump (The Old Hunters on base-game dumps), with a DLC folder setting.
 - **Add to Steam** puts the game in your Steam library in one click.
@@ -41,8 +44,9 @@ https://nativeretro.com/
   desktop shortcut).
 - **Controller and keyboard**, an in-game settings menu (Insert or L3+R3), name entry on
   screen, a desktop shortcut, and a button to clear the shader cache.
-- **Keyboard and mouse:** remap keys and buttons on the Controls page, mouse look, and an
-  optional direct 1:1 mouse camera ([docs/INPUT.md](docs/INPUT.md)).
+- **Keyboard and mouse:** remap keys and buttons on the Controls page (up to three per action), key combinations such as
+  Shift + left click, a Dark Souls III layout, mouse look, and a direct 1:1 mouse camera
+  ([docs/INPUT.md](docs/INPUT.md)).
 - **Text and voice language** chosen separately, Brazilian Portuguese text included.
 - **Achievements page** in the launcher with the trophies you have earned, updated live.
 
@@ -121,8 +125,7 @@ Crashes on AMD RDNA2 cards, slow FSR 4 and online errors are collected in
 
 See [packaging/windows/README.md](packaging/windows/README.md): MSYS2 CLANG64, `bash build.sh`,
 then `bash packaging/windows/package.sh`. DLSS is built separately with
-`packaging/windows/build_dlss.sh`, bbbridge with `packaging/windows/build_bbbridge.sh` (both need
-Visual Studio 2022).
+`packaging/windows/build_dlss.sh` (needs Visual Studio 2022).
 
 ## Credits
 
@@ -130,13 +133,14 @@ Built on [bbport](https://github.com/deadinside28/bloodborne_pc), the native Lin
 Bloodborne by deadinside28, and on the [shadPS4](https://github.com/shadps4-emu/shadPS4)
 renderer. The original README is in [docs/original-readme](docs/original-readme/README.md).
 
-Online play uses the network and PSN code of [shadp2p](https://github.com/Wozzardman/shadp2p)
-by Wozzardman (the shadPS4 Bloodborne co-op project), the shadNet server of the
-[shadPS4](https://shadps4.net) team, and [The Hunter's Dream](https://thehuntersdream.com) server
-by droogie and its team. The Hunter's Dream co-op pool goes through
-[bbbridge](https://github.com/MaskZeus/bbbridge-bbport-online-tool) by MaskZeus (GPL-3.0-or-later,
-its source in [bbbridge/](bbbridge)), built on the protocol of
-[bbhost](https://github.com/droogie/bbhost) by droogie.
+Online play uses the network, NP and shadNet code of [shadPS4](https://github.com/shadps4-emu/shadPS4)
+0.20 and the shadNet server of the [shadPS4](https://shadps4.net) team, put together for this port
+by **Awaken** ([BloodBorneButPc](https://github.com/Awakenchan/BloodBorneButPc)), whose online code
+bbport now uses, including the backend for [The Hunter's Dream](https://thehuntersdream.com)
+adapted from [bbhost](https://github.com/droogie/bbhost) by droogie (GPL-3.0-or-later; see
+[gpu/bbnet/SHADNET-PORT.md](gpu/bbnet/SHADNET-PORT.md)). Thanks to Metr1k and The Hunter's Dream
+team for their guidance, and to Wozzardman's [shadp2p](https://github.com/Wozzardman/shadp2p),
+which bbport's first online version was built on.
 
 Also used: [FSR-Vulkan](https://github.com/FireBurn/FSR-Vulkan) and the AMD FidelityFX SDK
 (FSR), FSR 4 assets from [FireBurn/Q2RTX](https://github.com/FireBurn/Q2RTX), the DLSS bridge

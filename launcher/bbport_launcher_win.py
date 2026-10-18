@@ -40,7 +40,7 @@ PATCH_VERSION = '01.09'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # This build; GitHub release tags are windows-v<VERSION>.
-VERSION = '1.7.8'
+VERSION = '1.9.1'
 
 
 def build_name():
@@ -140,9 +140,11 @@ def run_command():
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bbport_lang  # noqa: E402
 import bbport_trophies as trophies  # noqa: E402
-from bbport_input_config import (KEYBOARD_OUTPUTS, BUTTON_OUTPUTS, STICK_OUTPUTS, OUTPUT_LABELS, keysym_to_name,
+from bbport_input_config import (STICK_OUTPUTS, OUTPUT_LABELS, ACTION_GROUPS, SLOTS, keysym_to_name,
                                   button_num_to_name, input_ini_path, load_input_ini, reserved_keys,
-                                  save_input_ini, save_mouse_settings, wheel_to_name)  # noqa: E402
+                                  save_input_ini, save_mouse_settings, wheel_to_name, MAX_COMBO,
+                                  MODIFIER_NAMES, apply_layout, slot_conflicts, binding_parts,
+                                  display_name)  # noqa: E402
 
 LANG = 'en'
 
@@ -206,10 +208,13 @@ TWEAKS = [
     ('quit_to_desktop', ('Quit to Desktop in the title menu and in the System menu',
                          'Пункт «Выйти на рабочий стол» в главном меню и в меню «Система»'), True),
 ]
-INI_FLAGS = {'sharpen', 'object_motion', 'show_fps', *(k for k, _t, _o in EFFECTS + EXTRAS + CHEATS + TWEAKS)}
+INI_FLAGS = {'sharpen', 'object_motion', 'show_fps', 'mute_unfocused', 'frame_gen_fit_display',
+             *(k for k, _t, _o in EFFECTS + EXTRAS + CHEATS + TWEAKS)}
 INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': '0.50',
                 'object_motion': '1', 'show_fps': '1', 'output_res': '1920x1080', 'model_lod': '0',
-                'live_resolution': 'auto', 'hud_position': '100',
+                'live_resolution': 'auto', 'hud_position': '100', 'fov': '43', 'mute_unfocused': '0',
+                'button_prompts': 'auto',
+                'frame_gen': 'off', 'frame_gen_multiplier': '2', 'frame_gen_fit_display': '0',
                 'hdr_paper_white': '203', 'hdr_peak_nits': '1000', 'hdr_strength': '1.00', 'hdr_boost': '0.00',
                 'hdr_tonemapper': '0',
                 **{key: '1' if on else '0' for key, _t, on in EFFECTS + EXTRAS + CHEATS + TWEAKS}}
@@ -222,8 +227,8 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / 'CUSA03173'
                 'vk_validation': False, 'extra_env': '', 'close_on_play': False,
                 'check_updates': True, 'online': False, 'online_server': 'srv.shadps4.net:31313',
                 'online_webapi': '', 'online_npid': '', 'online_password': '', 'online_upnp': True,
-                'online_community': COMMUNITY_SERVER, 'online_pool': 'shadnet', 'bridge_live_map': True,
-                'supermedo_user': '', 'supermedo_password': ''}
+                'online_community': COMMUNITY_SERVER, 'online_pool': 'shadnet', 'bridge_live_map': False,
+                'supermedo_user': '', 'supermedo_password': '', 'thd_online_id': '', 'thd_token': ''}
 # bbbridge's own app reads and writes the online_* keys above: keep their names.
 
 UPSCALERS = [('dlss', ('DLSS (NVIDIA GeForce RTX)',)),
@@ -232,6 +237,14 @@ UPSCALERS = [('dlss', ('DLSS (NVIDIA GeForce RTX)',)),
              ('fsr3', ('FSR 3.1 (every GPU)', 'FSR 3.1 (любая видеокарта)')),
              ('taa', ('TAA (native resolution anti-aliasing)', 'TAA (нативное сглаживание)')),
              ('off', ('Off', 'Выключен'))]
+# Frames generated between two of the game's (vk_frame_generation.cpp).
+FRAME_GENERATION = [('off', ('Off', 'Выключена')),
+                    ('fsr3', ('AMD FSR 3.1 Frame Generation (any GPU)', 'AMD FSR 3.1 (любая видеокарта)')),
+                    ('dlss', ('NVIDIA DLSS Frame Generation (GeForce RTX 40/50)',
+                              'NVIDIA DLSS (GeForce RTX 40/50)'))]
+FRAME_GEN_MULTIPLIERS = [('2', ('2× (one generated frame)', '2× (один кадр)')),
+                         ('3', ('3× (DLSS on GeForce RTX 50)', '3× (DLSS на GeForce RTX 50)')),
+                         ('4', ('4× (DLSS on GeForce RTX 50)', '4× (DLSS на GeForce RTX 50)'))]
 PRESETS = [('0', ('Native AA (×1.0)',)), ('1', ('Quality (×1.5)',)), ('2', ('Balanced (×1.7)',)),
            ('3', ('Performance (×2)',)), ('4', ('Ultra Performance (×3)',))]
 OUTPUTS = [('1280x720', ('1280 × 720 (Steam Deck)',)), ('1920x1080', ('1920 × 1080',)),
@@ -239,6 +252,20 @@ OUTPUTS = [('1280x720', ('1280 × 720 (Steam Deck)',)), ('1920x1080', ('1920 × 
            ('2560x1080', ('2560 × 1080 (21:9)',)), ('3440x1440', ('3440 × 1440 (21:9)',)),
            ('3840x1600', ('3840 × 1600 (21:9)',)), ('5120x2160', ('5120 × 2160 (21:9)',)),
            ('3840x1080', ('3840 × 1080 (32:9)',)), ('5120x1440', ('5120 × 1440 (32:9)',))]
+# Vertical field of view in degrees (scripts/fov.py; the game's camera has 43).
+FOVS = [('43', ('Game (43°)', 'Как в игре (43°)')), *((str(d), (f'{d}°',)) for d in (50, 55, 60, 65, 70, 75, 80, 90))]
+
+
+def fov_options(current):
+    """FOVS, with a value set in the game's menu (any degree from 30 to 90) kept as a choice."""
+    if current in (v for v, _t in FOVS) or not str(current).isdigit() or not 30 <= int(current) <= 90:
+        return FOVS
+    return sorted([*FOVS, (current, (f'{current}°',))], key=lambda o: int(o[0]))
+# The game's button icons (gpu/shim/bbport_prompts.cpp): with the device in use, or always one kind.
+PROMPT_MODES = [('auto', ('Follow the device in use', 'По используемому устройству')),
+                ('playstation', ('PlayStation', 'PlayStation')),
+                ('keyboard', ('Keyboard and mouse', 'Клавиатура и мышь')),
+                ('xbox', ('Xbox', 'Xbox')), ('switch', ('Nintendo Switch', 'Nintendo Switch'))]
 HUD_POSITIONS = [('100', ('Screen edges', 'У краёв экрана')), ('75', ('75%',)), ('50', ('Halfway', 'Посередине')),
                  ('25', ('25%',)), ('0', ('Centred (16:9)', 'По центру (16:9)'))]
 LIVE = [('auto', ('Auto (by graphics card)', 'Авто (по видеокарте)')), ('0', ('Off (faster)', 'Выключена (быстрее)')),
@@ -431,49 +458,62 @@ def server_check(server, webapi, community):
     return '\n'.join(lines)
 
 
-# The Hunter's Dream co-op pool (with bbhost players): bbbridge (bbbridge/, by MaskZeus), which
-# run.py starts with the game. Its account (Discord sign-in) stays in <saves>/bbbridge.
-BRIDGE_PAGE = 'https://github.com/MaskZeus/bbbridge-bbport-online-tool'
-# The Hunter's Dream pool through bbbridge is off until it no longer troubles their server
-# (bad shadNet calls through the bridge); its code stays for when it is fixed with them.
-HUNTERS_DREAM_POOL = False
+# The Hunter's Dream pool: the engine's own backend for it (BB_NET_BACKEND=thd, bbhost's
+# protocol, from Awaken's port). BB_HUNTERS_DREAM=0 hides it.
+HUNTERS_DREAM_POOL = os.environ.get('BB_HUNTERS_DREAM', '1') != '0'
+
+
+def thd_call(url, body):
+    """A call to The Hunter's Dream's account service (bbhost's): its reply, or ValueError with
+    the server's reason."""
+    request = urllib.request.Request(url, data=json.dumps(body).encode(), method='POST',
+                                     headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            text = response.read()
+    except urllib.error.HTTPError as error:
+        text = error.read()
+    try:
+        reply = json.loads(text)
+    except ValueError:
+        reply = None
+    if not isinstance(reply, dict) or 'ResKind' not in reply:
+        raise ValueError(f'{url} has no account service')
+    if reply['ResKind'] != 0:
+        raise ValueError(reply.get('Message') or 'refused')
+    return reply
+
+
+def thd_sign_in(game_server, on_code):
+    """Discord sign-in the way bbhost does it: a code to approve on the website. on_code(page,
+    code) shows it. Returns (online id, token); raises ValueError."""
+    auth = community_address(game_server)
+    start = thd_call(auth + '/auth/device/start', {'DeviceName': f'bbport on {os.environ.get("COMPUTERNAME", "PC")}'})
+    device, user_code = start.get('DeviceCode', ''), start.get('UserCode', '')
+    if not device or not user_code:
+        raise ValueError('no code in the reply')
+    interval = max(1, int(start.get('Interval') or 5))
+    deadline = time.monotonic() + int(start.get('ExpiresIn') or 600)
+    on_code(start.get('VerificationUri') or auth + '/link', user_code)
+    while time.monotonic() < deadline:
+        time.sleep(interval)
+        poll = thd_call(auth + '/auth/device/poll', {'DeviceCode': device})
+        status = poll.get('Status')
+        if status == 'approved':
+            if not poll.get('OnlineId') or not poll.get('Token'):
+                raise ValueError('no token in the reply')
+            return poll['OnlineId'], poll['Token']
+        if status == 'slow_down':
+            interval += 5
+        elif status == 'denied':
+            raise ValueError('the sign-in was denied')
+        elif status == 'expired':
+            break
+    raise ValueError('the code expired; try again')
 # The SuperMedo Server co-op pool: a public shadNet server. Accounts are made at
 # SUPERMEDO_SIGNUP. The launcher shows the pool's name, not its address.
 SUPERMEDO_SERVER = 'www.supermedo.com:31313'
 SUPERMEDO_SIGNUP = 'https://www.supermedo.com'
-
-
-def bridge_cli():
-    for folder in (PORT_DIR / 'bin', PORT_DIR / 'out'):
-        if (folder / 'bbbridge-cli.exe').is_file():
-            return folder / 'bbbridge-cli.exe'
-    return None
-
-
-def bridge_folder(user_dir):
-    folder = Path(user_dir or DATA_DIR / 'user')
-    return (folder if folder.is_absolute() else PORT_DIR / folder) / 'bbbridge'
-
-
-def bridge_config(user_dir):
-    """<saves>/bbbridge and bbbridge's config there (the same files run.py uses)."""
-    folder = bridge_folder(user_dir)
-    folder.mkdir(parents=True, exist_ok=True)
-    config = folder / 'bbbridge_config.json'
-    data = load_json(config, {})
-    data = data if isinstance(data, dict) else {}
-    state = str(folder / 'bbbridge_state.json')
-    if data.get('state_file') != state:
-        data['state_file'] = state
-        config.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
-    return folder, config
-
-
-def bridge_accounts(user_dir):
-    """The Hunter's Dream ids signed in with Discord."""
-    state = load_json(bridge_folder(user_dir) / 'bbbridge_state.json', {})
-    accounts = state.get('accounts') if isinstance(state, dict) else None
-    return list(accounts) if isinstance(accounts, dict) else []
 
 
 def server_check_hunters_dream():
@@ -560,11 +600,17 @@ def game_environment(s):
             env['BB_SHADNET_NPID'] = str(s.get('supermedo_user', '')).strip()
             env['BB_SHADNET_PASSWORD'] = str(s.get('supermedo_password', ''))
         if s.get('online_pool') == 'huntersdream' and HUNTERS_DREAM_POOL:
-            # run.py starts bbbridge and signs the game in with the Hunter's Dream id.
-            env['BB_BRIDGE'] = '1'
+            # The engine's Hunter's Dream backend with the Discord-linked account (run.py sets
+            # the game server and the backend's addresses).
+            env['BB_NET_BACKEND'] = 'thd'
+            env['BB_THD_ONLINE_ID'] = str(s.get('thd_online_id', ''))
+            env['BB_THD_TOKEN'] = str(s.get('thd_token', ''))
             env['BB_BRIDGE_LIVE_MAP'] = '1' if s.get('bridge_live_map') else '0'
-            env['BB_SHADNET_NPID'] = ''
-            env['BB_SHADNET_PASSWORD'] = ''
+            for key in ('BB_SHADNET_SERVER', 'BB_SHADNET_WEBAPI', 'BB_SHADNET_NPID', 'BB_SHADNET_PASSWORD'):
+                env.pop(key, None)
+    # Which build a server sees (shadNet's client version, The Hunter's Dream's client field).
+    # The servers tell clients apart by this User-Agent: name/version (bbport/1.9.1).
+    env.setdefault('BB_CLIENT_VERSION', f'bbport/{VERSION}')
     env['PYTHONUNBUFFERED'] = '1'
     env['PYTHONIOENCODING'] = 'utf-8'
     return env
@@ -593,7 +639,7 @@ class Launcher:
         self.remap_ini_path = input_ini_path(ini_path())
         self.remap_bindings, self.remap_lines, self.remap_toggle_key, self.remap_reload_key, \
             self.mouse_settings = load_input_ini(self.remap_ini_path)
-        # {output: first-binding key name, or None once cleared}, edited by the remap page and
+        # {output: [binding or None per slot]}, edited by the remap page and
         # applied on top of self.remap_bindings in collect(); separate from it so re-opening the
         # Controls page after a cancelled edit shows what is actually on disk, not a half-edit.
         self.remap_edits = {}
@@ -701,6 +747,11 @@ class Launcher:
         s.configure('TSpinbox', foreground=TEXT, arrowcolor=GOLD, insertcolor=TEXT, padding=4)
         s.configure('TButton', background=CARD, foreground=TEXT, padding=(12, 6), borderwidth=1)
         s.map('TButton', background=[('active', LINE), ('disabled', PANEL)], foreground=[('disabled', MUTED)])
+        # The Controls page's binding slots; they stay as they are while another slot listens.
+        s.configure('Slot.TButton', background=CARD, foreground=TEXT, padding=(6, 5), font=('Segoe UI', 9))
+        s.map('Slot.TButton', background=[('active', LINE), ('disabled', CARD)], foreground=[('disabled', TEXT)])
+        s.configure('Listen.TButton', background=LINE, foreground=GOLD, padding=(6, 5), font=('Segoe UI', 9))
+        s.map('Listen.TButton', background=[('disabled', LINE)], foreground=[('disabled', GOLD)])
         s.configure('Play.TButton', background=BLOOD, foreground='#f4ece0', font=('Georgia', 15, 'bold'),
                     padding=(36, 10), borderwidth=0)
         s.map('Play.TButton', background=[('active', BLOOD_HI), ('disabled', '#3a2420')],
@@ -1024,6 +1075,26 @@ class Launcher:
         self.check(f, 'object_motion', 'ini', _('Object motion vectors', 'Векторы движения объектов'),
                    _('Less ghosting on characters, cloth and weapons; costs about 10% FPS.',
                      'Меньше гостинга на персонажах и одежде; стоит около 10% FPS.'))
+        self.section(f, _('Frame generation', 'Генерация кадров'))
+        self.row(f, _('Frame generation', 'Генерация кадров'),
+                 self.choice(f, 'frame_gen', 'ini', FRAME_GENERATION),
+                 _('Frames made between two of the game\'s: 60 FPS on screen becomes 120. Needs a display with '
+                   'that refresh rate (120 Hz or more at 60 FPS); it pauses when the display cannot show the extra '
+                   'frames. Adds a little input latency. Menus and movies are not generated. DLSS needs a GeForce '
+                   'RTX 40 or newer, otherwise FSR 3.1 is used.',
+                   'Кадры между двумя кадрами игры: 60 FPS на экране становятся 120. Нужен монитор с такой '
+                   'частотой (120 Гц и выше при 60 FPS); иначе генерация приостанавливается. Немного добавляет '
+                   'задержку ввода. Меню и ролики не генерируются. DLSS нужна GeForce RTX 40 или новее, иначе '
+                   'используется FSR 3.1.'))
+        self.row(f, _('Multiplier', 'Множитель'),
+                 self.choice(f, 'frame_gen_multiplier', 'ini', FRAME_GEN_MULTIPLIERS),
+                 _('FSR 3.1 makes one frame (2×); DLSS on a GeForce RTX 50 up to three (4×).',
+                   'FSR 3.1 делает один кадр (2×); DLSS на GeForce RTX 50 — до трёх (4×).'))
+        self.check(f, 'frame_gen_fit_display', 'ini', _('Fit to display refresh', 'Под частоту монитора'),
+                   _('On: no more frames than the display shows (an uncapped game gets fewer generated frames, and '
+                     'the GPU does less). Off: the multiplier as chosen.',
+                     'Вкл.: не больше кадров, чем показывает монитор (при снятом ограничении FPS генерируется меньше, '
+                     'видеокарта меньше нагружена). Выкл.: множитель как выбран.'))
         self.section(f, _('FSR 4 assets', 'Ассеты FSR 4'))
         self.fsr4_label = ttk.Label(f, text='', wraplength=self.px(640), justify='left')
         self.fsr4_label.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w')
@@ -1041,7 +1112,12 @@ class Launcher:
         self.section(f, _('Detail', 'Детализация'))
         self.row(f, _('Model detail (LOD)', 'Детализация моделей'), self.choice(f, 'model_lod', 'ini', LODS),
                  _('A game patch (game version 1.09).', 'Патч игры (версия 1.09).'))
+        self.row(f, _('Field of view', 'Поле зрения'), self.choice(f, 'fov', 'ini', fov_options(self.ini.get('fov'))),
+                 _('Vertical, in degrees. Every camera of the game is widened by the same amount.',
+                   'По вертикали, в градусах. Все камеры игры расширяются одинаково.'))
         self.check(f, 'show_fps', 'ini', _('Show the FPS counter', 'Показывать FPS'))
+        self.check(f, 'mute_unfocused', 'ini', _('Mute when the game is in the background',
+                                                 'Без звука, когда игра в фоне'))
 
     def build_display(self):
         ttk = self.ttk
@@ -1197,9 +1273,11 @@ class Launcher:
         account = ttk.Label(f, text='', justify='left')
         user_dir = self.var('user_dir', 'app')
 
+        thd_id, thd_token = self.var('thd_online_id', 'app'), self.var('thd_token', 'app')
+
         def show_accounts():
-            ids = bridge_accounts(user_dir.get())
-            account.configure(text=_('Signed in as {}').format(', '.join(ids)) if ids else _('Not signed in'))
+            name = thd_id.get() if thd_token.get() else ''
+            account.configure(text=_('Signed in as {}').format(name) if name else _('Not signed in'))
         show_accounts()
         self.row(f, _('Account'), account)
         signing = ttk.Label(f, text='', style='Muted.TLabel', justify='left', wraplength=self.px(560))
@@ -1221,42 +1299,24 @@ class Launcher:
                 code_box.grid_remove()
 
         def sign_in():
-            cli = bridge_cli()
-            if not cli:
-                signing.configure(text=_('bbbridge-cli.exe is missing from this installation.'))
-                return
-            try:
-                folder, config = bridge_config(user_dir.get())
-            except OSError as error:
-                signing.configure(text=_('Sign-in failed: {}').format(error))
-                return
             signing.configure(text=_('Starting the sign-in…'))
             show_code()
+            game = self.var('online_community', 'app').get()
+
+            def on_code(page, code):
+                text = _('In the page that opened ({0}), sign in with Discord and enter this code:').format(page)
+                self.ui_calls.put(lambda: (signing.configure(text=text), show_code(code)))
+                webbrowser.open(page)
 
             def work():
                 try:
-                    process = subprocess.Popen([str(cli), '--config', str(config), '--link-discord'], cwd=folder,
-                                               stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                               stderr=subprocess.STDOUT, creationflags=NO_WINDOW,
-                                               text=True, encoding='utf-8', errors='replace')
-                except OSError as error:
-                    self.ui_calls.put(lambda e=error: signing.configure(text=_('Sign-in failed: {}').format(e)))
+                    name, token = thd_sign_in(game, on_code)
+                except (OSError, ValueError) as error:
+                    self.ui_calls.put(lambda e=error: (signing.configure(text=_('Sign-in failed: {}').format(e)),
+                                                       show_code()))
                     return
-                for line in process.stdout:
-                    line = line.strip()
-                    code = re.match(r'Open (\S+) and enter the code (\S+)', line)
-                    if code:
-                        text = _('In the page that opened ({0}), sign in with Discord and enter this code:').format(
-                            code.group(1))
-                        self.ui_calls.put(lambda t=text, c=code.group(2): (signing.configure(text=t), show_code(c)))
-                        webbrowser.open(code.group(1))
-                    elif line.startswith('signed in as '):
-                        self.ui_calls.put(lambda: (signing.configure(text=''), show_code(), show_accounts()))
-                    elif line.startswith('failed'):
-                        reason = line.split(':', 1)[-1].strip()
-                        self.ui_calls.put(lambda r=reason: (signing.configure(text=_('Sign-in failed: {}').format(r)),
-                                                            show_code()))
-                process.wait()
+                self.ui_calls.put(lambda: (thd_id.set(name), thd_token.set(token), signing.configure(text=''),
+                                           show_code(), show_accounts(), self.collect()))
             threading.Thread(target=work, daemon=True).start()
         self.row(f, '', ttk.Button(f, text=_('Sign in with Discord'), command=sign_in))
         signing.grid(row=self.next_row(f), column=1, sticky='w', pady=(6, 0))
@@ -1264,10 +1324,11 @@ class Launcher:
         self.check(f, 'bridge_live_map', 'app', _('Show me on the live map'),
                    _("thehuntersdream.com/map shows where players are and which bells ring: the game sends "
                      "your position more often while you play."))
-        credit = ttk.Label(f, text=_("The bridge to The Hunter's Dream is bbbridge by MaskZeus; bbhost and "
-                                     "The Hunter's Dream are by droogie."), style='Muted.TLabel', cursor='hand2')
+        credit = ttk.Label(f, text=_("The connection to The Hunter's Dream is Awaken's port of bbhost's network "
+                                     "code; bbhost and The Hunter's Dream are by droogie."),
+                           style='Muted.TLabel', cursor='hand2')
         credit.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(8, 0))
-        credit.bind('<Button-1>', lambda _e: webbrowser.open(BRIDGE_PAGE))
+        credit.bind('<Button-1>', lambda _e: webbrowser.open('https://github.com/Awakenchan/BloodBorneButPc'))
         group('huntersdream')
         self.section(f, _('Game server (messages, bloodstains, ghosts)'))
         community = self.var('online_community', 'app')
@@ -1302,16 +1363,14 @@ class Launcher:
             online_on = self.var('online', 'app').get()
             pool_name = pool.get()
             hunters_dream, supermedo = pool_name == 'huntersdream', pool_name == 'supermedo'
-            signed_in = bridge_accounts(user_dir.get())
+            signed_in = thd_id.get() if thd_token.get() else ''
             result.configure(text=_('Checking…'))
 
             def work():
                 if hunters_dream:
                     text = server_check_hunters_dream()
-                    text += '\n' + (_('Signed in as {}').format(', '.join(signed_in)) if signed_in else
+                    text += '\n' + (_('Signed in as {}').format(signed_in) if signed_in else
                                     _('Not signed in: use "Sign in with Discord" above.'))
-                    if not bridge_cli():
-                        text += '\n' + _('bbbridge-cli.exe is missing from this installation.')
                 elif supermedo:
                     # The pool's name instead of its address.
                     text = server_check(SUPERMEDO_SERVER, webapi_address(SUPERMEDO_SERVER), game)
@@ -1546,61 +1605,92 @@ class Launcher:
             self.toasts.pop(0)
             self.show_toast()
         self.root.after(5500, done)
-    def current_binding(self, output):
-        """The key name currently bound to `output`'s first slot: a pending edit (even "cleared
-        to None"), else whatever input.ini already had, else None."""
+    def current_slots(self, output):
+        """`output`'s bindings, one per slot (None for an empty one): pending edits, else what
+        input.ini has. A file with more than SLOTS keeps the extra ones at the end."""
         if output in self.remap_edits:
             return self.remap_edits[output]
-        values = self.remap_bindings.get(output) or []
-        return values[0] if values else None
+        values = list(self.remap_bindings.get(output) or [])
+        return values + [None] * (SLOTS - len(values))
 
     def build_controls(self):
         ttk, tk = self.ttk, self.tk
         f = self.scrolled_page('controls', _('Controls', 'Управление'),
-                               _('Keyboard and mouse-button bindings. The controller keeps '
-                                 'working side by side; edit its lines in input.ini directly — '
-                                 'see docs/INPUT.md.',
-                                 'Раскладка клавиатуры и кнопок мыши. Геймпад продолжает '
-                                 'работать одновременно; его строки можно настроить только в '
-                                 'input.ini — см. docs/INPUT.md.'))
-        self.remap_rows = {}
+                               _('Keyboard and mouse bindings, up to three per action. The '
+                                 'controller keeps working side by side; edit its lines in '
+                                 'input.ini directly — see docs/INPUT.md.',
+                                 'Раскладка клавиатуры и мыши, до трёх привязок на действие. '
+                                 'Геймпад продолжает работать одновременно; его строки можно '
+                                 'настроить только в input.ini — см. docs/INPUT.md.'))
+        self.remap_rows = {}  # output -> ([slot buttons], conflict label)
+        self.remap_listening = False
+        self.mouse_vars = {}  # mouse_settings key -> its widget's variable (apply_layout_preset)
 
-        def add_row(parent, output):
-            r = self.next_row(parent)
-            label, _ru = OUTPUT_LABELS[output]
-            ttk.Label(parent, text=_(label, _ru)).grid(row=r, column=0, sticky='w', padx=(0, 18), pady=4)
-            key_label = ttk.Label(parent, width=14, style='Muted.TLabel')
-            key_label.grid(row=r, column=1, sticky='w', pady=4)
-            set_btn = ttk.Button(parent, text=_('Set…', 'Назначить…'),
-                                 command=lambda o=output: self.start_remap_capture(o, key_label, set_btn))
-            set_btn.grid(row=r, column=2, sticky='w', padx=(10, 4), pady=4)
-            ttk.Button(parent, text=_('Clear', 'Сбросить'),
-                      command=lambda o=output: self.clear_remap(o, key_label)).grid(
-                row=r, column=3, sticky='w', pady=4)
-            self.remap_rows[output] = key_label
-            self.refresh_remap_row(output)
-
-        self.section(f, _('Buttons', 'Кнопки'), top=4)
-        for output in BUTTON_OUTPUTS:
-            add_row(f, output)
-        self.section(f, _('Sticks', 'Стики'))
-        for output in STICK_OUTPUTS:
-            add_row(f, output)
-        self.note(f, _('Click "Set…" on a button row to bind a mouse button instead of a key — '
-                       'left, middle, right, or the side buttons (back/forward), if the mouse '
-                       'has them. Stick directions stay keyboard-only.',
-                       'Нажмите «Назначить…» в строке кнопки, чтобы привязать кнопку мыши '
-                       'вместо клавиши — левую, среднюю, правую или боковые (вперёд/назад), '
-                       'если они есть. Направления стиков можно привязать только к клавише.'))
+        self.row(f, _('Button prompts', 'Подсказки кнопок'), self.choice(f, 'button_prompts', 'ini', PROMPT_MODES),
+                 _("The game's button icons: your keyboard and mouse keys while you play with them, "
+                   "the controller's (PlayStation, Xbox or Switch) while you use it.",
+                   'Значки кнопок в игре: ваши клавиши и мышь, пока вы играете ими, и кнопки '
+                   'геймпада (PlayStation, Xbox или Switch), пока вы используете его.'))
+        preset = ttk.Frame(f)
+        ttk.Button(preset, text=_('Use the Dark Souls III layout', 'Раскладка Dark Souls III'),
+                   command=self.apply_layout_preset).pack(side='left')
+        self.row(f, _('Layout', 'Раскладка'), preset,
+                 _('WASD, Space to dodge, left click / Shift + left click to attack, right click / '
+                   'Shift + right click (or Ctrl) for the off hand, E interact, R item, F vial, Q lock '
+                   'on, Tab or Esc menu, and the 1:1 mouse camera. Replaces the keyboard and mouse '
+                   'bindings; the controller keeps its own.',
+                   'WASD, пробел — уклонение, левый клик / Shift + левый клик — атака, правый клик / '
+                   'Shift + правый клик (или Ctrl) — левая рука, E — действие, R — предмет, F — флакон, '
+                   'Q — захват цели, Tab или Esc — меню и камера мыши 1:1. Заменяет привязки клавиатуры и '
+                   'мыши; у геймпада остаются свои.'))
+        self.note(f, _('Click a slot, then press a key, click a mouse button or turn the wheel; '
+                       'Esc cancels. Right-click a slot to clear it. Movement and camera '
+                       'directions take keys only.',
+                       'Щёлкните ячейку и нажмите клавишу, кнопку мыши или прокрутите колесо; '
+                       'Esc отменяет. Правый клик по ячейке очищает её. Направления движения и '
+                       'камеры принимают только клавиши.'), top=10)
+        # One grid for every group, so the slot columns line up down the page.
+        table = ttk.Frame(f)
+        table.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w')
+        for c in range(1, SLOTS + 1):
+            table.columnconfigure(c, uniform='slot', minsize=self.px(150))
+        for (group, group_ru), actions in ACTION_GROUPS:
+            ttk.Label(table, text=_(group, group_ru), style='Section.TLabel').grid(
+                row=table.grid_size()[1], column=0, columnspan=SLOTS + 2, sticky='w', pady=(14, 4))
+            for output, (label, label_ru) in actions:
+                r = table.grid_size()[1]
+                ttk.Label(table, text=_(label, label_ru)).grid(row=r, column=0, sticky='w', padx=(0, 18), pady=2)
+                buttons = []
+                for slot in range(SLOTS):
+                    btn = ttk.Button(table, style='Slot.TButton',
+                                     command=lambda o=output, i=slot: self.start_remap_capture(o, i))
+                    btn.grid(row=r, column=slot + 1, sticky='ew', padx=2, pady=2)
+                    btn.bind('<Button-3>', lambda _e, o=output, i=slot: self.clear_remap(o, i))
+                    buttons.append(btn)
+                warn = ttk.Label(table, style='Muted.TLabel')
+                warn.grid(row=r, column=SLOTS + 1, sticky='w', padx=(8, 0))
+                self.remap_rows[output] = (buttons, warn)
+        self.refresh_remap_row(None)
+        self.note(f, _('Combinations: hold Shift, Ctrl or Alt while pressing the key or mouse '
+                       'button (up to three inputs, such as Shift + left click). A held '
+                       'combination wins over the bindings on its parts, so left click and Shift + '
+                       'left click can be two actions. ⚠ marks an input another action uses too. A '
+                       'key that is both an action of its own and part of a combination is pressed '
+                       'on the way into it: with Shift on Circle, Shift + left click starts a '
+                       'sprint that ends as a dodge.',
+                       'Сочетания: удерживайте Shift, Ctrl или Alt, нажимая клавишу или кнопку мыши '
+                       '(до трёх вводов, например Shift + левый клик). Удерживаемое сочетание '
+                       'важнее привязок его частей, поэтому левый клик и Shift + левый клик могут '
+                       'быть разными действиями. ⚠ отмечает ввод, который использует и другое '
+                       'действие. Клавиша, которая сама является действием и частью сочетания, '
+                       'нажимается по пути к нему: если Shift — это Круг, Shift + левый клик '
+                       'начинает бег, который заканчивается уклонением.'))
         self.note(f, _('Reserved: Insert/Escape (the port\'s menu), F9 (route recording), and '
                        'whichever key toggles mouse look or reloads input.ini (F7/F8 by '
-                       'default). A key or button already used elsewhere is simply bound to '
-                       'both actions (hold it to trigger both) — this page does not warn about '
-                       'that.',
+                       'default).',
                        'Зарезервированы: Insert/Escape (меню порта), F9 (запись маршрута), а '
                        'также клавиши переключения мыши и перезагрузки input.ini (по умолчанию '
-                       'F7/F8). Если клавиша или кнопка уже где-то занята, она просто '
-                       'срабатывает на обе привязки — страница об этом не предупреждает.'))
+                       'F7/F8).'))
 
         self.section(f, _('Mouse look', 'Обзор мышью'))
         ms = self.mouse_settings
@@ -1610,7 +1700,7 @@ class Launcher:
 
         # Built manually (not via self.check) because mouse_settings is its own dict, not
         # self.ini/self.app -- self.var()'s ini/app bookkeeping does not apply to it.
-        enabled_var = tk.BooleanVar(value=ms['enabled'])
+        enabled_var = self.mouse_vars['enabled'] = tk.BooleanVar(value=ms['enabled'])
         enabled_var.trace_add('write', lambda *_a: (ms.__setitem__('enabled', enabled_var.get()), mark_mouse_edited()))
         ttk.Checkbutton(f, text=_('Enable mouse look', 'Включить обзор мышью'), variable=enabled_var).grid(
             row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(4, 0))
@@ -1618,7 +1708,7 @@ class Launcher:
                        'without restarting.', 'F7 также переключает это прямо в игре мгновенно; '
                        'F8 применяет эти настройки без перезапуска.'), top=2)
 
-        stick_var = tk.StringVar(value=ms['stick'])
+        stick_var = self.mouse_vars['stick'] = tk.StringVar(value=ms['stick'])
         stick_var.trace_add('write', lambda *_a: (ms.__setitem__('stick', stick_var.get()), mark_mouse_edited()))
         stick_box = ttk.Frame(f)
         ttk.Radiobutton(stick_box, text=_('Camera (right stick)', 'Камера (правый стик)'),
@@ -1629,7 +1719,7 @@ class Launcher:
 
         def slider_row(key, title, hint, lo, hi, fmt='{:.2f}'):
             holder = ttk.Frame(f)
-            var = tk.DoubleVar(value=ms[key])
+            var = self.mouse_vars[key] = tk.DoubleVar(value=ms[key])
             ttk.Scale(holder, from_=lo, to=hi, variable=var, length=280).pack(side='left')
             value_label = ttk.Label(holder, width=6)
             value_label.pack(side='left', padx=10)
@@ -1643,74 +1733,167 @@ class Launcher:
         # (src/runtime_pad.c), which deadzone_offset no longer affects, so the slider for it was
         # removed here rather than leave a control with no real effect. The value is still read/
         # written in input.ini by bbport_input_config.py for files that already set it.
-        slider_row('speed', _('Sensitivity', 'Чувствительность'),
-                   _('How fast the camera turns for a given mouse movement.',
-                     'Насколько быстро поворачивается камера при движении мыши.'), 0.1, 5.0)
-        slider_row('speed_offset', _('Minimum turn speed', 'Минимальная скорость поворота'),
+        camera_var = self.mouse_vars['camera'] = tk.StringVar(value=ms['camera'])
+        camera_var.trace_add('write', lambda *_a: (ms.__setitem__('camera', camera_var.get()), mark_mouse_edited()))
+        camera_box = ttk.Frame(f)
+        ttk.Radiobutton(camera_box, text=_('Direct (1:1, like a PC game)', 'Прямая (1:1, как в ПК-играх)'),
+                       variable=camera_var, value='direct').pack(side='left')
+        ttk.Radiobutton(camera_box, text=_('Stick emulation', 'Эмуляция стика'),
+                       variable=camera_var, value='stick').pack(side='left', padx=(16, 0))
+        self.row(f, _('Camera', 'Камера'), camera_box,
+                 _('Direct turns the game\'s camera by exact angles: no stick acceleration or '
+                   'turn-speed cap. It falls back to the stick while locked on.',
+                   'Прямая поворачивает камеру игры на точные углы: без ускорения стика и '
+                   'предела скорости поворота. При захвате цели работает как стик.'))
+        slider_row('camera_sensitivity', _('Sensitivity (direct)', 'Чувствительность (прямая)'),
+                   _('How far the direct camera turns per mouse movement (1.00 = 900 counts per '
+                     'radian).', 'Насколько поворачивается прямая камера при движении мыши (1.00 = '
+                     '900 отсчётов на радиан).'), 0.1, 5.0)
+        slider_row('speed', _('Sensitivity (stick)', 'Чувствительность (стик)'),
+                   _('How fast the camera turns for a given mouse movement in stick emulation.',
+                     'Насколько быстро поворачивается камера при движении мыши в эмуляции стика.'), 0.1, 5.0)
+        slider_row('speed_offset', _('Minimum turn speed (stick)', 'Минимальная скорость поворота (стик)'),
                    _('A constant added on top of sensitivity; raises the floor for slow '
                      'movements without affecting fast ones as much.',
                      'Добавляется поверх чувствительности; поднимает минимальную скорость для '
                      'медленных движений, почти не влияя на быстрые.'), 0.0, 1.0)
+        slider_row('sensitivity_y', _('Vertical sensitivity', 'Вертикальная чувствительность'),
+                   _('Up and down as a multiple of left and right (1.00 = the same).',
+                     'Вверх и вниз относительно влево и вправо (1.00 = одинаково).'), 0.1, 3.0)
 
-        self.note(f, _('Mouse buttons and the scroll wheel are bound in the Buttons section above: '
-                       'press Set… and click or turn the wheel. They work while the mouse is captured '
+        def invert_check(key, text):
+            var = self.mouse_vars[key] = tk.BooleanVar(value=ms[key])
+            var.trace_add('write', lambda *_a: (ms.__setitem__(key, var.get()), mark_mouse_edited()))
+            ttk.Checkbutton(f, text=text, variable=var).grid(
+                row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(4, 0))
+
+        invert_check('invert_x', _('Invert horizontal', 'Инвертировать по горизонтали'))
+        invert_check('invert_y', _('Invert vertical', 'Инвертировать по вертикали'))
+        self.note(f, _('Vertical sensitivity and inverting apply to both camera modes.',
+                       'Вертикальная чувствительность и инверсия действуют в обоих режимах камеры.'), top=2)
+
+        self.note(f, _('Mouse buttons and the scroll wheel are bound in the slots above: click a '
+                       'slot, then click or turn the wheel. They work while the mouse is captured '
                        '(mouse look on).',
-                       'Кнопки мыши и колесо назначаются в разделе «Кнопки» выше: нажмите «Назначить…» '
-                       'и щёлкните или прокрутите колесо. Они работают, пока мышь захвачена '
+                       'Кнопки мыши и колесо назначаются в ячейках выше: щёлкните ячейку, затем '
+                       'щёлкните или прокрутите колесо. Они работают, пока мышь захвачена '
                        '(обзор мышью включён).'), top=10)
         self.note(f, _('Changes apply the next time the game starts, or press F8 in-game to '
                        'reload input.ini without restarting.',
                        'Изменения применяются при следующем запуске игры, либо нажмите F8 в '
                        'игре, чтобы перечитать input.ini без перезапуска.'), top=6)
 
+    def apply_layout_preset(self):
+        """Writes the Dark Souls III layout into input.ini now (bbport_input_config.apply_layout)
+        and shows it: pending edits on this page are replaced by it."""
+        if not self.messagebox.askyesno(
+                _('Dark Souls III layout', 'Раскладка Dark Souls III'),
+                _('Replace your keyboard and mouse bindings with the Dark Souls III layout? '
+                  'Controller bindings stay as they are.',
+                  'Заменить привязки клавиатуры и мыши раскладкой Dark Souls III? Привязки '
+                  'геймпада не изменятся.')):
+            return
+        lines = apply_layout(self.remap_lines)
+        try:
+            Path(self.remap_ini_path).write_text('\n'.join(lines) + '\n', encoding='utf-8')
+        except OSError as error:
+            self.messagebox.showerror(_('Layout', 'Раскладка'), str(error))
+            return
+        self.remap_bindings, self.remap_lines, self.remap_toggle_key, self.remap_reload_key, \
+            mouse = load_input_ini(self.remap_ini_path)
+        self.remap_edits = {}
+        self.mouse_settings.update(mouse)  # the widgets hold this dict: update it in place
+        for key, var in self.mouse_vars.items():
+            var.set(mouse[key])
+        self.mouse_edited = False
+        self.refresh_remap_row(None)
+
     def refresh_remap_row(self, output):
-        key = self.current_binding(output)
-        self.remap_rows[output].configure(text=key if key else _('(none)', '(нет)'))
+        """Every row, since a change to one binding can add or clear another's conflict mark."""
+        conflicts = slot_conflicts({o: self.current_slots(o) for o in self.remap_rows})
+        russian = LANG == 'ru'
+        for o, (buttons, warn) in self.remap_rows.items():
+            values = self.current_slots(o)
+            marked = conflicts.get(o, {})
+            for i, btn in enumerate(buttons):
+                key = values[i] if i < len(values) else None
+                text = ' + '.join(display_name(p, russian) for p in binding_parts(key)) if key else '—'
+                btn.configure(text=text + ('  ⚠' if i in marked else ''), style='Slot.TButton')
+            others = sorted({b for slot in marked.values() for b in slot})
+            warn.configure(text='⚠ ' + _('also {}', 'также {}').format(
+                ', '.join(_(*OUTPUT_LABELS[c]) for c in others)) if others else '')
 
-    def clear_remap(self, output, key_label):
-        self.remap_edits[output] = None
-        self.refresh_remap_row(output)
+    def set_slot(self, output, slot, value):
+        values = list(self.current_slots(output))
+        values[slot] = value
+        self.remap_edits[output] = values
 
-    def start_remap_capture(self, output, key_label, set_btn):
-        """Grabs the next keypress or mouse click and binds it to `output`'s first slot. Esc
+    def clear_remap(self, output, slot):
+        if not self.remap_listening:
+            self.set_slot(output, slot, None)
+            self.refresh_remap_row(output)
+
+    def start_remap_capture(self, output, slot):
+        """Grabs the next keypress or mouse click and binds it to `output`'s slot. Esc
         cancels; a key/button already reserved (HOT-001/HOT-002), or a mouse click on a
         STICK_OUTPUTS row (an axis has no use for a press), is rejected in place, leaving the
         previous binding untouched. bind_all (not root.bind) plus grab_set makes sure the event
         reaches this handler even if some other widget currently has focus, and that no other
-        widget (e.g. the player-name Entry on another page) reacts to the same keypress.
+        widget (e.g. the player-name Entry on another page) reacts to the same keypress. Every
+        slot is disabled meanwhile, so a click on another slot binds the click instead of
+        starting over there.
 
         The <ButtonPress> bind is installed via after_idle rather than immediately: this call
-        itself runs from the "Set…" button's own click handler, so the left-button-release that
+        itself runs from the slot's own click handler, so the left-button-release that
         follows (Tk doesn't fire <ButtonPress> again for that click, but belt-and-suspenders
         against any platform quirk) would otherwise risk being seen as "the user chose
         leftbutton" the instant capture starts."""
+        if self.remap_listening:
+            return
+        self.remap_listening = True
         is_stick = output in STICK_OUTPUTS
-        original_text = set_btn['text']
-        key_label.configure(text=_('Press a key, a mouse button or turn the wheel…',
-                                   'Нажмите клавишу, кнопку мыши или прокрутите колесо…')
-                            if not is_stick else _('Press a key…', 'Нажмите клавишу…'))
-        set_btn.configure(state='disabled')
+        key_label = self.remap_rows[output][0][slot]
+        for buttons, _warn in self.remap_rows.values():
+            for btn in buttons:
+                btn.state(['disabled'])
+        key_label.configure(text=_('Press…', 'Нажмите…'), style='Listen.TButton')
         self.root.grab_set()
+        # Shift, Ctrl and Alt held so far, in press order: the next input makes a combination
+        # with them, and releasing one with nothing else pressed binds the modifiers alone.
+        modifiers = []
+
+        # Tk on Windows sends Alt, Alt + key and F10 to the menu bar (tk::WinMenuKey, which
+        # waits in the system menu's loop), not to <KeyPress>: they are taken over meanwhile.
+        menu_keys = {seq: self.root.bind_all(seq) for seq in (
+            '<Key-Alt_L>', '<Key-Alt_R>', '<Alt-Key>', '<Key-F10>',
+            '<KeyRelease-Alt_L>', '<KeyRelease-Alt_R>', '<Alt-KeyRelease>', '<KeyRelease-F10>')}
 
         def finish():
             self.root.unbind_all('<KeyPress>')
+            self.root.unbind_all('<KeyRelease>')
+            for seq, script in menu_keys.items():
+                self.root.bind_all(seq, script)
             self.root.unbind_all('<ButtonPress>')
             self.root.unbind_all('<Shift-MouseWheel>')
             self.root.bind_all('<MouseWheel>', self.wheel)  # the pages scroll again
             self.root.grab_release()
-            set_btn.configure(state='normal', text=original_text)
+            for buttons, _warn in self.remap_rows.values():
+                for btn in buttons:
+                    btn.state(['!disabled'])
+            self.remap_listening = False
             self.refresh_remap_row(output)
 
         def apply(name):
-            reserved = reserved_keys(self.remap_toggle_key, self.remap_reload_key)
-            if name in reserved:
+            parts = (modifiers + [name])[-MAX_COMBO:] if name not in modifiers else list(modifiers)
+            reserved = [p for p in parts if p in reserved_keys(self.remap_toggle_key, self.remap_reload_key)]
+            if reserved:
                 self.messagebox.showwarning(
                     _('Reserved', 'Зарезервировано'),
                     _('{} is reserved (menu, recording, or a hotkey) and cannot be bound to a '
                       'game action.', '{} зарезервирована (меню, запись или горячая клавиша) и '
-                      'не может быть назначена игровому действию.').format(name))
+                      'не может быть назначена игровому действию.').format(reserved[0]))
             else:
-                self.remap_edits[output] = name
+                self.set_slot(output, slot, ', '.join(parts))
             finish()
 
         def on_key(event):
@@ -1724,7 +1907,16 @@ class Launcher:
                     _('That key has no bbport name; pick another one.',
                       'У этой клавиши нет имени в bbport; выберите другую.'))
                 return
+            if name in MODIFIER_NAMES:
+                if name not in modifiers and len(modifiers) < MAX_COMBO - 1:
+                    modifiers.append(name)
+                    key_label.configure(text=' + '.join(display_name(m, LANG == 'ru') for m in modifiers) + ' + …')
+                return  # wait: another input makes a combination, a release binds it alone
             apply(name)
+
+        def on_key_release(event):
+            if modifiers and keysym_to_name(event.keysym) in modifiers:
+                apply(modifiers[-1])
 
         def on_click(event):
             name = button_num_to_name(event.num)
@@ -1745,6 +1937,9 @@ class Launcher:
             return 'break'
 
         self.root.bind_all('<KeyPress>', on_key)
+        self.root.bind_all('<KeyRelease>', on_key_release)
+        for seq in menu_keys:
+            self.root.bind_all(seq, on_key_release if 'Release' in seq else on_key)
         if not is_stick:
             self.root.after_idle(lambda: self.root.bind_all('<ButtonPress>', on_click))
             # While waiting, the wheel binds instead of scrolling the page.
@@ -1936,7 +2131,7 @@ class Launcher:
         if not hasattr(self, 'patches_frame'):
             return
         tk, ttk = self.tk, self.ttk
-        from mods import discover
+        from mods import discover, unrecognized
         from patches import external_patches
         for holder in (self.mods_frame, self.patches_frame):
             for widget in holder.winfo_children():
@@ -1964,6 +2159,10 @@ class Launcher:
             ttk.Label(self.mods_frame, text=_('Lower in the list loads later and wins conflicts.',
                                               'Ниже в списке — загружается позже и перекрывает.'),
                       style='Muted.TLabel').pack(anchor='w', pady=(4, 0))
+        # Folders that are not mods are named, with why, instead of left out silently.
+        for name, problem in unrecognized(root):
+            ttk.Label(self.mods_frame, text=_('Not loaded: {}: {}', 'Не загружен: {}: {}').format(name, problem),
+                      style='Muted.TLabel', wraplength=self.px(620), justify='left').pack(anchor='w', pady=(4, 0))
         chosen = load_json(DATA_DIR / 'patches.json', {})
         found = external_patches(Path(self.var('patches_dir', 'app').get() or DATA_DIR / 'patches'), PATCH_VERSION)
         old = {n: v.get() for n, v in self.patch_vars.items()}
@@ -2002,13 +2201,13 @@ class Launcher:
         save_ini({key: self.ini[key] for key in INI_DEFAULTS}, self.ini_lines)
         self.ini, self.ini_lines = load_ini()
         if self.remap_edits:
-            first_bindings = {key: (self.remap_edits[key] if key in self.remap_edits else
-                                    (vals[0] if vals else None))
-                              for key, vals in self.remap_bindings.items()}
-            save_input_ini(self.remap_ini_path, first_bindings, self.remap_lines)
+            save_input_ini(self.remap_ini_path, {key: [v for v in values if v]
+                                                 for key, values in self.remap_edits.items()}, self.remap_lines)
             self.remap_bindings, self.remap_lines, self.remap_toggle_key, self.remap_reload_key, \
                 self.mouse_settings = load_input_ini(self.remap_ini_path)
             self.remap_edits = {}
+            if getattr(self, 'remap_rows', None):
+                self.refresh_remap_row(None)  # emptied slots close up, as the file has them
         if self.mouse_edited:
             save_mouse_settings(self.remap_ini_path, self.mouse_settings, self.remap_lines)
             self.remap_bindings, self.remap_lines, self.remap_toggle_key, self.remap_reload_key, \
@@ -2040,7 +2239,7 @@ class Launcher:
             online.set(bool(choice))
         pool_name = self.var('online_pool', 'app').get()
         hunters_dream = pool_name == 'huntersdream'
-        if online.get() and hunters_dream and not bridge_accounts(self.var('user_dir', 'app').get()):
+        if online.get() and hunters_dream and not self.var('thd_token', 'app').get():
             self.messagebox.showwarning(
                 'Bloodborne', _("To play online with The Hunter's Dream, sign in with Discord first."))
             self.show('online')

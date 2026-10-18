@@ -49,20 +49,19 @@ layout(set = 0, binding = 0, std430) readonly buffer bb_ssbo_block {
 } bb_ssbo;
 
 // The push constants of every shader bbport recompiles.
+// The recompiler's push constants (shader_recompiler/resource.h, PushData) at the C++ struct's
+// offsets (checked in vk_rasterizer.cpp); bb_hdr is bbport's, set per draw (vk_rasterizer.cpp).
 layout(push_constant, std430) uniform AuxData {
-    float xoffset;
-    float yoffset;
-    float xscale;
-    float yscale;
-    uvec4 ud_regs0;
-    uvec4 ud_regs1;
-    uvec4 ud_regs2;
-    uvec4 ud_regs3;
-    uvec4 buf_offsets0;
-    uvec4 buf_offsets1;
-    uvec2 buf_offsets2;
-    uint motion_param;
-    uint scene_size;
+    layout(offset = 0) float xoffset;
+    layout(offset = 4) float yoffset;
+    layout(offset = 8) float xscale;
+    layout(offset = 12) float yscale;
+    layout(offset = 16) uvec4 buf_offsets0;
+    layout(offset = 32) uvec4 buf_offsets1;
+    layout(offset = 48) uvec2 buf_offsets2;
+    layout(offset = 72) uint motion_param;
+    layout(offset = 76) uint scene_size;
+    layout(offset = 80) uvec4 bb_hdr;
 } push_data;
 
 layout(set = 0, binding = 1) uniform texture2D bb_img_scene;
@@ -144,11 +143,11 @@ void main() {
     vec3 base = bb_bloom_base(mult);
     vec3 sdr_t = bb_curve(o, x);
     vec3 hdr_t;
-    // Mode 5: the knee live (in-game menu, Highlight range; ud_regs3.y set for this draw by
+    // Mode 5: the knee live (in-game menu, Highlight range; bb_hdr.y set for this draw by
     // bbport, the fraction's bits plus one; 0 = the default).
     float knee = BB_HDR_KNEE;
-    if (BB_OUTPUT_DELTA && push_data.ud_regs3.y != 0u) {
-        knee = clamp(uintBitsToFloat(push_data.ud_regs3.y - 1u), 0.1, 0.95);
+    if (BB_OUTPUT_DELTA && push_data.bb_hdr.y != 0u) {
+        knee = clamp(uintBitsToFloat(push_data.bb_hdr.y - 1u), 0.1, 0.95);
     }
     bool has_hdr = !BB_ADDITIVE && (BB_TONEMAPPER == 1
                                         ? bb_curve_psychov(o, x, BB_HDR_PEAK, hdr_t)
@@ -211,10 +210,10 @@ void main() {
     frag_aux = aux;
 
     if (BB_OUTPUT_DELTA) {
-        // The game's bloom, live (in-game menu; ud_regs3.w set for this draw by bbport: the
+        // The game's bloom, live (in-game menu; bb_hdr.w set for this draw by bbport: the
         // strength's bits plus one, 0 = the game's): the target is the composite with its glow
         // scaled, so the difference can also take light away.
-        uint bloom_bits = push_data.ud_regs3.w;
+        uint bloom_bits = push_data.bb_hdr.w;
         float k = (bloom_bits == 0u || BB_ADDITIVE) ? 1.0
                                                     : clamp(uintBitsToFloat(bloom_bits - 1u), 0.0, 4.0);
         bool scaled = abs(k - 1.0) > 1e-3;
@@ -237,10 +236,10 @@ void main() {
             }
         }
         frag_color0 = vec4(scaled ? delta : max(delta, 0.0), 0.0);
-        // Chain probe (in-game menu, test; ud_regs3.z set for this draw by bbport): green
+        // Chain probe (in-game menu, test; bb_hdr.z set for this draw by bbport): green
         // where this draw adds light above the game's white (red and blue pushed far below 0,
         // so the green stays whatever is added later).
-        if (push_data.ud_regs3.z == 1u && max(max(delta.x, delta.y), delta.z) > 0.01) {
+        if (push_data.bb_hdr.z == 1u && max(max(delta.x, delta.y), delta.z) > 0.01) {
             frag_color0 = vec4(-64.0, 8.0, -64.0, 0.0);
         }
     }

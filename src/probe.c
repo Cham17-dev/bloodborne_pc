@@ -179,6 +179,20 @@ static LONG fatal_exception(EXCEPTION_POINTERS *info) {
     fprintf(stderr,"  rax=%016llx rbx=%016llx rcx=%016llx rdx=%016llx\n  rsi=%016llx rdi=%016llx rbp=%016llx rsp=%016llx\n",
             c->Rax,c->Rbx,c->Rcx,c->Rdx,c->Rsi,c->Rdi,c->Rbp,c->Rsp);
     if (gpu_enabled) bbgpu_dump_guest_writes(info);
+    /* Return addresses near the top of the stack: system libraries (the C runtime's memcpy)
+     * keep no frame pointers, so the rbp chain below can skip their caller. */
+    for (int slot=0, shown=0; slot<64 && shown<6; ++slot) {
+        uintptr_t value=0;
+        SIZE_T got=0;
+        if (!ReadProcessMemory(GetCurrentProcess(),(void *)(uintptr_t)(c->Rsp+slot*8),&value,sizeof(value),&got) || got!=sizeof(value)) break;
+        HMODULE owner=NULL;
+        int code_ref=(image && value-(uintptr_t)image<0x20000000) ||
+                     (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,(LPCSTR)value,&owner) && owner==GetModuleHandleA(NULL));
+        if (!code_ref) continue;
+        describe_address(where,sizeof(where),value);
+        fprintf(stderr,"  [rsp+0x%x] %s\n",slot*8,where);
+        ++shown;
+    }
     /* rbp chain (guest and host code keep frame pointers). */
     uintptr_t rbp=(uintptr_t)c->Rbp;
     for (int depth=0; depth<24 && rbp; ++depth) {
@@ -221,6 +235,12 @@ static LONG CALLBACK vectored_fault(EXCEPTION_POINTERS *info) {
         int ours=(image && rip-(uintptr_t)image<0x20000000) ||
                  (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,(LPCSTR)rip,&module) && module==self) ||
                  !module;
+        /* bbport: the C runtime handles none of its own faults (a bad pointer to memcpy or
+         * free from the port or the game): reported with the call chain into them, instead of
+         * Windows ending the process without a word (crashes after 1-2 hours in ucrtbase.dll). */
+        if (!ours && module && (module==GetModuleHandleA("ucrtbase.dll") || module==GetModuleHandleA("msvcrt.dll") ||
+                                module==GetModuleHandleA("vcruntime140.dll")))
+            ours=1;
         if (ours) return fatal_exception(info);
     }
     /* BB_STRICT_HANDLES=1: a closed or invalid handle used anywhere is reported (diagnostics). */
@@ -657,6 +677,8 @@ int main(int argc, char **argv) {
         }
         memcpy(image + relocs[i].target, &value, 8);
     }
+    /* The Hunter's Dream backend reads the game's code before the patches change it. */
+    bbnet_set_image(image, size);
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
@@ -692,6 +714,7 @@ int main(int argc, char **argv) {
             if (result) fail("module initializer failed");
         }
     }
+    bbnet_initialize(); /* the online session starts with the game */
     printf("Entering original x86-64 code at guest offset 0x%" PRIx64 "\n", entry);
     entered_game=1;
     struct { uint64_t argc; const char *argv[2]; } params = {1, {"/app0/eboot.bin", NULL}};

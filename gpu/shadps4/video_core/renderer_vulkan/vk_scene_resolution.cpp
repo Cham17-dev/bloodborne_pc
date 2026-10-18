@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_scene_resolution.h"
 #include "video_core/renderer_vulkan/vk_hdr_channel.h"
 #include "common/logging/log.h"
@@ -143,7 +144,7 @@ void SceneTargets::NativeAccess(VideoCore::Image& image, vk::AccessFlags2 access
     constexpr auto writes = vk::AccessFlagBits2::eShaderWrite | vk::AccessFlagBits2::eTransferWrite |
         vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentWrite |
         vk::AccessFlagBits2::eMemoryWrite;
-    const u32 levels = std::min(16u, image.info.resources.levels);
+    const u32 levels = std::min<u32>(16u, image.info.resources.levels);
     for (u32 level = 0; level < levels; ++level) {
         const auto it = entries.find(Key(image.image_uid, level));
         if (it == entries.end()) continue;
@@ -246,7 +247,8 @@ void SceneTargets::Copy(Entry& e, VideoCore::Image& original, bool to_native) {
         copying = false;
         return;
     }
-    const VideoCore::SubresourceRange level_range{.base = {e.level, 0}, .extent = {1, 1}};
+    const VideoCore::SubresourceRange level_range{.base = {static_cast<u16>(e.level), 0},
+                                                  .extent = {1, 1}};
     runtime.Transit(&original, to_native ? vk::ImageLayout::eTransferDstOptimal
                                        : vk::ImageLayout::eTransferSrcOptimal,
                     vk::PipelineStageFlagBits2::eTransfer,
@@ -510,7 +512,8 @@ vk::ImageView SceneTargets::View(Entry& e, const VideoCore::Image& original,
     }
     auto view = Check(instance.GetDevice().createImageViewUnique({
         .image = e.image, .viewType = vk::ImageViewType::e2D, .format = format,
-        .components = info.mapping, .subresourceRange = {aspect,0,1,0,1},
+        .components = LiverpoolToVK::ComponentMapping(info.mapping),
+        .subresourceRange = {aspect,0,1,0,1},
     }));
     const auto result = *view;
     e.views.emplace_back(info, std::move(view));

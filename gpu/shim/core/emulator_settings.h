@@ -72,6 +72,7 @@ public:
     // of the screen to show that the replacement is active; =3 adds the HDR side channel). =4:
     // the generic HDR pass over every variant of the game's final composite (vk_hdr_channel.h).
     int GetHdrTonemapMode() { static const auto value = int(Number("BB_HDR_TONEMAP", 0)); return value; }
+    bool IsInlineFetchShader() { return false; }
     bool IsNullGPU() { static const auto value = Flag("BB_NULL_GPU", false); return value; }
     bool IsPatchShaders() { return false; }
     bool IsPipelineCacheArchived() { return false; }

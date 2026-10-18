@@ -39,6 +39,7 @@ class Scheduler;
 class Runtime;
 class CameraMotion;
 class SceneTargets;
+class FrameGenerator;
 
 class TemporalUpscaler {
 public:
@@ -49,6 +50,12 @@ public:
 
     [[nodiscard]] bool Enabled() const noexcept {
         return enabled;
+    }
+
+    /// bbport: frame generation (the Presenter's): its depth and motion vectors are taken at
+    /// the upscaler's trigger, the picture before the UI at the frame's first UI draw.
+    void SetFrameGenerator(FrameGenerator* generator) noexcept {
+        frame_generator = generator;
     }
 
     /// A draw into a full-size RGBA16F target with the scene depth: the scene color.
@@ -145,6 +152,12 @@ private:
     u64 view_uses = 0;
 
     void Run();
+    /// The scene depth and the motion vectors for frame generation (also with the upscaler off).
+    void CaptureFrameGen();
+    /// The UI target before the first UI draw (frame generation's picture without UI):
+    /// `color` (a texture cache image) at 1080p, the port's output-size UI image otherwise.
+    void CaptureHudless(VideoCore::ImageId color);
+    void CaptureHudlessUi();
     void RunScaled();
     void RunUiOnly(VideoCore::ImageId color, VideoCore::ImageId depth);
     /// bbport HDR, mode 5: copies the UI image (the scene before the UI) for the HUD brightness;
@@ -208,6 +221,9 @@ private:
 
     bool enabled = false;
     bool failed = false;
+    FrameGenerator* frame_generator = nullptr;
+    bool frame_gen_captured = false; ///< this frame's depth and motion are taken
+    bool hudless_pending = false;    ///< the UI started; its picture is taken at its next draw
     u64 trigger_hash = 0x9a9cf8a9;
     VideoCore::ImageId scene_color{};
     bool done_this_frame = false;

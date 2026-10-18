@@ -27,20 +27,19 @@ layout(set = 0, binding = 0, std430) readonly buffer ssbo_1 {
     uint data[];
 } ssbo_1_1;
 
+// The recompiler's push constants (shader_recompiler/resource.h, PushData) at the C++ struct's
+// offsets (checked in vk_rasterizer.cpp); bb_hdr is bbport's, set per draw (vk_rasterizer.cpp).
 layout(push_constant, std430) uniform AuxData {
-    float xoffset;
-    float yoffset;
-    float xscale;
-    float yscale;
-    uvec4 ud_regs0;
-    uvec4 ud_regs1;
-    uvec4 ud_regs2;
-    uvec4 ud_regs3;
-    uvec4 buf_offsets0;
-    uvec4 buf_offsets1;
-    uvec2 buf_offsets2;
-    uint motion_param;
-    uint scene_size;
+    layout(offset = 0) float xoffset;
+    layout(offset = 4) float yoffset;
+    layout(offset = 8) float xscale;
+    layout(offset = 12) float yscale;
+    layout(offset = 16) uvec4 buf_offsets0;
+    layout(offset = 32) uvec4 buf_offsets1;
+    layout(offset = 48) uvec2 buf_offsets2;
+    layout(offset = 72) uint motion_param;
+    layout(offset = 76) uint scene_size;
+    layout(offset = 80) uvec4 bb_hdr;
 } push_data;
 
 layout(set = 0, binding = 1) uniform texture2D fs_img0; // exposure tint, 1x1

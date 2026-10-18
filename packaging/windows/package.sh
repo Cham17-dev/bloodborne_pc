@@ -69,27 +69,19 @@ if [[ -d fsr4_shaders ]]; then cp -r fsr4_shaders "$dest/"; fi
 # (packaging/windows/build_dlss.sh). Without them the DLSS option stays unavailable.
 if [[ -f out/bbport_dlss.dll && -f out/nvngx_dlss.dll ]]; then
     cp out/bbport_dlss.dll out/nvngx_dlss.dll "$dest/bin/"
+    if [[ -f out/nvngx_dlssg.dll ]]; then cp out/nvngx_dlssg.dll "$dest/bin/"; fi
     mkdir -p "$dest/licenses" && cp out/NVIDIA-DLSS-LICENSE.txt "$dest/licenses/"
     cp gpu/dlss_bridge/LICENSE.txt "$dest/licenses/bbport_dlss-LICENSE.txt"
 else
     echo "DLSS bridge not built (packaging/windows/build_dlss.sh): no DLSS in this package" >&2
-fi
-# The Hunter's Dream co-op pool: bbbridge by MaskZeus (GPL-3.0-or-later, source in bbbridge/),
-# built with MSVC by packaging/windows/build_bbbridge.sh. Not shipped while the pool is off
-# (HUNTERS_DREAM_POOL in the launcher); BB_SHIP_BBBRIDGE=1 ships it.
-if [[ ${BB_SHIP_BBBRIDGE:-0} == 1 && -f out/bbbridge-cli.exe ]]; then
-    cp out/bbbridge-cli.exe "$dest/bin/"
-    mkdir -p "$dest/licenses"
-    cp bbbridge/LICENSE "$dest/licenses/bbbridge-LICENSE.txt"
-    cp bbbridge/THIRD_PARTY_NOTICES.txt "$dest/licenses/bbbridge-THIRD_PARTY_NOTICES.txt"
-else
-    echo "bbbridge not built (packaging/windows/build_bbbridge.sh): no Hunter's Dream pool in this package" >&2
 fi
 # Online co-op: the libraries compiled in (wepoll, cpp-httplib) and the MSYS2 DLLs it loads.
 mkdir -p "$dest/licenses"
 cp gpu/third_party/wepoll/LICENSE "$dest/licenses/wepoll-LICENSE.txt"
 cp gpu/third_party/httplib/LICENSE "$dest/licenses/cpp-httplib-LICENSE.txt"
 cp packaging/windows/licenses/*.txt "$dest/licenses/"
+# Where the online code comes from (shadPS4 0.20, Awaken's port, bbhost's protocol).
+cp gpu/bbnet/SHADNET-PORT.md "$dest/licenses/online-code-NOTICE.md"
 for package in protobuf abseil-cpp openssl miniupnpc zlib; do
     license=/clang64/share/licenses/$package/LICENSE
     if [[ -f $license ]]; then cp "$license" "$dest/licenses/$package-LICENSE.txt"; fi

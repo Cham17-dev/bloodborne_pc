@@ -60,7 +60,7 @@ public:
     static vk::Format DisplayAttachmentFormat();
     static constexpr vk::Format Native16Format = vk::Format::eR16G16B16A16Sfloat;
     /// The game's ColorGrading pass (a color table), replaced in mode 5; its strength (in-game
-    /// menu, Scene grading) goes to the shader in ud_regs3.w (hdr/bb_color_grading.frag).
+    /// menu, Scene grading) goes to the shader in bb_hdr.w (hdr/bb_color_grading.frag).
     static constexpr u64 ColorGradingHash = 0xed4c7668;
     /// The game's second glow, added after its tone mapping (a blur of the 960x540 glow targets,
     /// additive); in mode 5 weighted by the in-game Bloom slider (blend constant).
