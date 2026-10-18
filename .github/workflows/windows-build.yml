@@ -50,6 +50,21 @@ jobs:
           export MSYS2_ROOT="$(cygpath -u '${{ steps.msys2.outputs.msys2-location }}')"
           bash build.sh
 
+      # DLSS: NVIDIA's public SDK and the runner's Visual Studio 2022 build bbport_dlss.dll
+      # (gpu/dlss_bridge); package.sh ships it with nvngx_dlss.dll (NVIDIA's license).
+      - name: DLSS SDK
+        uses: actions/checkout@v4
+        with:
+          repository: NVIDIA/DLSS
+          path: dlss-sdk
+          lfs: true
+
+      - name: DLSS bridge
+        run: |
+          export DLSS_SDK_ROOT="$PWD/dlss-sdk"
+          export CMAKE_EXE="/c/Program Files/CMake/bin/cmake.exe" # with the VS generators
+          bash packaging/windows/build_dlss.sh
+
       - name: Package
         run: |
           export MSYS2_ROOT="$(cygpath -u '${{ steps.msys2.outputs.msys2-location }}')"
