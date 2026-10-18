@@ -2,15 +2,23 @@
 #include "bbport_settings.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <string>
 #include <string_view>
 
 namespace BbSettings {
 
 namespace {
+
+// The HDR presets' settings (hdr_preset1..3 in bbport.ini: "key=value;key=value..."), and
+// whether the file had a preset choice (bbport.ini from before the presets).
+std::mutex hdr_slot_mutex;
+std::array<std::string, HdrPresetCount - 1> hdr_slots;
+bool loaded_hdr_preset = false;
 
 const char* Path() {
     const char* env = std::getenv("BB_CONFIG");
@@ -69,7 +77,16 @@ void Set(Values& v, const std::string& key, const std::string& value) {
     } else if (key == "hdr_boost") {
         if (!value.empty()) v.hdr_boost = Clamp(f, 0.0f, 1.0f);
     } else if (key == "hdr_tonemapper") {
-        if (!value.empty()) v.hdr_tonemapper = std::clamp(i, 0, 1);
+        if (!value.empty()) v.hdr_tonemapper = std::clamp(i, 0, HdrToneMapperVanilla);
+    } else if (key == "hdr_preset") {
+        if (!value.empty()) v.hdr_preset = std::clamp(i, 0, HdrPresetCount - 1);
+        loaded_hdr_preset = true;
+    } else if (key == "hdr_settings_mode") {
+        if (!value.empty()) v.hdr_settings_mode = std::clamp(i, 0, 2);
+    } else if (key.size() == 11 && key.starts_with("hdr_preset") && key[10] >= '1' &&
+               key[10] <= '0' + HdrPresetCount - 1) {
+        std::scoped_lock lock{hdr_slot_mutex};
+        hdr_slots[key[10] - '1'] = value;
     } else if (key == "hdr_scaling") {
         v.hdr_per_channel = value == "per_channel";
     } else if (key == "hdr_ui_nits") {
@@ -137,7 +154,105 @@ void Set(Values& v, const std::string& key, const std::string& value) {
     }
 }
 
+// The HDR settings a preset holds, as bbport.ini writes them, separated by `sep`.
+std::string HdrText(const Values& v, char sep) {
+    std::string out;
+    char item[64];
+    const auto add = [&](const char* format, auto... args) {
+        std::snprintf(item, sizeof(item), format, args...);
+        out += item;
+        out += sep;
+    };
+    add("hdr_paper_white=%.0f", v.hdr_paper_white.load());
+    add("hdr_peak_nits=%.0f", v.hdr_peak_nits.load());
+    add("hdr_strength=%.2f", v.hdr_strength.load());
+    add("hdr_boost=%.2f", v.hdr_boost.load());
+    add("hdr_tonemapper=%d", v.hdr_tonemapper.load());
+    add("hdr_scaling=%s", v.hdr_per_channel ? "per_channel" : "luminance");
+    add("hdr_ui_nits=%.0f", v.hdr_ui_nits.load());
+    add("hdr_gamma=%s", v.hdr_gamma22 ? "2.2" : "srgb");
+    add("hdr_exposure=%.2f", v.hdr_exposure.load());
+    add("hdr_contrast=%.0f", v.hdr_contrast.load());
+    add("hdr_highlights=%.0f", v.hdr_grade_highlights.load());
+    add("hdr_shadows=%.0f", v.hdr_shadows.load());
+    add("hdr_saturation=%.0f", v.hdr_saturation.load());
+    add("hdr_highlight_saturation=%.0f", v.hdr_highlight_saturation.load());
+    add("hdr_blowout=%.0f", v.hdr_blowout.load());
+    add("hdr_bloom=%.0f", v.hdr_bloom.load());
+    add("hdr_vignette=%.0f", v.hdr_vignette.load());
+    add("hdr_scene_grading=%.0f", v.hdr_scene_grading.load());
+    add("hdr_black_floor=%.2f", v.hdr_black_floor.load());
+    add("hdr_knee=%.0f", v.hdr_knee.load());
+    return out;
+}
+
+// A preset's text applied to the settings (HdrText with ';').
+void ApplyHdrText(Values& v, const std::string& text) {
+    size_t start = 0;
+    while (start < text.size()) {
+        size_t end = text.find(';', start);
+        if (end == std::string::npos) end = text.size();
+        const std::string item = text.substr(start, end - start);
+        if (const auto eq = item.find('='); eq != std::string::npos &&
+                                           item.compare(0, 4, "hdr_") == 0) {
+            Set(v, item.substr(0, eq), item.substr(eq + 1));
+        }
+        start = end + 1;
+    }
+}
+
+void ResetHdr(Values& v) {
+    v.hdr_paper_white = 203.0f;
+    v.hdr_peak_nits = 1000.0f;
+    v.hdr_strength = 1.0f;
+    v.hdr_boost = 0.0f;
+    v.hdr_tonemapper = 0;
+    v.hdr_per_channel = false;
+    v.hdr_ui_nits = 203.0f;
+    v.hdr_gamma22 = true;
+    v.hdr_exposure = 1.0f;
+    v.hdr_contrast = 50.0f;
+    v.hdr_grade_highlights = 50.0f;
+    v.hdr_shadows = 50.0f;
+    v.hdr_saturation = 50.0f;
+    v.hdr_highlight_saturation = 50.0f;
+    v.hdr_blowout = 0.0f;
+    v.hdr_bloom = 50.0f;
+    v.hdr_vignette = 50.0f;
+    v.hdr_scene_grading = 100.0f;
+    v.hdr_black_floor = 0.0f;
+    v.hdr_knee = 60.0f;
+}
+
 } // namespace
+
+void SelectHdrPreset(int preset) {
+    auto& v = Get();
+    preset = std::clamp(preset, 0, HdrPresetCount - 1);
+    const int previous = v.hdr_preset;
+    if (preset == previous) {
+        return;
+    }
+    std::string text;
+    {
+        std::scoped_lock lock{hdr_slot_mutex};
+        if (previous > 0) {
+            hdr_slots[previous - 1] = HdrText(v, ';');
+        }
+        if (preset > 0) {
+            text = hdr_slots[preset - 1];
+        }
+    }
+    if (preset > 0) {
+        ResetHdr(v); // a preset never saved starts from the defaults; a saved one sets them all
+        ApplyHdrText(v, text);
+    }
+    v.hdr_preset = preset;
+}
+
+void ResetHdr() {
+    ResetHdr(Get());
+}
 
 Values& Get() {
     static Values values;
@@ -149,8 +264,9 @@ void Load() {
     for (int e = 0; e < EffectCount; ++e) {
         v.effects[e] = Effects[e].default_on;
     }
+    loaded_hdr_preset = false;
     if (FILE* file = std::fopen(Path(), "r")) {
-        char line[256];
+        char line[2048]; // the HDR presets' lines are long
         while (std::fgets(line, sizeof(line), file)) {
             std::string text{line};
             text.erase(text.find_last_not_of(" \t\r\n") + 1);
@@ -162,6 +278,14 @@ void Load() {
         }
         std::fclose(file);
         std::printf("Settings: %s\n", Path());
+    }
+    // bbport.ini from before the HDR presets: the HDR settings it has become Preset #1.
+    if (!loaded_hdr_preset) {
+        v.hdr_preset = 1;
+        std::scoped_lock lock{hdr_slot_mutex};
+        if (hdr_slots[0].empty()) {
+            hdr_slots[0] = HdrText(v, ';');
+        }
     }
     // Environment overrides (scripts, A/B tests).
     if (const char* env = std::getenv("BB_UPSCALER")) {
@@ -185,7 +309,7 @@ void Load() {
         }
     }
     if (const char* env = std::getenv("BB_HDR_TONEMAPPER")) {
-        v.hdr_tonemapper = std::clamp(std::atoi(env), 0, 1);
+        v.hdr_tonemapper = std::clamp(std::atoi(env), 0, HdrToneMapperVanilla);
     }
     if (const char* env = std::getenv("BB_HDR_GAMMA22")) {
         v.hdr_gamma22 = std::atoi(env) != 0;
@@ -281,21 +405,21 @@ void Save() {
     for (int e = 0; e < EffectCount; ++e) {
         std::fprintf(file, "%s=%d\n", Effects[e].key, int(v.effects[e].load()));
     }
-    std::fprintf(file, "hdr_paper_white=%.0f\nhdr_peak_nits=%.0f\nhdr_strength=%.2f\nhdr_boost=%.2f\n",
-                 v.hdr_paper_white.load(), v.hdr_peak_nits.load(), v.hdr_strength.load(),
-                 v.hdr_boost.load());
-    std::fprintf(file,
-                 "hdr_tonemapper=%d\nhdr_scaling=%s\n"
-                 "hdr_ui_nits=%.0f\nhdr_gamma=%s\nhdr_exposure=%.2f\nhdr_contrast=%.0f\n"
-                 "hdr_highlights=%.0f\nhdr_shadows=%.0f\nhdr_saturation=%.0f\n"
-                 "hdr_highlight_saturation=%.0f\nhdr_blowout=%.0f\nhdr_bloom=%.0f\n"
-                 "hdr_vignette=%.0f\nhdr_scene_grading=%.0f\nhdr_black_floor=%.2f\nhdr_knee=%.0f\n",
-                 v.hdr_tonemapper.load(), v.hdr_per_channel ? "per_channel" : "luminance",
-                 v.hdr_ui_nits.load(), v.hdr_gamma22 ? "2.2" : "srgb", v.hdr_exposure.load(),
-                 v.hdr_contrast.load(), v.hdr_grade_highlights.load(), v.hdr_shadows.load(),
-                 v.hdr_saturation.load(), v.hdr_highlight_saturation.load(), v.hdr_blowout.load(),
-                 v.hdr_bloom.load(), v.hdr_vignette.load(), v.hdr_scene_grading.load(),
-                 v.hdr_black_floor.load(), v.hdr_knee.load());
+    // The HDR settings in use (the selected preset's), and the presets.
+    std::fputs(HdrText(v, '\n').c_str(), file);
+    std::fprintf(file, "hdr_preset=%d\nhdr_settings_mode=%d\n", v.hdr_preset.load(),
+                 v.hdr_settings_mode.load());
+    {
+        std::scoped_lock lock{hdr_slot_mutex};
+        if (const int preset = v.hdr_preset; preset > 0) {
+            hdr_slots[preset - 1] = HdrText(v, ';');
+        }
+        for (size_t s = 0; s < hdr_slots.size(); ++s) {
+            if (!hdr_slots[s].empty()) {
+                std::fprintf(file, "hdr_preset%zu=%s\n", s + 1, hdr_slots[s].c_str());
+            }
+        }
+    }
     std::fprintf(file, "frame_gen=%s\nframe_gen_multiplier=%d\nframe_gen_fit_display=%d\n",
                  FrameGenName(v.frame_gen), v.frame_gen_multiplier.load(),
                  int(v.frame_gen_fit_display.load()));

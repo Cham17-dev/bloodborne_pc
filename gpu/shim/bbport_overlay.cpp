@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cfloat>
 #include <chrono>
+#include <span>
 #include <string>
 #include <cmath>
 #include <cstdio>
@@ -225,14 +226,13 @@ void HdrLabels() {
     }
 }
 
-void HdrPreset(BbSettings::Values& s, const char* label, float strength, float boost) {
-    if (ImGui::Button(label)) {
-        Store(s.hdr_strength, strength, true);
-        Store(s.hdr_boost, boost, true);
-    }
+// Marks the settings changed without a widget (preset switches, Reset all): saved like the rest.
+void MarkDirty() {
+    dirty = true;
+    dirty_time = std::chrono::steady_clock::now();
 }
 
-// A slider with a reset button after it (as in ReShade), then its hint.
+// A slider with a reset button after it (as in ReShade and RenoDX), then its hint.
 void SliderReset(const char* label, std::atomic<float>& value, float lo, float hi, float reset,
                  const char* format, const char* hint) {
     ImGui::PushID(label);
@@ -251,212 +251,192 @@ void SliderReset(const char* label, std::atomic<float>& value, float lo, float h
     }
 }
 
-void HdrSection(BbSettings::Values& s) {
-    ImGui::SeparatorText("HDR (changes apply at once)");
-    // What runs now: mode, curve, and whether this area has HDR highlights.
+// A combo over `names`; `current` and the result are indices into it.
+int ComboIndex(const char* label, int current, std::span<const char* const> names) {
+    int chosen = current;
+    if (ImGui::BeginCombo(label, names[std::clamp(current, 0, int(names.size()) - 1)])) {
+        for (int i = 0; i < int(names.size()); ++i) {
+            if (ImGui::Selectable(names[i], i == current)) {
+                chosen = i;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    return chosen;
+}
+
+// What runs now: the HDR mode, and whether this area gets its HDR highlights.
+void HdrStatus(const BbSettings::Values& s) {
     const int mode = s.hdr_mode;
-    const bool all_areas = mode == 4;
     if (!s.hdr_highlights) {
         ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
-                           "HDR highlights off: the game's image in HDR10 (launcher: HDR tonemap).");
+                           "HDR highlights off: the game's image in HDR10 (launcher: HDR mode).");
     } else if (mode == 5) {
         if (s.hdr_native16_live) {
-            ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.45f, 1.0f), "HDR 16-bit chain: active");
-            ImGui::SameLine();
-            ImGui::TextDisabled("(experimental, composite %08x)", s.hdr_variant.load());
+            ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.45f, 1.0f), "HDR 16-bit: active");
         } else {
             ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
-                               "HDR 16-bit chain: not active here (no 16-bit image this frame)");
+                               "HDR 16-bit: not active here (this area is shown in SDR)");
         }
-        Hint("Experimental mode: the game draws its image in 16 bits after its tone mapping, so its highlights reach the final pass without a mask. The HUD is found by comparing the image with the scene before the UI (HUD brightness; Debug view, Pixels taken as UI). Bloom applies to the composite's bloom; Vignette does not apply yet.");
     } else if (s.hdr_channel_live) {
         ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.45f, 1.0f), "HDR highlights: active here");
-        ImGui::SameLine();
-        ImGui::TextDisabled("(%s, composite %08x)", all_areas ? "all areas" : "first area",
-                            s.hdr_variant.load());
     } else {
         ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
-                           "HDR highlights: not in this area (its composite is not covered: SDR)");
+                           "HDR highlights: not in this area (shown in SDR)");
     }
-    Hint("The HDR tonemap mode is chosen in the launcher (Display page) and needs a restart. With BB_GPU_LOG=info, last_run.log lists the composites in use (HDR tonemap variant) and the full-screen passes (HDR scan).");
+}
 
-    int compare = s.hdr_compare;
-    if (ImGui::BeginCombo("Compare", HdrCompareName(compare))) {
-        for (int i = 0; i < int(BbSettings::Values::HdrCompareCount); ++i) {
-            if (ImGui::Selectable(HdrCompareName(i), i == compare)) {
-                s.hdr_compare = i;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    Hint("F9 switches between HDR, the game's SDR image and a split screen, also with this menu closed. SDR is the game's image at the paper white below, with no HDR highlights. Not saved: each session starts in HDR.");
+// The HDR settings, laid out as a RenoDX mod's: Preset (Off and three of the player's), Settings
+// Mode, then Tone Mapping, Color Grading and Effects; bbport's own sliders and the test tools in
+// Advanced only.
+void HdrSection(BbSettings::Values& s) {
+    ImGui::SeparatorText("HDR");
+    HdrStatus(s);
 
-    SliderReset("Paper white", s.hdr_paper_white, 80.0f, 500.0f, 203.0f, "%.0f nits",
-                "Brightness of the game's white. Raise it if the game looks dim, lower it in a dark room. 203 is the HDR reference.");
-    SliderReset("HUD brightness", s.hdr_ui_nits, 48.0f, 500.0f, 203.0f, "%.0f nits",
-                "Brightness of the HUD and menus drawn over the scene (the pixels the UI debug view shows in red). Only where the HDR highlights are active; elsewhere the HUD follows paper white.");
-    static const char* decodings[] = {"2.2 power (SDR displays)", "sRGB curve"};
-    int decoding = s.hdr_gamma22 ? 0 : 1;
-    if (ImGui::BeginCombo("SDR decoding", decodings[decoding])) {
-        for (int i = 0; i < 2; ++i) {
-            if (ImGui::Selectable(decodings[i], i == decoding)) {
-                Store(s.hdr_gamma22, i == 0, true);
-            }
+    // Preset: as RenoDX's segmented buttons.
+    static constexpr const char* presets[] = {"Off", "Preset #1", "Preset #2", "Preset #3"};
+    const int preset = std::clamp(s.hdr_preset.load(), 0, BbSettings::HdrPresetCount - 1);
+    for (int i = 0; i < BbSettings::HdrPresetCount; ++i) {
+        if (i) ImGui::SameLine();
+        const bool selected = i == preset;
+        if (selected) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
         }
-        ImGui::EndCombo();
+        if (ImGui::Button(presets[i]) && !selected) {
+            BbSettings::SelectHdrPreset(i);
+            MarkDirty();
+        }
+        if (selected) {
+            ImGui::PopStyleColor();
+        }
     }
-    Hint("How the game's SDR image is turned into light, like RenoDX's Gamma Correction. 2.2: as SDR monitors show it, deeper shadows (default). sRGB: lighter near-blacks.");
-    SliderReset("Peak brightness", s.hdr_peak_nits, 400.0f, 4000.0f, 1000.0f, "%.0f nits",
-                "The brightest your display can show (1000 on a QD-OLED in its HDR 1000 mode). Highlights roll off toward it instead of clipping. The test pattern below shows where your display stops.");
+    ImGui::SameLine();
+    ImGui::TextUnformatted("Preset");
+    Hint("Off: the game's own look in HDR10, at 203 nits. Preset #1 to #3: your own settings, each saved on its own; the settings below change the one selected.");
 
-    ImGui::BeginDisabled(!s.hdr_highlights);
-    static const char* tonemappers[] = {"Neutwo (the game's look)", "PsychoV30 (RenoDX)"};
-    int tonemapper = std::clamp(s.hdr_tonemapper.load(), 0, 1);
-    if (ImGui::BeginCombo("Tone mapper", tonemappers[tonemapper])) {
-        for (int i = 0; i < 2; ++i) {
-            if (ImGui::Selectable(tonemappers[i], i == tonemapper)) {
-                Store(s.hdr_tonemapper, i, true);
-            }
-        }
-        ImGui::EndCombo();
+    static constexpr const char* modes[] = {"Simple", "Intermediate", "Advanced"};
+    const int level = std::clamp(s.hdr_settings_mode.load(), 0, 2);
+    if (const int chosen = ComboIndex("Settings Mode", level, modes); chosen != level) {
+        Store(s.hdr_settings_mode, chosen, true);
     }
-    Hint("How the light above the game's white is brought down to your display's peak. Neutwo keeps the game's image and rolls the highlights off near the peak. PsychoV30 (from RenoDX) models the eye's response: truer colors in bright lights, slightly different midtones.");
-    ImGui::BeginDisabled(tonemapper != 0);
-    static const char* scalings[] = {"Luminance (hue kept)", "Per channel"};
-    int scaling = s.hdr_per_channel ? 1 : 0;
-    if (ImGui::BeginCombo("Scaling", scalings[scaling])) {
-        for (int i = 0; i < 2; ++i) {
-            if (ImGui::Selectable(scalings[i], i == scaling)) {
-                Store(s.hdr_per_channel, i == 1, true);
-            }
-        }
-        ImGui::EndCombo();
-    }
-    Hint("Neutwo, as RenoDX's Scaling: on luminance the colors of bright lights keep their hue; per channel they saturate and go toward white sooner (a filmic look).");
-    ImGui::EndDisabled();
-    SliderReset("Highlight strength", s.hdr_strength, 0.0f, 3.0f, 1.0f, "%.2f",
-                "How much of the light the game computed above its white is shown (the moon, the clinic window, fires): 0 is the SDR look, 1 is bbport's default, more is brighter.");
-    ImGui::BeginDisabled(s.hdr_mode != 5);
-    SliderReset("Highlight range", s.hdr_knee, 10.0f, 95.0f, 60.0f, "from %.0f %% of white",
-                "Where the game's own light starts to go above white: the game's curve is kept below, continued above instead of flattening. Lower lets more of the bright parts reach HDR, with their detail (the Hunter's Dream moon: try 30-40); higher keeps more of the SDR look. Below the end of the game's toe (about 20-30 % in some areas) it acts as that value. HDR 16-bit mode only.");
-    ImGui::EndDisabled();
-    SliderReset("Highlight boost", s.hdr_boost, 0.0f, 1.0f, 0.0f, "%.2f",
-                "Raises the bright parts the game drew close to its white toward the peak, for scenes lit for SDR (Hunter's Dream): 0 is off, 1 takes the game's white to the peak. Midtones and the HUD do not change.");
-    ImGui::TextUnformatted("Presets:");
-    ImGui::SameLine();
-    HdrPreset(s, "Game", 1.0f, 0.0f);
-    ImGui::SameLine();
-    HdrPreset(s, "Balanced", 1.2f, 0.35f);
-    ImGui::SameLine();
-    HdrPreset(s, "Vivid", 1.5f, 0.7f);
-    ImGui::SameLine();
-    HdrPreset(s, "SDR look", 0.0f, 0.0f);
-    Hint("Game: bbport's default (strength 1, no boost). Balanced: 1.2 and 0.35. Vivid: 1.5 and 0.7. SDR look: no HDR highlights, with the menu's paper white (Compare shows the same without changing these).");
 
-    if (ImGui::TreeNodeEx("Color grading (scene only)", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::BeginDisabled(s.hdr_mode != 5);
-        SliderReset("Scene grading", s.hdr_scene_grading, 0.0f, 100.0f, 100.0f, "%.0f %%",
-                    "Strength of the game's own color grading (its color table): 100 is the game's look, 0 the image before it. As RenoDX's Scene Grading. HDR 16-bit mode only.");
+    ImGui::BeginDisabled(preset == 0);
+    ImGui::SeparatorText("Tone Mapping");
+    // Shown as RenoDX's order; stored as bbport.ini's hdr_tonemapper (0 Neutwo, 1 PsychoV30,
+    // 2 Vanilla).
+    static constexpr const char* tonemappers[] = {"Vanilla", "Neutwo", "PsychoV30"};
+    static constexpr int stored[] = {BbSettings::HdrToneMapperVanilla, 0, 1};
+    const int tonemapper = std::clamp(s.hdr_tonemapper.load(), 0, BbSettings::HdrToneMapperVanilla);
+    const int shown = tonemapper == BbSettings::HdrToneMapperVanilla ? 0 : tonemapper + 1;
+    if (const int chosen = ComboIndex("Tone Mapper", shown, tonemappers); chosen != shown) {
+        Store(s.hdr_tonemapper, stored[chosen], true);
+    }
+    Hint("Vanilla: the game's own look (no HDR highlights). Neutwo: the game's image, its light above white rolled off near your display's peak. PsychoV30: models the eye's response, truer colors in bright lights.");
+    SliderReset("Peak Brightness", s.hdr_peak_nits, 400.0f, 4000.0f, 1000.0f, "%.0f nits",
+                "The brightest your display can show (1000 on a QD-OLED in its HDR 1000 mode).");
+    SliderReset("Game Brightness", s.hdr_paper_white, 80.0f, 500.0f, 203.0f, "%.0f nits",
+                "Brightness of the game's white. 203 is the HDR reference.");
+    SliderReset("UI Brightness", s.hdr_ui_nits, 48.0f, 500.0f, 203.0f, "%.0f nits",
+                "Brightness of the HUD and menus.");
+    if (level >= 1) {
+        static constexpr const char* gammas[] = {"Off (sRGB)", "2.2"};
+        const int gamma = s.hdr_gamma22 ? 1 : 0;
+        if (const int chosen = ComboIndex("Gamma Correction", gamma, gammas); chosen != gamma) {
+            Store(s.hdr_gamma22, chosen == 1, true);
+        }
+        Hint("2.2: the game's image as SDR monitors show it, deeper shadows (default). Off: the sRGB curve, lighter near-blacks.");
+        ImGui::BeginDisabled(tonemapper != 0);
+        static constexpr const char* scalings[] = {"Luminance", "Per Channel"};
+        const int scaling = s.hdr_per_channel ? 1 : 0;
+        if (const int chosen = ComboIndex("Scaling", scaling, scalings); chosen != scaling) {
+            Store(s.hdr_per_channel, chosen == 1, true);
+        }
+        Hint("Neutwo only. Luminance keeps the colors of bright lights; Per Channel lets them go toward white sooner (a filmic look).");
         ImGui::EndDisabled();
-        SliderReset("Exposure", s.hdr_exposure, 0.0f, 2.0f, 1.0f, "%.2f",
-                    "Brightness of the whole scene before the rest (1 = the game's).");
-        const auto percent = [](const char* label, std::atomic<float>& value, float reset,
-                                const char* hint) {
-            SliderReset(label, value, 0.0f, 100.0f, reset, "%.0f", hint);
-        };
-        SliderReset("Black floor", s.hdr_black_floor, 0.0f, 2.0f, 0.0f, "%.2f nits",
-                    "Takes the game's darkest grey down to true black (OLED): the nits removed at black, less and less up to white. The game's black sits near 0.4 nits (brightness 5): try 0.4. 0 is the game's.");
-        percent("Contrast", s.hdr_contrast, 50.0f, "Around mid grey: 50 is the game's, more deepens shadows and raises light.");
-        percent("Highlights", s.hdr_grade_highlights, 50.0f, "Brightness above mid grey: 50 is the game's.");
-        percent("Shadows", s.hdr_shadows, 50.0f, "Brightness below mid grey: 50 is the game's, more lifts the shadows.");
-        percent("Saturation", s.hdr_saturation, 50.0f, "Color intensity: 50 is the game's, 0 is black and white.");
-        percent("Highlight saturation", s.hdr_highlight_saturation, 50.0f, "Color in the bright parts only: 50 is the game's.");
-        percent("Blowout", s.hdr_blowout, 0.0f, "The brightest colors fade to white near the peak (from a quarter of it), like overexposed film: 0 is off. Most visible on fires and the clinic window.");
-        if (ImGui::Button("Reset color grading")) {
-            Store(s.hdr_exposure, 1.0f, true);
-            Store(s.hdr_contrast, 50.0f, true);
-            Store(s.hdr_grade_highlights, 50.0f, true);
-            Store(s.hdr_shadows, 50.0f, true);
-            Store(s.hdr_saturation, 50.0f, true);
-            Store(s.hdr_highlight_saturation, 50.0f, true);
-            Store(s.hdr_blowout, 0.0f, true);
-            Store(s.hdr_scene_grading, 100.0f, true);
-            Store(s.hdr_black_floor, 0.0f, true);
-        }
-        ImGui::TreePop();
-    }
-    if (ImGui::TreeNodeEx("Game effects (scene only)", ImGuiTreeNodeFlags_DefaultOpen)) {
-        SliderReset("Bloom", s.hdr_bloom, 0.0f, 100.0f, 50.0f, "%.0f",
-                    "The game's glow around lights and bright areas: 50 is the game's, 0 removes it, 100 doubles it. As RenoDX's Bloom. In HDR 16-bit mode it also scales the second glow the game adds after its tone mapping.");
-        SliderReset("Vignette", s.hdr_vignette, 0.0f, 100.0f, 50.0f, "%.0f",
-                    "The game's darkening toward the screen edges, where the game has one: 50 is the game's, 0 removes it, 100 doubles it. As RenoDX's Vignette.");
-        ImGui::TextDisabled("Film grain: not yet (the grain is added in the game's 8-bit image).");
-        ImGui::TreePop();
     }
 
-    static const char* debug_views[] = {"Off", "Highlight gain as colors",
-                                        "Pixels taken as UI in red"};
-    int debug = std::clamp(s.hdr_debug.load(), 0, 2);
-    if (ImGui::BeginCombo("Debug view", debug_views[debug])) {
-        for (int i = 0; i < 3; ++i) {
-            if (ImGui::Selectable(debug_views[i], i == debug)) {
-                s.hdr_debug = i;
-            }
-        }
-        ImGui::EndCombo();
+    ImGui::SeparatorText("Color Grading");
+    const auto percent = [](const char* label, std::atomic<float>& value, float reset,
+                            const char* hint) {
+        SliderReset(label, value, 0.0f, 100.0f, reset, "%.0f", hint);
+    };
+    SliderReset("Exposure", s.hdr_exposure, 0.0f, 2.0f, 1.0f, "%.2f", nullptr);
+    percent("Highlights", s.hdr_grade_highlights, 50.0f, nullptr);
+    percent("Shadows", s.hdr_shadows, 50.0f, nullptr);
+    percent("Contrast", s.hdr_contrast, 50.0f, nullptr);
+    percent("Saturation", s.hdr_saturation, 50.0f, nullptr);
+    if (level >= 1) {
+        percent("Highlight Saturation", s.hdr_highlight_saturation, 50.0f, nullptr);
+        percent("Blowout", s.hdr_blowout, 0.0f,
+                "The brightest colors fade to white near the peak, like overexposed film.");
+        ImGui::BeginDisabled(s.hdr_mode != 5);
+        SliderReset("Color Grade Strength", s.hdr_scene_grading, 0.0f, 100.0f, 100.0f, "%.0f %%",
+                    "The game's own color grading: 100 is the game's look, 0 the image before it. HDR 16-bit mode.");
+        ImGui::EndDisabled();
+        SliderReset("Black Floor", s.hdr_black_floor, 0.0f, 2.0f, 0.0f, "%.2f nits",
+                    "Takes the game's darkest grey down to true black (OLED). With the game's brightness at 5, try 0.4.");
     }
-    Hint("Gain as colors: grey keeps the SDR value, blue to red are raised up to the peak. UI in red: the pixels kept in SDR because they look like the HUD drawn over the scene; only the HUD should be red. Not saved.");
-    ImGui::EndDisabled();
-    if (s.hdr_mode == 5) {
-        static const char* decodes[] = {"Auto", "Linear", "sRGB signal"};
-        int decode = std::clamp(s.hdr_native16_decode.load(), 0, 2);
-        if (ImGui::BeginCombo("16-bit decoding (test)", decodes[decode])) {
-            for (int i = 0; i < 3; ++i) {
-                if (ImGui::Selectable(decodes[i], i == decode)) {
-                    s.hdr_native16_decode = i;
-                }
-            }
-            ImGui::EndCombo();
-        }
-        Hint("Test of the 16-bit chain: how the final pass reads the game's last image. If the picture looks grey and washed out, or too dark, try the other choice. Not saved.");
-        static const char* probes[] = {"Off", "1. Composite: HDR part", "2. Final image above white",
-                                       "3. Color grading input above white",
-                                       "4. Color grading area", "5. Copy above white"};
-        int probe = std::clamp(s.hdr_native16_probe.load(), 0, 5);
-        if (ImGui::BeginCombo("16-bit probe (test)", probes[probe])) {
-            for (int i = 0; i < 6; ++i) {
-                if (ImGui::Selectable(probes[i], i == probe)) {
-                    s.hdr_native16_probe = i;
-                }
-            }
-            ImGui::EndCombo();
-        }
-        if (ImGui::Button("Log the 16-bit chain (one frame)")) {
-            s.hdr_chain_trace = true;
-        }
-        Hint("Test: writes one frame of the 16-bit chain to last_run.log (HDR trace lines): which passes draw into the 16-bit images and how they are read.");
-        Hint("Test of the 16-bit chain, shown in color: 1, green where the game's composite gets light above white from bbport; 2, magenta where the image that reaches the screen is still above white; 3, magenta where the game's color grading reads light above white, cyan where it reads exactly white; 4, green where the color grading draws; 5, magenta where the game's copies of its image are above white. Not saved.");
+
+    ImGui::SeparatorText("Effects");
+    SliderReset("Bloom", s.hdr_bloom, 0.0f, 100.0f, 50.0f, "%.0f",
+                "The glow around lights: 50 is the game's, 0 removes it.");
+    if (level >= 1) {
+        SliderReset("Vignette", s.hdr_vignette, 0.0f, 100.0f, 50.0f, "%.0f",
+                    "The darkening toward the screen edges, where the game has one: 50 is the game's.");
     }
-    bool pattern = s.hdr_test_pattern;
-    if (ImGui::Checkbox("Test pattern", &pattern)) {
-        s.hdr_test_pattern = pattern;
+
+    if (level >= 2) {
+        ImGui::SeparatorText("bbport Highlights");
+        SliderReset("Highlight Strength", s.hdr_strength, 0.0f, 3.0f, 1.0f, "%.2f",
+                    "How much of the light the game computed above its white is shown: 0 is the SDR look, 1 bbport's default.");
+        ImGui::BeginDisabled(s.hdr_mode != 5);
+        SliderReset("Highlight Range", s.hdr_knee, 10.0f, 95.0f, 60.0f, "from %.0f %% of white",
+                    "Where the game's light starts to go above white: lower lets more of the bright parts reach HDR (the Hunter's Dream moon: 30-40). HDR 16-bit mode.");
+        ImGui::EndDisabled();
+        SliderReset("Highlight Boost", s.hdr_boost, 0.0f, 1.0f, 0.0f, "%.2f",
+                    "Raises the parts the game drew close to its white toward the peak, for scenes lit for SDR: 0 is off.");
     }
-    Hint("Shows a test pattern instead of the game. Row 2 and 3: grey patches from 0.1 to 10000 nits; patches that look the same are above what your display shows, so set Peak brightness to the last one that is brighter than its left neighbour. Not saved.");
-    if (ImGui::Button("Reset HDR")) {
-        Store(s.hdr_paper_white, 203.0f, true);
-        Store(s.hdr_peak_nits, 1000.0f, true);
-        Store(s.hdr_strength, 1.0f, true);
-        Store(s.hdr_boost, 0.0f, true);
-        Store(s.hdr_ui_nits, 203.0f, true);
-        Store(s.hdr_knee, 60.0f, true);
-        Store(s.hdr_bloom, 50.0f, true);
-        Store(s.hdr_vignette, 50.0f, true);
-        s.hdr_compare = 0;
-        s.hdr_debug = 0;
-        s.hdr_test_pattern = false;
+    if (ImGui::Button("Reset all")) {
+        BbSettings::ResetHdr();
+        MarkDirty();
     }
     ImGui::SameLine();
-    ImGui::TextDisabled("Sliders are saved to bbport.ini (Compare, debug and pattern are not).");
+    ImGui::TextDisabled("The settings of the preset selected, back to the defaults.");
+    ImGui::EndDisabled();
+
+    if (level >= 2) {
+        ImGui::SeparatorText("Debug");
+        static constexpr const char* compares[] = {"HDR", "SDR (the game's image)",
+                                                   "Split: SDR left | HDR right"};
+        s.hdr_compare = ComboIndex("Compare", s.hdr_compare, compares);
+        Hint("F9 switches it with the menu closed. Not saved.");
+        static constexpr const char* debug_views[] = {"Off", "Highlight gain as colors",
+                                                      "Pixels taken as UI in red"};
+        s.hdr_debug = ComboIndex("Debug view", s.hdr_debug, debug_views);
+        if (s.hdr_mode == 5) {
+            static constexpr const char* decodes[] = {"Auto", "Linear", "sRGB signal"};
+            s.hdr_native16_decode = ComboIndex("16-bit decoding", s.hdr_native16_decode, decodes);
+            static constexpr const char* probes[] = {
+                "Off", "1. Composite: HDR part", "2. Final image above white",
+                "3. Color grading input above white", "4. Color grading area",
+                "5. Copy above white"};
+            s.hdr_native16_probe = ComboIndex("16-bit probe", s.hdr_native16_probe, probes);
+            Hint("1, green where the composite gets light above white; 2, magenta where the image reaching the screen is above white; 3, magenta where the color grading reads above white (cyan: exactly white); 4, green where it draws; 5, magenta where the copies are above white. Not saved.");
+            if (ImGui::Button("Log the 16-bit chain (one frame)")) {
+                s.hdr_chain_trace = true;
+            }
+        }
+        bool pattern = s.hdr_test_pattern;
+        if (ImGui::Checkbox("Test pattern", &pattern)) {
+            s.hdr_test_pattern = pattern;
+        }
+        Hint("Grey patches from 0.1 to 10000 nits: set Peak Brightness to the last one brighter than its left neighbour. Not saved.");
+    }
+
+    ImGui::SeparatorText("About");
+    ImGui::TextDisabled("bbport HDR: HDR10 output and the game's own light in 16 bits.");
+    ImGui::TextDisabled("Tone mappers Neutwo and PsychoV30 and this menu's layout from RenoDX");
+    ImGui::TextDisabled("(github.com/clshortfuse/renodx, by ShortFuse and contributors, MIT).");
 }
 
 /// The presented frame rate; with frame generation adding frames also the game's own rate,

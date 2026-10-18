@@ -647,6 +647,13 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     }
     pp_settings.hdr_black_floor = std::clamp(BbSettings::Get().hdr_black_floor.load(), 0.0f, 2.0f) /
                                   std::max(pp_settings.hdr_paper_white, 1.0f);
+    // The in-game menu's HDR preset Off, as RenoDX's: the game's own look at the HDR reference
+    // white (203 nits, UI included), whatever the presets hold.
+    if (BbSettings::Get().hdr_preset == 0) {
+        pp_settings.hdr_paper_white = 203.0f;
+        pp_settings.hdr_ui_nits = 203.0f;
+        pp_settings.hdr_black_floor = 0.0f;
+    }
     // bbport HDR, mode 5: the scene before the UI, for the HUD brightness (the final pass takes
     // the pixels the UI changed as the HUD's). Bound where the side channel goes in mode 4.
     if (pp_settings.hdr_native16 != 0) {

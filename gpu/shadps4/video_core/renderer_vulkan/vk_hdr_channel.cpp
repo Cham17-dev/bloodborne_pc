@@ -517,8 +517,12 @@ float HdrChannel::Knee() {
 
 u32 HdrChannel::Tonemapper() {
     // bbport.ini hdr_tonemapper or BB_HDR_TONEMAPPER; the in-game menu changes it live (the final
-    // pass tonemaps).
-    return u32(std::clamp(BbSettings::Get().hdr_tonemapper.load(), 0, 1));
+    // pass tonemaps). The menu's HDR preset Off is the game's own look: Vanilla.
+    const auto& s = BbSettings::Get();
+    if (s.hdr_preset == 0) {
+        return u32(BbSettings::HdrToneMapperVanilla);
+    }
+    return u32(std::clamp(s.hdr_tonemapper.load(), 0, BbSettings::HdrToneMapperVanilla));
 }
 
 u32 HdrChannel::Debug() {

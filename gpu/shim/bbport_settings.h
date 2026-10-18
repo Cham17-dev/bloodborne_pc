@@ -126,8 +126,16 @@ struct Values {
     std::atomic<bool> hdr_native16_live{false}; ///< this frame is the 16-bit chain's
     std::atomic<unsigned> hdr_variant{0};        ///< last composite with the HDR pass
     std::atomic<int> hdr_mode{0};                ///< BB_HDR_TONEMAP
-    std::atomic<int> hdr_tonemapper{0};          ///< 0 Neutwo, 1 PsychoV30 (live, saved)
+    /// 0 Neutwo, 1 PsychoV30, 2 Vanilla (the game's own look; live, saved).
+    std::atomic<int> hdr_tonemapper{0};
     std::atomic<bool> hdr_per_channel{false};    ///< Neutwo per channel (else luminance)
+    /// The in-game menu's HDR preset, as RenoDX's: 0 Off (the game's own look), 1..3 the
+    /// player's own settings, each kept in bbport.ini (hdr_preset1..3); the sliders change the one
+    /// selected. Saved.
+    std::atomic<int> hdr_preset{1};
+    /// The in-game menu's HDR sliders shown, as RenoDX's Settings Mode: 0 Simple,
+    /// 1 Intermediate, 2 Advanced (bbport's own sliders and the test tools). Saved.
+    std::atomic<int> hdr_settings_mode{0};
     /// Silence the game while its window does not have focus (bbgpu_audio_muted).
     std::atomic<bool> mute_unfocused{false};
     /// Keyboard and mouse button prompts: with the device in use (auto), or always one kind.
@@ -199,8 +207,17 @@ void ConfigureDlssSupport(bool available, const char* problem);
 bool FixedRenderSession();
 int RenderPreset();
 bool ResolutionNeedsRestart();
-/// Writes the file (menu changes).
+/// Writes the file (menu changes). With an HDR preset selected, it also keeps the HDR settings
+/// as that preset's.
 void Save();
+
+inline constexpr int HdrToneMapperVanilla = 2;
+inline constexpr int HdrPresetCount = 4; ///< Off and three of the player's
+/// Selects an HDR preset: the HDR settings go to the one selected before, and those of the new
+/// one (1..3) are loaded; a preset never saved starts from the defaults. 0 (Off) keeps them.
+void SelectHdrPreset(int preset);
+/// The HDR settings back to bbport's defaults (the menu's Reset all).
+void ResetHdr();
 
 /// Render resolution divisor of a preset (1.0 native, 1.5 quality, ...).
 float PresetScale(int preset);

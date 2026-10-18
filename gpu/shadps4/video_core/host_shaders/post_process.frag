@@ -40,7 +40,7 @@ layout (push_constant) uniform settings {
     float hdr_saturation;
     float hdr_highlight_saturation;
     float hdr_blowout;
-    uint hdr_tonemapper;   // bbport: 0 Neutwo, 1 PsychoV30 (RenoDX)
+    uint hdr_tonemapper;   // bbport: 0 Neutwo, 1 PsychoV30 (RenoDX), 2 Vanilla (the game's SDR)
     uint hdr_per_channel;  // bbport: Neutwo per channel (else on luminance, hue kept)
     float hdr_bloom;       // bbport: the game's bloom, 0 none .. 1 the game's .. 2 double
     float hdr_vignette;    // bbport: the game's vignettes, 0 none .. 1 the game's .. 2 double
@@ -196,7 +196,9 @@ vec3 native16_nits(vec3 v) {
     vec3 sdr = min(v, 1.0);
     // Encoded (2): the values are the SDR signal itself; linear (1): encoded like the game's.
     vec3 signal = pp.hdr_native16 == 2u ? sdr : clamp(gamma(sdr), 0.0, 1.0);
-    bool sdr_side = pp.hdr_compare == 1u || (pp.hdr_compare == 2u && uv.x < 0.5);
+    // Vanilla tone mapper (or the menu's preset Off): the game's own SDR look, as Compare's SDR.
+    bool sdr_side = pp.hdr_compare == 1u || (pp.hdr_compare == 2u && uv.x < 0.5) ||
+                    pp.hdr_tonemapper == 2u;
     if (sdr_side) {
         return sdr_to_nits(signal, vec3(1.0));
     }
@@ -255,7 +257,8 @@ void main() {
         vec3 signal = clamp(gamma(clamp(color_linear.rgb, 0.0, 1.0)), 0.0, 1.0);
         vec3 nits = sdr_to_nits(signal, vec3(1.0));
         // Comparison: the game's SDR (at paper white) on the whole frame or on its left half.
-        bool sdr_side = pp.hdr_compare == 1u || (pp.hdr_compare == 2u && uv.x < 0.5);
+        bool sdr_side = pp.hdr_compare == 1u || (pp.hdr_compare == 2u && uv.x < 0.5) ||
+                        pp.hdr_tonemapper == 2u; // Vanilla (or preset Off)
         if (pp.hdr_channel && !sdr_side) {
             // Where the finished frame is still what the tonemap wrote (same luminance, give or
             // take the game's AA, grain and brightness setting), it is the scene: its highlights

@@ -294,34 +294,15 @@ FRAME_CAPS = [('', ('Auto: display refresh, max 120 (recommended)', 'Авто: �
               ('60', ('60',)), ('90', ('90',)), ('120', ('120',)), ('144', ('144  ⚠',)), ('165', ('165  ⚠',)),
               ('240', ('240  ⚠',)), ('0', ('No limit  ⚠', 'Без ограничения  ⚠'))]
 FRAMES_AHEAD = [('', ('1 (default)', '1 (по умолчанию)')), ('2', ('2',)), ('0', ('Unbounded', 'Без ограничения'))]
-# bbport HDR: the game's tonemap shader replaced by bbport's (1-3), or the generic HDR pass over
-# every variant of the game's final composite (4, docs/HDR.md step 3c).
-HDR_TONEMAP = [('', ('Game (default)', 'Игры (по умолчанию)')), ('1', ('bbport', 'bbport')),
-               ('2', ('bbport, left half tinted (check)', 'bbport, левая половина окрашена (проверка)')),
-               ('3', ('bbport HDR: brighter highlights (experimental, needs HDR output)',
-                      'bbport HDR: яркие блики (эксперимент, нужен вывод HDR)')),
-               ('4', ('bbport HDR, all areas (experimental, needs HDR output)',
-                      'bbport HDR, все локации (эксперимент, нужен вывод HDR)')),
-               ('5', ('bbport HDR 16-bit (experimental, needs HDR output)',
-                      'bbport HDR 16 бит (эксперимент, нужен вывод HDR)'))]
-# bbport HDR: peak luminance of the display, in nits (BB_HDR_PEAK_NITS).
-# bbport.ini keys since hdr-27 (the in-game menu changes them live; other values show as they are).
-HDR_PEAK_NITS = [('1000', ('1000 nits (default)', '1000 нит (по умолчанию)')), ('400', ('400 nits', '400 нит')),
-                 ('600', ('600 nits', '600 нит')), ('800', ('800 nits', '800 нит')),
-                 ('1500', ('1500 nits', '1500 нит')), ('2000', ('2000 nits', '2000 нит'))]
-# bbport HDR: the tone mapper of the all-areas HDR pass (bbport.ini hdr_tonemapper, also live in
-# the in-game menu).
-HDR_TONEMAPPER = [('0', ('Neutwo: the game\'s look, brighter highlights (default)',
-                        'Neutwo: вид игры, более яркие блики (по умолчанию)')),
-                  ('1', ('PsychoV30 (RenoDX): perceptual, truer colors in bright lights',
-                         'PsychoV30 (RenoDX): перцептивный, более точные цвета ярких источников'))]
-# bbport HDR: debug views of the HDR highlights (BB_HDR_DEBUG).
-HDR_DEBUG = [('', ('Off', 'Выкл.')), ('1', ('Highlight gain as colors', 'Усиление бликов цветом')),
-             ('2', ('Pixels taken as UI in red', 'Пиксели интерфейса красным'))]
-# bbport HDR: luminance of the game's white (paper white) in HDR output, in nits.
-HDR_PAPER_WHITE = [('203', ('203 nits (default)', '203 нит (по умолчанию)')), ('100', ('100 nits', '100 нит')),
-                   ('150', ('150 nits', '150 нит')), ('250', ('250 nits', '250 нит')),
-                   ('300', ('300 nits', '300 нит')), ('400', ('400 nits', '400 нит'))]
+# bbport HDR (BB_HDR_TONEMAP, docs/HDR.md): 5 the game's own light in 16 bits, 4 the generic
+# pass over every variant of the game's composite (the fallback). The test modes 1-3 are no longer
+# offered; one set before shows as it is (choice(custom=...)).
+HDR_TONEMAP = [('', ('Off: the game\'s picture in HDR10, no HDR highlights',
+                     'Выкл.: картинка игры в HDR10, без бликов HDR')),
+               ('5', ('bbport HDR (recommended)', 'bbport HDR (рекомендуется)')),
+               ('4', ('bbport HDR, all areas (fallback)', 'bbport HDR, все локации (запасной)'))]
+# The HDR settings themselves (brightness, peak, tone mapper, color grading, presets) are the
+# in-game menu's, saved in bbport.ini.
 UI_LANGUAGES = bbport_lang.LANGUAGE_NAMES
 
 FSR4_COMMIT = 'ae8d628fae208813172446d1e49ed94150b04658'
@@ -561,14 +542,11 @@ def game_environment(s):
     env['BB_PRESENT_MODE'] = s['present_mode']
     if s['hdr']:
         env['BB_HDR'] = '1'
-        if s.get('hdr_test_pattern'):
-            env['BB_HDR_TEST_PATTERN'] = '1'
     if s.get('hdr_tonemap', ''):
         env['BB_HDR_TONEMAP'] = s['hdr_tonemap']
         # The HDR lines of last_run.log (HDR output, HDR channel, HDR pass, variants) are info.
         env.setdefault('BB_GPU_LOG', 'info')
-    if s.get('hdr_debug', ''):
-        env['BB_HDR_DEBUG'] = s['hdr_debug']
+    # The HDR test pattern and debug views are in the in-game menu (Settings Mode: Advanced).
     if s.get('hdr_probe'):
         # HDR diagnostic: the game's shaders and a few analysed frames, in <saves>/shader/dumps.
         user = Path(s['user_dir'] or DATA_DIR / 'user')
@@ -808,6 +786,8 @@ class Launcher:
         box = self.ttk.Combobox(parent, values=[_(*text) for _v, text in options], state='readonly', width=width)
         if var.get() not in values:
             var.set(values[0])
+            if store == 'ini':  # shown as the first choice, but not an edit: the file keeps its value
+                self.ini_shown[key] = ini_text(key, var.get())
 
         def show(*_args):
             current = var.get()
@@ -1155,37 +1135,18 @@ class Launcher:
         self.section(f, _('Window', 'Окно'))
         self.check(f, 'fullscreen', 'app', _('Fullscreen', 'Полноэкранный режим'))
         self.row(f, _('Presentation', 'Режим показа кадров'), self.choice(f, 'present_mode', 'app', PRESENT_MODES))
-        self.check(f, 'hdr', 'app', _('Allow HDR output', 'Разрешить HDR'),
+        self.section(f, _('HDR', 'HDR'))
+        self.check(f, 'hdr', 'app', _('HDR output', 'Вывод HDR'),
                    _('When HDR is on in Windows and the display supports it.',
                      'Если HDR включён в Windows и монитор его поддерживает.'))
-        self.row(f, _('HDR brightness (paper white)', 'Яркость HDR (белый)'),
-                 self.choice(f, 'hdr_paper_white', 'ini', HDR_PAPER_WHITE,
-                             custom=('{} nits (set in game)', '{} нит (задано в игре)')),
-                 _('How bright the game\'s white is in HDR. Raise it if the game looks dim. '
-                   'Also in the in-game menu (Insert or L3+R3), live.',
-                   'Яркость белого цвета игры в HDR. Увеличьте, если игра выглядит тусклой. '
-                   'Также в меню игры (Insert или L3+R3), на лету.'))
-        self.row(f, _('HDR tonemap (test)', 'Тонмаппинг HDR (тест)'),
-                 self.choice(f, 'hdr_tonemap', 'app', HDR_TONEMAP),
-                 _('Replaces the game\'s tonemap shader with bbport\'s. The check mode tints the left '
-                   'half of the screen magenta to show that it is active.',
-                   'Заменяет шейдер тонмаппинга игры шейдером bbport. Режим проверки окрашивает '
-                   'левую половину экрана в пурпурный.'))
-        self.row(f, _('HDR highlights (all areas)', 'Блики HDR (все локации)'),
-                 self.choice(f, 'hdr_tonemapper', 'ini', HDR_TONEMAPPER),
-                 _('With "bbport HDR, all areas": how the highlights above the game\'s white are drawn.',
-                   'С «bbport HDR, все локации»: как рисуются блики выше белого игры.'))
-        self.row(f, _('HDR peak brightness', 'Пиковая яркость HDR'),
-                 self.choice(f, 'hdr_peak_nits', 'ini', HDR_PEAK_NITS,
-                             custom=('{} nits (set in game)', '{} нит (задано в игре)')),
-                 _('The brightest your display can show. The in-game menu (Insert or L3+R3) also '
-                   'sets it live, with the strength and boost of the HDR highlights.',
-                   'Максимальная яркость дисплея. В меню игры (Insert или L3+R3) — на лету, '
-                   'вместе с силой и усилением бликов HDR.'))
-        self.row(f, _('HDR debug view', 'Отладка HDR'), self.choice(f, 'hdr_debug', 'app', HDR_DEBUG))
-        self.check(f, 'hdr_test_pattern', 'app', _('HDR test pattern', 'Тестовая таблица HDR'),
-                   _('Shows a test pattern instead of the game, to check the HDR output.',
-                     'Показывает тестовую таблицу вместо игры для проверки вывода HDR.'))
+        self.row(f, _('HDR mode', 'Режим HDR'),
+                 self.choice(f, 'hdr_tonemap', 'app', HDR_TONEMAP,
+                             custom=('Test mode {}', 'Тестовый режим {}')),
+                 _('bbport HDR shows the game\'s own light above white (the sun, lamps, fire). '
+                   'Brightness, peak, tone mapper, color grading and presets are in the in-game menu '
+                   '(Insert or L3+R3), live.',
+                   'bbport HDR показывает собственный свет игры выше белого (солнце, лампы, огонь). '
+                   'Яркость, пик, тонмаппер, цвет и пресеты — в меню игры (Insert или L3+R3), на лету.'))
         self.check(f, 'hdr_probe', 'app', _('HDR diagnostic (collect shaders)', 'Диагностика HDR (сбор шейдеров)'),
                    _('Saves the game\'s shaders and analyses a frame every 20 s, in the saves folder '
                      'under shader/dumps. Slower: turn it off afterwards.',
