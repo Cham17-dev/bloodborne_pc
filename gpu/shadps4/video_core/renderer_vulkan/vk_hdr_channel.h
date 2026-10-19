@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: Copyright 2026 bbport
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// bbport HDR side channel (docs/HDR.md, step 3b). Right after Bloodborne's tonemap draw, the same
-// draw is replayed with hdr/bb_tonemap_hdr.frag into an RGBA16F image owned here: per pixel, the
-// gain that turns the game's color into the HDR color, and the game's own output luminance. The
-// final post-process multiplies the finished SDR frame by that gain where the frame is still the
-// scene (not the UI drawn over it). The game's 8-bit chain (AA, UI, display copy) is untouched.
+// bbport HDR transport (docs/HDR.md):
+// Mode 5 keeps the post-composite chain in RGBA16F and adds the composite's HDR delta directly
+// to the game's target. PsychoV30 (scene) runs there, including the Vanilla shadow match.
+// Legacy modes 3/4 instead replay the composite into a separate gain/luminance side channel;
+// the final pass applies those gains to the finished SDR frame outside the detected UI.
 
 #pragma once
 
@@ -29,7 +29,7 @@ class HdrChannel {
 public:
     static HdrChannel& Get();
 
-    /// BB_HDR_TONEMAP=3 or 4 with HDR output allowed (BB_HDR=1).
+    /// BB_HDR_TONEMAP=3, 4 or 5 with HDR output allowed (BB_HDR=1).
     static bool Enabled();
     /// BB_HDR_TONEMAP=4: the generic pass. The game's composite shaders are not replaced; every
     /// standard variant of bb_tonemap_variants.h gets the channel draw (hdr/bb_composite_hdr.frag).
@@ -94,7 +94,7 @@ public:
     static float PeakNits();
     /// Fraction of the game's white below which the game's curve is kept (BB_HDR_KNEE, 0.6).
     static float Knee();
-    /// Generic pass: BB_HDR_TONEMAPPER, 0 the Neutwo shoulder (default), 1 PsychoV30.
+    /// Effective live tone mapper: Neutwo (0), PsychoV30 hybrid (1), Vanilla (2), scene (3).
     static u32 Tonemapper();
     /// Mode 5 showing the game's own picture (the menu's preset Off, tone mapper Vanilla, or
     /// Compare on SDR full screen): the chain's HDR changes are left out (no composite delta,

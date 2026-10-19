@@ -6,7 +6,7 @@ name: Shader check
 on:
   push:
     branches: [windows, 'hdr*']
-    paths: ['gpu/shadps4/video_core/host_shaders/**', 'gpu/CMakeLists.txt', '.github/workflows/shader-check.yml']
+    paths: ['gpu/shadps4/video_core/host_shaders/**', 'gpu/CMakeLists.txt', 'docs/hdr-tools/upscale_transfer_check/**', '.github/workflows/shader-check.yml']
   workflow_dispatch:
 
 jobs:
@@ -14,8 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install glslang
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq glslang-tools
+      - name: Install shader tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq glslang-tools spirv-tools spirv-cross libglm-dev g++
       - name: Compile the host shaders
         run: |
           src=gpu/shadps4/video_core/host_shaders
@@ -41,3 +41,14 @@ jobs:
           done
           echo "::notice title=Shader check::$ok compiled, $failed failed"
           [[ $ok -gt 0 && $failed -eq 0 ]]
+      - name: SPIRV-Cross CPU support headers
+        uses: actions/checkout@v4
+        with:
+          repository: KhronosGroup/SPIRV-Cross
+          ref: 300681bbcb8365a8d1eacdacdbdd0249bbf1d6b1
+          path: .ci/spirv-cross
+          sparse-checkout: include
+      - name: Mode 5 linear-light transfer regression
+        env:
+          SPIRV_CROSS_INCLUDE: ${{ github.workspace }}/.ci/spirv-cross/include
+        run: python3 -I docs/hdr-tools/upscale_transfer_check/run.py

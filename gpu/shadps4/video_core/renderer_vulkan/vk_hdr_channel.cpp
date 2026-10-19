@@ -237,9 +237,9 @@ std::optional<std::vector<u32>> BuildComposite(const TonemapVariant& v, std::spa
         *why = "the HDR shader's decorations were not found";
         return std::nullopt;
     }
-    // The channel holds the untonemapped image (the game's curve below the knee, its slope
-    // continued above, up to 10000 nits); the final pass grades it and tonemaps it to the peak
-    // live, with Neutwo or PsychoV30 (in-game menu), as RenoDX does.
+    // Default: extend the game's curve up to 10000 nits; the final pass grades and tonemaps.
+    // In mode 5, PsychoV30 (scene) overrides that curve live through bb_hdr2 push constants
+    // and tonemaps here instead. The final pass then only handles display output.
     const float paper = float(EmulatorSettings.GetHdrPaperWhite());
     const float peak = std::max(10000.0f / paper, HdrChannel::Knee() + 0.05f);
     SetSpirvSpecConstant(spv, 1, std::bit_cast<u32>(peak));
@@ -253,7 +253,6 @@ std::optional<std::vector<u32>> BuildComposite(const TonemapVariant& v, std::spa
     SetSpecBool(spv, 16, v.gamma);
     SetSpecBool(spv, 17, v.additive);
     SetSpirvSpecConstant(spv, 18, *buffer_index);
-    SetSpirvSpecConstant(spv, 19, 0u); // untonemapped (the final pass tonemaps)
     SetSpecBool(spv, 20, v.gain);
     SetSpecBool(spv, 21, v.floor);
     SetSpecBool(spv, 22, v.scene_mat);
