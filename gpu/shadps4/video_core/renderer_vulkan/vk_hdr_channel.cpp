@@ -498,6 +498,18 @@ void HdrChannel::NoteTarget(u64 ps_hash, VAddr address, u32 width, u32 height,
     }
 }
 
+void HdrChannel::NoteCopyTarget(VAddr address, u32 width, u32 height, vk::Format format) {
+    if (!Native16Fixed() || !ChainSize(width, height) || !ChainFormat(format)) {
+        return;
+    }
+    std::scoped_lock lock{native16_mutex};
+    if (native16_targets.insert(address).second) {
+        native16_count.store(u32(native16_targets.size()), std::memory_order_release);
+        LOG_INFO(Render_Vulkan, "HDR 16-bit: target {:#x} (copy of the chain) is RGBA16F",
+                 address);
+    }
+}
+
 bool HdrChannel::Upgraded(VAddr address, u32 width, u32 height, vk::Format format) {
     if (!Native16Active() || !ChainSize(width, height) || !ChainFormat(format) ||
         native16_count.load(std::memory_order_acquire) == 0) {

@@ -54,6 +54,10 @@ public:
     /// format): composite variants and the shaders of the chain mark their 1920x1080 RGBA8
     /// target as 16-bit from the next frame on.
     static void NoteTarget(u64 ps_hash, VAddr address, u32 width, u32 height, vk::Format format);
+    /// Mode 5 with the startup patch: the destination of a copy of a chain target (the game
+    /// copies its finished image for its color grading with a compute copy, not a draw) joins
+    /// the chain from the next frame on, so the copy is done between RGBA16F proxies.
+    static void NoteCopyTarget(VAddr address, u32 width, u32 height, vk::Format format);
     /// Whether this guest color target is drawn as RGBA16F (pipeline formats, proxies, views).
     static bool Upgraded(VAddr address, u32 width, u32 height, vk::Format format);
     /// The display buffers (the game's last copy) when the port draws them at output size.

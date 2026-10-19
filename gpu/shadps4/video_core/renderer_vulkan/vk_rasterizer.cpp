@@ -2258,6 +2258,12 @@ bool Rasterizer::IsComputeImageCopy(const Pipeline* pipeline) {
         dst_image.flags &= ~VideoCore::ImageFlagBits::Dirty;
         return true;
     }
+    if (chain(src_image) && !chain(dst_image) && !dst_image.info.props.is_depth &&
+        dst_image.info.size.width == src_image.info.size.width &&
+        dst_image.info.size.height == src_image.info.size.height) {
+        HdrChannel::NoteCopyTarget(dst_image.info.guest_address, dst_image.info.size.width,
+                                   dst_image.info.size.height, dst_image.info.pixel_format);
+    }
     if (HdrChannel::Trace() && (chain(src_image) || chain(dst_image))) {
         LOG_INFO(Render_Vulkan, "HDR trace: compute copy {:#x} -> {:#x} through the 8-bit images",
                  src_image.info.guest_address, dst_image.info.guest_address);
