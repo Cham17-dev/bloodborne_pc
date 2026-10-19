@@ -21,18 +21,19 @@ enum DebugView : int { DebugNone = 0, DebugReactive = 1, DebugMotion = 2, DebugV
 enum FrameGen : int { FrameGenOff = 0, FrameGenFsr3 = 1, FrameGenDlss = 2, FrameGenCount };
 
 /// Game effects switched by the community patches at start (patches.py EFFECTS): ini key,
-/// menu label, default (the game's own behaviour).
+/// menu label, default (the game's own behaviour, except chromatic aberration, depth of field,
+/// motion blur and the game's AA, off by default as in the launcher).
 struct Effect {
     const char* key;
     const char* label;
     bool default_on;
 };
 inline constexpr Effect Effects[] = {
-    {"effect_chromatic_aberration", "Chromatic aberration", true},
-    {"effect_dof", "Depth of field (DoF)", true},
-    {"effect_motion_blur", "Motion blur", true},
+    {"effect_chromatic_aberration", "Chromatic aberration", false},
+    {"effect_dof", "Depth of field (DoF)", false},
+    {"effect_motion_blur", "Motion blur", false},
     {"effect_ssao", "Ambient occlusion (SSAO)", true},
-    {"effect_game_aa", "Game anti-aliasing", true},
+    {"effect_game_aa", "Game anti-aliasing", false},
     {"effect_dynamic_shadows", "Dynamic shadows", true},
     {"effect_ssr", "Screen-space reflections (SSR)", false},
     {"skip_intro", "Skip intro logos and movie", false},

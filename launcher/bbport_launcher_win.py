@@ -172,12 +172,14 @@ def windows_language():
 # Settings. bbport.ini keys (the game reads them, the in-game menu edits them) and the
 # launcher's own settings.json (passed to run.py as environment variables).
 
+# Default: on. Chromatic aberration, depth of field, motion blur and the game's own AA are off by
+# default (a cleaner picture, and the upscalers reconstruct better without them).
 EFFECTS = [
-    ('effect_chromatic_aberration', ('Chromatic aberration', 'Хроматическая аберрация'), True),
-    ('effect_dof', ('Depth of field', 'Глубина резкости (DoF)'), True),
-    ('effect_motion_blur', ('Motion blur', 'Размытие в движении'), True),
+    ('effect_chromatic_aberration', ('Chromatic aberration', 'Хроматическая аберрация'), False),
+    ('effect_dof', ('Depth of field', 'Глубина резкости (DoF)'), False),
+    ('effect_motion_blur', ('Motion blur', 'Размытие в движении'), False),
     ('effect_ssao', ('Ambient occlusion (SSAO)', 'Затенение SSAO'), True),
-    ('effect_game_aa', ("The game's own anti-aliasing", 'Собственное сглаживание игры'), True),
+    ('effect_game_aa', ("The game's own anti-aliasing", 'Собственное сглаживание игры'), False),
     ('effect_dynamic_shadows', ('Shadows of dynamic lights', 'Тени от динамических источников'), True),
     ('effect_ssr', ('Screen-space reflections (not in the original)', 'Отражения SSR (не было в игре)'), False),
 ]
@@ -212,7 +214,7 @@ INI_FLAGS = {'sharpen', 'object_motion', 'show_fps', 'mute_unfocused', 'frame_ge
              *(k for k, _t, _o in EFFECTS + EXTRAS + CHEATS + TWEAKS)}
 INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': '0.50',
                 'object_motion': '1', 'show_fps': '1', 'output_res': '1920x1080', 'model_lod': '0',
-                'live_resolution': 'auto', 'hud_position': '100', 'fov': '43', 'mute_unfocused': '0',
+                'live_resolution': '0', 'hud_position': '100', 'fov': '43', 'mute_unfocused': '0',
                 'button_prompts': 'auto',
                 'frame_gen': 'off', 'frame_gen_multiplier': '2', 'frame_gen_fit_display': '0',
                 # The HDR settings are the in-game menu's: not written here (a first start takes
