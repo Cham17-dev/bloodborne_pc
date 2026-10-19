@@ -43,6 +43,10 @@ public:
     // followed by bbport's, which adds the HDR part (hdr/bb_composite_hdr.frag, BB_OUTPUT_DELTA),
     // so the frame carries light above the game's white to the final pass.
     static bool Native16();
+    /// Mode 5 with the startup-patched render size (BB_RENDER_RES, "Live resolution changes"
+    /// off): the game's targets are already at the render size and the scene has no proxies, so
+    /// the chain's targets get same-size RGBA16F proxies of their own (SceneTargets::OwnSize).
+    static bool Native16Fixed();
     /// Mode 5 and the port's output-size images in use (set by the scene proxies, each frame).
     static bool Native16Active();
     static void SetNative16Active(bool active);

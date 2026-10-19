@@ -3073,6 +3073,35 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
                           !same_size(texture_cache.GetImage(db_desc.first), 0))) {
         reduced = false;
     }
+    // bbport HDR, mode 5 with the startup patch ("Live resolution changes" off): the scene is
+    // drawn at the render size without proxies, but the passes drawing only into targets of the
+    // 16-bit chain draw into their same-size RGBA16F proxies (SceneTargets::OwnSize): native
+    // coordinates, no scaling.
+    bool own_size = false;
+    if (!reduced && HdrChannel::Native16Fixed() && HdrChannel::Native16Active() &&
+        key.num_samples == 1 && !db_desc.first &&
+        !(upscaler->Enabled() && upscaler->Redirecting())) {
+        u32 chain_targets = 0;
+        bool all = true;
+        pass_size.reset();
+        for (u32 cb = 0; cb < num_attachments; ++cb) {
+            const auto& [id, desc] = cb_descs[cb];
+            if (!id) {
+                continue;
+            }
+            const auto& image = texture_cache.GetImage(id);
+            if (scene_targets->OwnSize(image) && scene_targets->Eligible(image) &&
+                !image.binding.is_bound && !image.binding.needs_rebind &&
+                !desc.view_info.range.base.layer && !desc.view_info.range.base.level &&
+                same_size(image, 0)) {
+                ++chain_targets;
+            } else {
+                all = false;
+            }
+        }
+        own_size = all && chain_targets > 0;
+        reduced = own_size;
+    }
     if (debug_pass) {
         if (db_desc.first) {
             const auto& depth = texture_cache.GetImage(db_desc.first);
@@ -3082,7 +3111,8 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
         }
         std::printf("Scene pass: reduced %d %s\n", reduced, why.c_str());
     }
-    push_data.scene_size = reduced ? SceneResolution::Pack(scene_targets->Size()) : 0;
+    push_data.scene_size =
+        (reduced && !own_size) ? SceneResolution::Pack(scene_targets->Size()) : 0;
     if (BbStats::enabled) {
         BbStats::reduced_draws.fetch_add(reduced, std::memory_order_relaxed);
         BbStats::scene_draws.fetch_add(scene_started, std::memory_order_relaxed);
@@ -3315,13 +3345,15 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
         state.num_layers = 1;
     }
 
-    if (reduced) {
+    if (reduced && !(own_size && (color_redirected || depth_redirected))) {
         // Half-resolution passes keep the scene's factor (proxy / native = scene / 1920).
         const auto size = scene_targets->Size();
         const auto proxy = pass_size.value_or(size);
         state.width = proxy.width;
         state.height = proxy.height;
-        target_scale = {float(size.width) / 1920.0f, float(size.height) / 1080.0f};
+        target_scale = own_size ? std::array{1.0f, 1.0f}
+                                : std::array{float(size.width) / 1920.0f,
+                                             float(size.height) / 1080.0f};
     }
     if (FrameCapture::Active()) {
         std::array<const VideoCore::ImageInfo*, AmdGpu::NUM_COLOR_BUFFERS> colors{};

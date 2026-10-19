@@ -344,9 +344,27 @@ std::atomic<u32> native16_count{0};
 // The shaders after the composite that write its image or the copy the AA reads (docs/HDR.md):
 // PointSampleColor1 (copy), EmissiveToGlowPS (copy for the glow, clamped by bbport), DLAA, and
 // the glow's addition.
-// The chain's targets: 1920x1080 (the registers give the height padded to whole 8-row tiles),
-// 8-bit RGBA.
-constexpr bool ChainSize(u32 width, u32 height) {
+// The startup-patched render size (BB_RENDER_RES, "Live resolution changes" off): the game
+// allocates its targets at that size, aligned. {0, 0} in a live session.
+std::pair<u32, u32> FixedRenderSize() {
+    static const std::pair<u32, u32> size = [] {
+        u32 w = 0, h = 0;
+        const char* res = std::getenv("BB_RENDER_RES");
+        if (!res || std::sscanf(res, "%ux%u", &w, &h) != 2) {
+            return std::pair<u32, u32>{0, 0};
+        }
+        return std::pair<u32, u32>{w, h};
+    }();
+    return size;
+}
+
+// The chain's targets, 8-bit RGBA: 1920x1080 (the registers give the height padded to whole
+// 8-row tiles), or with the startup patch the patched render size (padded, e.g. 3840x2176).
+bool ChainSize(u32 width, u32 height) {
+    const auto [rw, rh] = FixedRenderSize();
+    if (rw != 0) {
+        return width >= rw && width < rw + 64 && height >= rh && height < rh + 64;
+    }
     return width == 1920 && height >= 1080 && height <= 1088;
 }
 constexpr bool ChainFormat(vk::Format format) {
@@ -430,6 +448,10 @@ void HdrChannel::OnDisplayCopy() {
 
 bool HdrChannel::ChainImage(VAddr address, u32 width, u32 height, vk::Format format) {
     return Upgraded(address, width, height, format);
+}
+
+bool HdrChannel::Native16Fixed() {
+    return Native16() && FixedRenderSize().first != 0;
 }
 
 bool HdrChannel::Native16() {

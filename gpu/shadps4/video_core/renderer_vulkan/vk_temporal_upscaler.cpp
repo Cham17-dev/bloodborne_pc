@@ -1647,8 +1647,12 @@ void TemporalUpscaler::RunUiOnly(VideoCore::ImageId color_id, VideoCore::ImageId
     // the 16-bit image reaches the UI image at a native-resolution output above 1080p.
     const bool native16 = HdrChannel::Upgraded(color.info.guest_address, color.info.size.width,
                                                color.info.size.height, color.info.pixel_format);
-    if (!scaled_session && (camera_motion.Depth() || native16) && scene_targets.Reduced() &&
-        scene_targets.EligibleScene(color)) {
+    // With the startup patch ("Live resolution changes" off) the chain's target has a proxy of
+    // its own size (SceneTargets::OwnSize), read whole like the native image below.
+    const bool own_size = scaled_session && native16 && scene_targets.OwnSize(color);
+    if ((!scaled_session && (camera_motion.Depth() || native16) && scene_targets.Reduced() &&
+         scene_targets.EligibleScene(color)) ||
+        own_size) {
         VideoCore::ImageViewInfo view;
         view.format = native16 ? HdrChannel::Native16Format : color.info.pixel_format;
         const auto proxy = scene_targets.Read(color_id, view,
@@ -1656,8 +1660,10 @@ void TemporalUpscaler::RunUiOnly(VideoCore::ImageId color_id, VideoCore::ImageId
                                               vk::AccessFlagBits2::eTransferRead);
         source = proxy.image;
         source_layout = proxy.layout;
-        source_width = render_width;
-        source_height = render_height;
+        if (!own_size) {
+            source_width = render_width;
+            source_height = render_height;
+        }
     } else {
         runtime.Transit(&texture_cache.GetImage(color_id), vk::ImageLayout::eTransferSrcOptimal,
                         vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferRead);
@@ -1846,11 +1852,22 @@ void TemporalUpscaler::RunScaled() {
         source_height = h;
     } else {
         depth_view = CachedView(depth, depth_format, vk::ImageAspectFlagBits::eDepth);
-        color_view = CachedView(color, color.info.pixel_format, vk::ImageAspectFlagBits::eColor);
         runtime.Transit(&depth, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
                         vk::AccessFlagBits2::eShaderRead);
-        runtime.Transit(&color, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
-                        vk::AccessFlagBits2::eShaderRead);
+        if (native16 && scene_targets.OwnSize(color)) {
+            // bbport HDR, mode 5 with the startup patch: the chain's frame is in its same-size
+            // RGBA16F proxy (SceneTargets::OwnSize), the guest image is 8-bit.
+            VideoCore::ImageViewInfo ci;
+            ci.format = color_format;
+            const auto cp = scene_targets.Read(ldr_target, ci);
+            color_image = cp.image;
+            color_view = cp.view;
+        } else {
+            color_view = CachedView(color, color.info.pixel_format, vk::ImageAspectFlagBits::eColor);
+            runtime.Transit(&color, vk::ImageLayout::eGeneral,
+                            vk::PipelineStageFlagBits2::eComputeShader,
+                            vk::AccessFlagBits2::eShaderRead);
+        }
         runtime.FlushBarriers();
     }
 

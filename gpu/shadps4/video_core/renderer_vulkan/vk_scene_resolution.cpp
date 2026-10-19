@@ -85,9 +85,14 @@ static u32 SizeDivisor(const VideoCore::ImageInfo& i, SceneResolution::Size scen
     }
     return 0;
 }
+bool SceneTargets::OwnSize(const VideoCore::Image& image) const {
+    return HdrChannel::Native16Fixed() && !image.info.props.is_depth &&
+           HdrChannel::Upgraded(image.info.guest_address, image.info.size.width,
+                                image.info.size.height, image.info.pixel_format);
+}
 bool SceneTargets::Eligible(const VideoCore::Image& image) const {
     const auto& i = image.info;
-    const u32 div = SizeDivisor(i, size);
+    const u32 div = OwnSize(image) ? 1u : SizeDivisor(i, size);
     if (!div || i.size.depth != 1 || i.resources.layers != 1 || i.num_samples != 1 ||
         i.props.is_block || !image.backing || image.backing->num_samples != 1) {
         return false;
@@ -103,6 +108,10 @@ bool SceneTargets::EligibleScene(const VideoCore::Image& image) const {
     return image.info.size.width == 1920 && image.info.size.height == 1080 && Eligible(image);
 }
 SceneResolution::Size SceneTargets::ProxySize(const VideoCore::Image& image, u32 level) const {
+    if (OwnSize(image)) {
+        return {std::max(1u, image.info.size.width >> level),
+                std::max(1u, image.info.size.height >> level)};
+    }
     const u32 div = std::max(1u, SizeDivisor(image.info, size));
     return {std::max(1u, size.width / div >> level), std::max(1u, size.height / div >> level)};
 }

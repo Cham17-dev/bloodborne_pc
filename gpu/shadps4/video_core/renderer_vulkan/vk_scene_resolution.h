@@ -35,6 +35,9 @@ public:
     bool EligibleScene(const VideoCore::Image&) const;
     /// The proxy size of an eligible image: the scene size divided like the native size.
     SceneResolution::Size ProxySize(const VideoCore::Image&, u32 level = 0) const;
+    /// bbport HDR, mode 5 with the startup patch (HdrChannel::Native16Fixed): a target of the
+    /// 16-bit chain, proxied at its own size (an RGBA16F stand-in, no scaling).
+    bool OwnSize(const VideoCore::Image&) const;
     struct Target {
         vk::Image image;
         vk::ImageView view;

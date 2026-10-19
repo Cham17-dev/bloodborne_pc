@@ -80,6 +80,10 @@ public:
     [[nodiscard]] float SceneMipBias() const;
     /// bbport: the state RedirectColor/RedirectDepth/RasterScaling depend on, for memoizing a
     /// draw's render state (Rasterizer::BeginRendering).
+    /// bbport: the UI or the display pass, drawn into the port's output-size images.
+    [[nodiscard]] bool Redirecting() const noexcept {
+        return ui_phase || display_redirect;
+    }
     [[nodiscard]] u64 RedirectState() const noexcept {
         return u64(ui_phase) | u64(display_redirect) << 1 | u64(done_this_frame) << 2 |
                u64(ui_color.index) << 8 | u64(ui_depth.index) << 36;
