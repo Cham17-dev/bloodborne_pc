@@ -31,7 +31,6 @@ layout(constant_id = 15) const bool BB_VIG888 = false;
 layout(constant_id = 16) const bool BB_GAMMA = true;
 layout(constant_id = 17) const bool BB_ADDITIVE = false;
 layout(constant_id = 18) const uint BB_BUFFER_INDEX = 0u; // index of the constant buffer in buf_offsets
-layout(constant_id = 19) const int BB_TONEMAPPER = 0;     // 0 Neutwo shoulder, 1 PsychoV30
 layout(constant_id = 20) const bool BB_GAIN = true;
 layout(constant_id = 21) const bool BB_FLOOR_ON = true;
 layout(constant_id = 22) const bool BB_SCENE_MAT = false;
@@ -95,33 +94,14 @@ float bb_c(uint word) {
 #include "bb_composite.glsl"
 #include "psychov30.glsl"
 
-// PsychoV30 (hdr/psychov30.glsl) in place of the game's curve, matched to it as RenoDX advises
-// (anchor-output-midgray, slope-analytic): the scene value where the game's curve gives mid grey
-// (0.18) maps to 0.18, with the game's log-log slope there as contrast. False: no HDR.
-bool bb_curve_psychov(BbComposite o, vec3 x, float peak, out vec3 t) {
-    float grey_in, slope;
-    if (!bb_knee(o.curve, 0.18, grey_in, slope)) {
-        t = bb_curve(o, x);
-        return false;
-    }
-    float contrast = clamp(grey_in * slope / 0.18, 0.3, 3.0);
-    if (o.curve != 3) {
-        x = max(x, BB_FLOOR); // PsychoV30 needs a positive input
-    }
-    t = rd_psychov30(x, peak, 1.0, 1.0, 1.0, contrast, 1.0, 1.0, vec3(grey_in), vec3(0.18), 1.0,
-                     0, 1.0, RD_PSY30_SOURCE_BOUNDARY_BT709);
-    t = max(t, 0.0);
-    return true;
-}
-
 float bb_bits(uint bits, float fallback) {
     return bits == 0u ? fallback : uintBitsToFloat(bits - 1u);
 }
 
 // Mode 5, tone mapper PsychoV30 (scene): PsychoV30 alone on the scene's linear color, in place of
-// the game's curve, to the display's peak (the final pass then only encodes). Anchored as
-// bb_curve_psychov (the game's mid grey stays mid grey, its slope there as contrast), with the
-// menu's exposure, highlights, shadows, contrast and saturation as PsychoV30's own parameters.
+// the game's curve, to the display's peak (the final pass then only encodes). Anchored at
+// the game's mid grey, with its slope there as contrast. The menu's exposure, highlights,
+// shadows, contrast and saturation are PsychoV30's own parameters.
 bool bb_curve_psychov_scene(BbComposite o, vec3 x, out vec3 t) {
     float grey_in, slope;
     if (!bb_knee(o.curve, 0.18, grey_in, slope)) {
@@ -207,9 +187,7 @@ void main() {
     }
     bool psycho_scene = BB_OUTPUT_DELTA && push_data.bb_hdr2a.x != 0u;
     bool has_hdr = !BB_ADDITIVE && (psycho_scene ? bb_curve_psychov_scene(o, x, hdr_t)
-                                    : BB_TONEMAPPER == 1
-                                        ? bb_curve_psychov(o, x, BB_HDR_PEAK, hdr_t)
-                                        : bb_curve_hdr(o, x, knee, BB_HDR_PEAK, hdr_t));
+                                               : bb_curve_hdr(o, x, knee, BB_HDR_PEAK, hdr_t));
     vec3 g = bb_glow(o, base, bloom, ms);
     vec3 glow = clamp(g, 0.0, 1.0);
     vec3 sdr_screen = BB_ADDITIVE ? x + g : sdr_t + glow - sdr_t * glow;
@@ -220,6 +198,46 @@ void main() {
     // see hdr/bb_tonemap.frag), hence .zyx before the luminance.
     vec3 sdr_graded = bb_grade(o, sdr_screen).zyx;
     vec3 hdr_graded = bb_grade(o, hdr_screen).zyx;
+    if (BB_OUTPUT_DELTA) {
+        // The game's bloom, live (in-game menu; bb_hdr.w set for this draw by bbport: the
+        // strength's bits plus one, 0 = the game's): the target is the composite with its glow
+        // scaled, so the difference can also take light away.
+        uint bloom_bits = push_data.bb_hdr.w;
+        float k = (bloom_bits == 0u || BB_ADDITIVE) ? 1.0
+                                                    : clamp(uintBitsToFloat(bloom_bits - 1u), 0.0, 4.0);
+        bool scaled = abs(k - 1.0) > 1e-3;
+        vec3 target = has_hdr ? hdr_graded : clamp(sdr_graded, 0.0, 1.0);
+        if (scaled) {
+            vec3 glow_k = clamp(g * k, 0.0, 1.0);
+            vec3 sdr_screen_k = sdr_t + glow_k - sdr_t * glow_k;
+            vec3 hdr_screen_k = has_hdr ? hdr_t + glow_k * (1.0 - min(hdr_t, 1.0)) : sdr_screen_k;
+            target = has_hdr ? bb_grade(o, hdr_screen_k).zyx
+                             : clamp(bb_grade(o, sdr_screen_k).zyx, 0.0, 1.0);
+        }
+        vec3 delta = vec3(0.0);
+        if (has_hdr || scaled) {
+            if (BB_GAMMA) {
+                vec3 hdr_encoded = exp2(bb_c(808u) * log2(max(target, 0.0) + BB_EPS));
+                vec3 sdr_game = exp2(bb_c(808u) * log2(clamp(sdr_graded + BB_EPS, 0.0, 1.0)));
+                delta = hdr_encoded - sdr_game;
+            } else {
+                delta = max(target, 0.0) - clamp(sdr_graded, 0.0, 1.0);
+            }
+        }
+        // PsychoV30 (scene) replaces the game's curve, so it may also darken.
+        frag_color0 = vec4((scaled || psycho_scene) ? delta : max(delta, 0.0), 0.0);
+        // Chain probe (in-game menu, test; bb_hdr.z set for this draw by bbport): green
+        // where this draw adds light above the game's white (red and blue pushed far below 0,
+        // so the green stays whatever is added later).
+        if (push_data.bb_hdr.z == 1u && max(max(delta.x, delta.y), delta.z) > 0.01) {
+            frag_color0 = vec4(-64.0, 8.0, -64.0, 0.0);
+        }
+        // Mode 5 has a single color target; the side-channel ratios below are not used.
+        frag_aux = vec4(1.0);
+        return;
+    }
+
+    // Mode 4 uses a separate gain channel instead of changing the game's target.
     const vec3 luma_bgr = vec3(0.0721923154, 0.7151686788, 0.2126390059);
     float encode = BB_GAMMA ? bb_c(808u) : 1.0 / 2.2;
     vec3 sdr_encoded = exp2(encode * log2(clamp(sdr_graded + BB_EPS, 0.0, 1.0)));
@@ -228,7 +246,7 @@ void main() {
     // A gain per channel, from the color matrix's rows (red, green, blue): the untonemapped
     // color over the game's (a saturated light keeps its color above white); where the game's
     // channel is near zero, the luminance gain. The final pass grades and tonemaps (BB_HDR_PEAK
-    // is 10000 nits here, BB_TONEMAPPER 0: the curve is the game's slope continued).
+    // is 10000 nits here: the curve is the game's slope continued).
     float gain = (has_hdr && sdr_luma > 1e-4) ? hdr_luma / sdr_luma : 1.0;
     vec3 gains = vec3(clamp(gain, 1.0, 64.0));
     if (has_hdr) {
@@ -266,40 +284,4 @@ void main() {
         }
     }
     frag_aux = aux;
-
-    if (BB_OUTPUT_DELTA) {
-        // The game's bloom, live (in-game menu; bb_hdr.w set for this draw by bbport: the
-        // strength's bits plus one, 0 = the game's): the target is the composite with its glow
-        // scaled, so the difference can also take light away.
-        uint bloom_bits = push_data.bb_hdr.w;
-        float k = (bloom_bits == 0u || BB_ADDITIVE) ? 1.0
-                                                    : clamp(uintBitsToFloat(bloom_bits - 1u), 0.0, 4.0);
-        bool scaled = abs(k - 1.0) > 1e-3;
-        vec3 target = has_hdr ? hdr_graded : clamp(sdr_graded, 0.0, 1.0);
-        if (scaled) {
-            vec3 glow_k = clamp(g * k, 0.0, 1.0);
-            vec3 sdr_screen_k = sdr_t + glow_k - sdr_t * glow_k;
-            vec3 hdr_screen_k = has_hdr ? hdr_t + glow_k * (1.0 - min(hdr_t, 1.0)) : sdr_screen_k;
-            target = has_hdr ? bb_grade(o, hdr_screen_k).zyx
-                             : clamp(bb_grade(o, sdr_screen_k).zyx, 0.0, 1.0);
-        }
-        vec3 delta = vec3(0.0);
-        if (has_hdr || scaled) {
-            if (BB_GAMMA) {
-                vec3 hdr_encoded = exp2(bb_c(808u) * log2(max(target, 0.0) + BB_EPS));
-                vec3 sdr_game = exp2(bb_c(808u) * log2(clamp(sdr_graded + BB_EPS, 0.0, 1.0)));
-                delta = hdr_encoded - sdr_game;
-            } else {
-                delta = max(target, 0.0) - clamp(sdr_graded, 0.0, 1.0);
-            }
-        }
-        // PsychoV30 (scene) replaces the game's curve, so it may also darken.
-        frag_color0 = vec4((scaled || psycho_scene) ? delta : max(delta, 0.0), 0.0);
-        // Chain probe (in-game menu, test; bb_hdr.z set for this draw by bbport): green
-        // where this draw adds light above the game's white (red and blue pushed far below 0,
-        // so the green stays whatever is added later).
-        if (push_data.bb_hdr.z == 1u && max(max(delta.x, delta.y), delta.z) > 0.01) {
-            frag_color0 = vec4(-64.0, 8.0, -64.0, 0.0);
-        }
-    }
 }

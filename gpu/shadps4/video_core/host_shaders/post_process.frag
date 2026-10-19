@@ -40,13 +40,17 @@ layout (push_constant) uniform settings {
     float hdr_saturation;
     float hdr_highlight_saturation;
     float hdr_blowout;
-    uint hdr_tonemapper;   // bbport: 0 Neutwo, 1 PsychoV30 (RenoDX), 2 Vanilla (the game's SDR), 3 PsychoV30 on the scene (mode 5)
+    uint hdr_tonemapper;   // bbport: 0 Neutwo, 1 PsychoV30 hybrid, 2 Vanilla, 3 PsychoV30 scene (mode 5)
     uint hdr_per_channel;  // bbport: Neutwo per channel (else on luminance, hue kept)
     float hdr_bloom;       // bbport: the game's bloom, 0 none .. 1 the game's .. 2 double
     float hdr_vignette;    // bbport: the game's vignettes, 0 none .. 1 the game's .. 2 double
     uint hdr_native16;     // bbport: the 16-bit chain's frame: 1 linear, 2 sRGB encoded (HDR > 1)
     float hdr_black_floor; // bbport: the game's black level taken to 0 (units of paper white)
 } pp;
+
+const uint TONEMAPPER_PSYCHOV_HYBRID = 1u;
+const uint TONEMAPPER_VANILLA = 2u;
+const uint TONEMAPPER_PSYCHOV_SCENE = 3u;
 
 const vec3 LUMA709 = vec3(0.2126390059, 0.7151686788, 0.0721923154);
 
@@ -65,7 +69,7 @@ float neutwo_shoulder(float x, float k, float peak) {
 // range: bbport's adaptation of Neutwo (unchanged up to 0.6 of the peak, a Neutwo shoulder above;
 // on luminance or per channel), or PsychoV30.
 vec3 tonemap_scene(vec3 v, float peak) {
-    if (pp.hdr_tonemapper == 1u) {
+    if (pp.hdr_tonemapper == TONEMAPPER_PSYCHOV_HYBRID) {
         // PsychoV30 targets the BT.2020 volume and returns BT.709 coordinates: a BT.2020 color
         // can have negative BT.709 channels. They stay signed until the BT.2020 conversion, which
         // drops what is still negative there (as RenoDX's FromSoftware mod).
@@ -152,11 +156,42 @@ vec3 pq_encode(vec3 nits) {
     return pow((c1 + c2 * y) / (1.0 + c3 * y), vec3(m2));
 }
 
+// Shared by the native 16-bit chain and the legacy side-channel path.
+vec3 decode_sdr_signal(vec3 signal) {
+    return pp.hdr_gamma22 ? pow(signal, vec3(2.2)) : degamma(signal);
+}
+
+bool sdr_reference() {
+    return pp.hdr_compare == 1u || (pp.hdr_compare == 2u && uv.x < 0.5) ||
+           pp.hdr_tonemapper == TONEMAPPER_VANILLA;
+}
+
+vec3 scene_to_nits(vec3 v) {
+    return min(max(bt709_to_bt2020(v), 0.0) * pp.hdr_paper_white, vec3(pp.hdr_peak_nits));
+}
+
 // An SDR signal (sRGB-encoded, 0..1) as an SDR display shows it, in Rec.2020 nits, each Rec.709
 // channel first multiplied by `gains` (the HDR side channel's; 1 for plain SDR).
 vec3 sdr_to_nits(vec3 signal, vec3 gains) {
-    vec3 lin = pp.hdr_gamma22 ? pow(signal, vec3(2.2)) : degamma(signal);
+    vec3 lin = decode_sdr_signal(signal);
     return max(bt709_to_bt2020(lin * gains), 0.0) * pp.hdr_paper_white;
+}
+
+vec3 ui_to_nits(vec3 signal) {
+    return sdr_to_nits(signal, vec3(1.0)) * (pp.hdr_ui_nits / pp.hdr_paper_white);
+}
+
+vec3 debug_nits(vec3 nits, vec3 tone_mapped, float reference_luma, float scene, float peak) {
+    if (pp.hdr_debug == 1u) {
+        float gain = dot(tone_mapped, LUMA709) / max(reference_luma, 1e-4);
+        float k = clamp((gain - 1.0) / (max(peak, 1.001) - 1.0), 0.0, 1.0);
+        return gain > 1.001 ? mix(vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 0.0), k) * pp.hdr_paper_white
+                            : vec3(dot(nits, vec3(0.2627, 0.6780, 0.0593)) * 0.5);
+    }
+    if (pp.hdr_debug == 2u && scene < 0.5) {
+        return mix(nits, vec3(pp.hdr_paper_white, 0.0, 0.0), 0.6);
+    }
+    return nits;
 }
 
 // bbport HDR test pattern, four rows from the top:
@@ -201,19 +236,17 @@ vec3 native16_nits(vec3 v) {
     // Encoded (2): the values are the SDR signal itself; linear (1): encoded like the game's.
     vec3 signal = pp.hdr_native16 == 2u ? sdr : clamp(gamma(sdr), 0.0, 1.0);
     // Vanilla tone mapper (or the menu's preset Off): the game's own SDR look, as Compare's SDR.
-    bool sdr_side = pp.hdr_compare == 1u || (pp.hdr_compare == 2u && uv.x < 0.5) ||
-                    pp.hdr_tonemapper == 2u;
-    if (sdr_side) {
+    if (sdr_reference()) {
         return sdr_to_nits(signal, vec3(1.0));
     }
-    vec3 lin_sdr = pp.hdr_gamma22 ? pow(signal, vec3(2.2)) : degamma(signal);
+    vec3 lin_sdr = decode_sdr_signal(signal);
     // Above white the chain's values are gamma encoded (the composite's output, a 2.2 power).
     vec3 lin = black_floor(lin_sdr * mix(vec3(1.0), pow(v, vec3(2.2)), greaterThan(v, vec3(1.0))));
     float peak = max(pp.hdr_peak_nits / pp.hdr_paper_white, 1.0);
     float l_sdr = dot(lin_sdr, LUMA709);
     vec3 t = lin;
     // PsychoV30 (scene): the composite already tonemapped the scene to the peak; only encoded here.
-    if (pp.hdr_tonemapper != 3u) {
+    if (pp.hdr_tonemapper != TONEMAPPER_PSYCHOV_SCENE) {
         float l = dot(lin, LUMA709);
         // Strength: the luminance above white raised to this power.
         if (l > 1.0) {
@@ -223,7 +256,7 @@ vec3 native16_nits(vec3 v) {
         lin *= 1.0 + clamp(pp.hdr_boost, 0.0, 1.0) * (peak - 1.0) * y * y * y;
         t = tonemap_scene(grade_scene(max(lin, 0.0), peak), peak);
     }
-    vec3 nits = min(max(bt709_to_bt2020(t), 0.0) * pp.hdr_paper_white, vec3(pp.hdr_peak_nits));
+    vec3 nits = scene_to_nits(t);
     // The HUD: the pixels the UI changed since the scene's snapshot (bound as hdrChannel in
     // mode 5), shown as the game's SDR at the HUD brightness. The game's brightness curve comes
     // after the snapshot, so the tolerance widens with brightness (as in mode 4).
@@ -235,18 +268,10 @@ vec3 native16_nits(vec3 v) {
         float tolerance = 0.04 + 0.22 * l_snap * l_snap;
         float miss = abs(l_now - l_snap);
         scene = 1.0 - smoothstep(tolerance, tolerance + 0.10, miss);
-        vec3 ui = sdr_to_nits(signal, vec3(1.0)) * (pp.hdr_ui_nits / pp.hdr_paper_white);
+        vec3 ui = ui_to_nits(signal);
         nits = mix(ui, nits, scene);
     }
-    if (pp.hdr_debug == 1u) {
-        float gain = dot(t, LUMA709) / max(l_sdr, 1e-4);
-        float k = clamp((gain - 1.0) / (max(peak, 1.001) - 1.0), 0.0, 1.0);
-        nits = gain > 1.001 ? mix(vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 0.0), k) * pp.hdr_paper_white
-                            : vec3(dot(nits, vec3(0.2627, 0.6780, 0.0593)) * 0.5);
-    } else if (pp.hdr_debug == 2u && scene < 0.5) {
-        nits = mix(nits, vec3(pp.hdr_paper_white, 0.0, 0.0), 0.6); // taken as UI
-    }
-    return nits;
+    return debug_nits(nits, t, l_sdr, scene, peak);
 }
 
 void main() {
@@ -266,9 +291,7 @@ void main() {
         vec3 signal = clamp(gamma(clamp(color_linear.rgb, 0.0, 1.0)), 0.0, 1.0);
         vec3 nits = sdr_to_nits(signal, vec3(1.0));
         // Comparison: the game's SDR (at paper white) on the whole frame or on its left half.
-        bool sdr_side = pp.hdr_compare == 1u || (pp.hdr_compare == 2u && uv.x < 0.5) ||
-                        pp.hdr_tonemapper == 2u; // Vanilla (or preset Off)
-        if (pp.hdr_channel && !sdr_side) {
+        if (pp.hdr_channel && !sdr_reference()) {
             // Where the finished frame is still what the tonemap wrote (same luminance, give or
             // take the game's AA, grain and brightness setting), it is the scene: its highlights
             // are raised by the channel's gain. Elsewhere (UI drawn over it) it stays SDR.
@@ -302,13 +325,12 @@ void main() {
             //  - boost: the scene's SDR highlights (above about half of white) raised toward the
             //    peak, the game's white reaching 1 + boost (peak - 1);
             //  - then a shoulder from 0.6 of the peak, so nothing clips.
-            const vec3 luma709 = vec3(0.2126390059, 0.7151686788, 0.0721923154);
             float peak = max(pp.hdr_peak_nits / pp.hdr_paper_white, 1.0);
             vec3 gains = pow(max(vec3(channel.r, channel.b, channel.a), 0.0),
                              vec3(max(pp.hdr_strength, 0.0)));
             gains = mix(vec3(1.0), gains, scene);
-            vec3 lin = black_floor(pp.hdr_gamma22 ? pow(signal, vec3(2.2)) : degamma(signal));
-            float l_sdr = dot(lin, luma709);
+            vec3 lin = black_floor(decode_sdr_signal(signal));
+            float l_sdr = dot(lin, LUMA709);
             float y = clamp((l_sdr - 0.45) / 0.55, 0.0, 1.0);
             float boost = 1.0 + scene * clamp(pp.hdr_boost, 0.0, 1.0) * (peak - 1.0) * y * y * y;
             // The game's bloom and vignettes, more or less (1 = as drawn).
@@ -318,21 +340,11 @@ void main() {
             effects = mix(vec3(1.0), max(effects, 0.0), scene);
             vec3 v = tonemap_scene(grade_scene(max(lin * gains * boost * effects, 0.0), peak),
                                    peak);
-            nits = min(max(bt709_to_bt2020(v), 0.0) * pp.hdr_paper_white, vec3(pp.hdr_peak_nits));
+            nits = scene_to_nits(v);
             // The HUD (pixels taken as UI): the game's SDR at its own brightness.
-            vec3 ui = sdr_to_nits(signal, vec3(1.0)) * (pp.hdr_ui_nits / pp.hdr_paper_white);
+            vec3 ui = ui_to_nits(signal);
             nits = mix(ui, nits, scene);
-            float gain = dot(v, luma709) / max(l_sdr, 1e-4);
-            if (pp.hdr_debug == 1u) {
-                // Gain heat map: grey = 1 (SDR), blue to red = up to the peak.
-                float peak_gain = max(pp.hdr_peak_nits / pp.hdr_paper_white, 1.001);
-                float t = clamp((gain - 1.0) / (peak_gain - 1.0), 0.0, 1.0);
-                nits = gain > 1.001 ? mix(vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 0.0), t) *
-                                          pp.hdr_paper_white
-                                    : vec3(dot(nits, vec3(0.2627, 0.6780, 0.0593)) * 0.5);
-            } else if (pp.hdr_debug == 2u && scene < 0.5) {
-                nits = mix(nits, vec3(pp.hdr_paper_white, 0.0, 0.0), 0.6); // taken as UI
-            }
+            nits = debug_nits(nits, v, l_sdr, scene, peak);
         }
         if (pp.hdr_compare == 2u && abs(uv.x - 0.5) * float(textureSize(texSampler, 0).x) < 1.5) {
             nits = vec3(pp.hdr_paper_white); // split line
