@@ -203,6 +203,10 @@ private:
     bool RecordFsr4(vk::CommandBuffer cmdbuf, Fsr4Upscaler::Image color, Fsr4Upscaler::Image depth,
                     u32 w, u32 h, u32 ow, u32 oh, float frame_ms);
     void RecordTaa(vk::CommandBuffer cmdbuf, vk::ImageView color, vk::ImageView depth);
+    /// Mode 5: decode the finished chain before temporal reconstruction, encode its result
+    /// before the game's UI/display passes. Both images are distinct and in General layout.
+    void RecordHdrTransfer(vk::CommandBuffer cmdbuf, vk::Image source, vk::ImageView source_view,
+                           vk::Image target, vk::ImageView target_view, u32 w, u32 h, bool encode);
     /// Sharpness above 1 for FSR 3/4 (their RCAS stops at 1): one more RCAS pass over the target
     /// (output_image, or the 8-bit UI image with ldr) in General layout after the upscaler.
     void ExtraSharpen(vk::CommandBuffer cmdbuf, vk::Image target, bool ldr, u32 w, u32 h);
@@ -215,6 +219,7 @@ private:
     SceneTargets& scene_targets;
     int applied_preset = -1;
     int applied_upscaler = -1;
+    int applied_hdr_path = -1;
     bool dispatched_last_frame = false;
     bool last_active = false, last_jitter = false;
 
@@ -293,6 +298,11 @@ private:
     VideoCore::UniqueImage output_image;
     vk::UniqueImageView motion_view;
     vk::UniqueImageView output_view;
+    VideoCore::UniqueImage hdr_linear_input;
+    vk::UniqueImageView hdr_linear_input_view;
+    vk::UniqueDescriptorSetLayout hdr_transfer_desc_layout;
+    vk::UniquePipelineLayout hdr_transfer_pipeline_layout;
+    vk::UniquePipeline hdr_transfer_pipeline;
     VideoCore::UniqueImage opaque_image;   ///< scene color before the blended draws
     VideoCore::UniqueImage reactive_image; ///< R8 reactive mask
     vk::UniqueImageView opaque_view;
